@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.8（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · **判定口径「宽松 / 宁可多报」（F15.7、DC19）** · **单实例串行调用 + 单文件 600s 上限（DC20）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
+| 版本 | v2.9（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · **判定口径「宽松 / 宁可多报」（F15.7、DC19）** · **单实例串行调用 + 单文件 600s 上限（DC20）** · **跨平台扩展设计（4.8：Linux/macOS 接入指引）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
 | 状态 | 待开发 |
 | 目标平台 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
@@ -57,6 +57,7 @@
 | C35 | **定案 `watch_dirs` 默认全量包含用户/数据目录 + 临时目录排除**：默认监控范围由"仅 Program Files 两处"扩展为**五处**（`C:\Program Files`、`C:\Program Files (x86)`、`%ProgramData%`、`%LOCALAPPDATA%`、`%APPDATA%`），与示例配置（7.5）对齐；并新增 `watch_exclude`（默认排除 `%TEMP%` / `%LOCALAPPDATA%\Temp` 及各类缓存目录）避免临时落盘造成假阳性。修正原文档"默认仅两处、建议追加"与示例配置"已含五处"的**自相矛盾** | 避免 per-user 安装与绿色版漏判（Q18 答复），与"宁可多报"口径一致 |
 | C36 | **定案「单实例串行调用 + 单文件 600s 上限」**：第三方为**单实例串行**调用场景，故维持单实例锁默认（`lock.enabled: true`、`lock.wait_sec: 0` 即不等待、第二实例直接退出码 6），**由调用方自行串行排队**，工具侧不做队列；同时确认**单文件硬上限 `timeout_sec: 600` 合适**，维持默认；`task_timeout_sec` 保留 `0`（任务级不限），长批量任务的总体超时由**调用方外部兜底** | 需求决策：第三方集成方式与超时上限由调用方给出（Q19/Q20 答复） |
 | C37 | **文档版本号与文件名对齐为 v2.8**：内容版本此前已升至 v2.8，但文件名仍沿用 `v2.5`，现统一为《自动安装工具prd-v2.8.md》；此后**每轮改动同步递增文档版本号并重命名文件**，避免文件名与内容版本不一致造成误用 | 文档管理：版本一致性 |
+| C38 | **新增 4.8 跨平台扩展设计（Linux / macOS 接入指引）**：把第 4 节"分层 + 接口"的设计落成**可执行的扩展路径**——① 明确"支持新平台 = 新增一个 adapter 包 + 平台配置，**核心逻辑零改动**"；② 给出 port→各平台实现对照表；③ **F15 证据来源的平台映射**（Linux 用包管理器数据库、macOS 用 `pkgutil`/receipts，而 `internal/verify` 的分级与仲裁**一行不改**）；④ 指出 GUI 自动化在 **Wayland 禁止合成输入**与 **macOS 辅助功能授权**下的根本限制；⑤ 交付/分发的平台差异（每平台一个单文件，但交付包内容不同）；⑥ P1~P3 落地节奏与风险；并新增 **A9 ③ 跨平台编译卡点**（`GOOS=linux/darwin` 下 `go build ./...` 必须通过） | 用户问"后续如何支持 Linux/macOS"，需给出可落地的扩展路径并把设计前提固化 |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
@@ -341,6 +342,75 @@ type PrereqManager interface {
 > **职责划分**：A 类无需任何操作；B 类的**离线安装包随交付包提供**，由运维按部署说明文档安装，工具侧由 F16 负责检测与提示；C 类属镜像构建职责，建议在镜像构建流程末尾以 `AutoTrigger.exe --check-prereq` 作卡点校验，通过后再批量分发。
 >
 > **交付物对应关系**：工具本体（`AutoTrigger.exe`）只解决 A 类；**B 类与 C 类所需的物料和操作说明全部由交付包承载**——见 8.1 交付包结构与 8.3 交付物清单。
+
+### 4.8 跨平台扩展设计（Linux / macOS 后期接入指引，v2.9 新增）
+
+**一句话**：本期只交付 Windows，但架构须保证"**支持一个新平台 = 新增一个 adapter 包 + 一份平台配置**"，而**核心逻辑零改动**。本节给出具体扩展路径与已知难点，供后续排期。
+
+**① 扩展原则：换"实现"，不换"编排"**
+
+| 分类 | 内容 | 新增平台时的改动量 |
+|------|------|------------------|
+| **平台无关（零改动）** | 类型识别（魔数表）、尝试编排与多轮参数、活动感知超时（F9）、**证据分级与反证据仲裁（`internal/verify`）**、静默期收敛、结果模型与 Schema（F10）、CLI 与集成契约（F19）、配置合并（7.5.1）、日志 | **0** |
+| **平台相关（新增实现）** | 进程执行与进程树终止、安装包执行、脚本触发、GUI 自动化、截屏/DPI、**安装证据数据来源**、前置依赖探测（`PrereqManager`） | 在 `internal/platform/<os>/` 下实现 4.3 的全部 ports |
+
+- 装配点唯一：`cmd/autotrigger/main.go` 按 `GOOS` 选择 adapter（构建标签 `//go:build windows|linux|darwin`）。
+- 硬约束（承接 4.5）：**core 与 `internal/verify`、`internal/activity` 不得 import 任何 `internal/platform/*`**。新增平台若需要改 core，即说明抽象泄漏，**须先修接口再落地**。
+
+**② 接口 → 各平台实现对照（把 4.4 细化到 port 粒度）**
+
+| port（见 4.3） | Windows（本期） | Linux | macOS |
+|--------------|----------------|-------|-------|
+| `ProcessRunner` | CreateProcess + **Job Object** 回收进程树 | `fork/exec` + `setsid` + `kill(-pgid)` | `posix_spawn` + `kill` 进程组 |
+| `FileOpener` | ShellExecute + 关联表 | `xdg-open` + MIME 关联 | `open` |
+| `ArchiveExtractor` | 外部 `7z.exe` | `tar` / `7z`（外部前置） | `hdiutil`（dmg 系统内置）/ `7z` / `tar` |
+| `FileTypeDetector` | 魔数表（平台无关） | 同左，**新增 ELF 魔数** | 同左，**新增 Mach-O / pkg / dmg** |
+| `InstallerTrigger` | msiexec + 各家静默参数 | `dpkg -i` / `rpm -i` / `sh`；静默 `apt-get -y` | `installer -pkg` / `hdiutil attach` + 拷 `.app` |
+| `GUIAutomator` | UIA → 模板 → OCR | **X11**：`xdotool`/`xprop` → 模板 → OCR（**Wayland 受限，见 ④**） | AppleScript / System Events → 模板 → OCR（**需辅助功能授权，见 ④**） |
+| `InstallVerifier` | 注册表三处 Uninstall + `watch_dirs` + `MsiInstaller` 事件 | **包管理器数据库**（`dpkg -l` / `rpm -qa`）+ `watch_dirs` + `dpkg.log` | **`pkgutil --pkgs` + `/var/db/receipts`** + `watch_dirs` |
+| `PrereqManager` | 7-Zip + 外部 OCR | `tar`/`7z` + `tesseract` | `hdiutil`/`installer` 系统内置 + `tesseract` |
+| 截屏 | GDI `BitBlt` / `PrintWindow` | X11 `XGetImage` / `import` | `screencapture` / `CGWindowListCreateImage` |
+
+**③ 安装证据（F15）的平台适配 —— 扩展收益最大的设计点**
+
+F15 的 **S/A/B 分级、基线快照、反证据、冲突仲裁属于"方法"，全部落在平台无关的 `internal/verify`**；换平台只替换**证据来源**（由 `InstallVerifier` 实现提供）：
+
+| F15 证据 | Windows 来源 | Linux 来源 | macOS 来源 |
+|---------|-------------|-----------|-----------|
+| S1 新增"卸载项" | 注册表 Uninstall（HKLM / Wow6432Node / **HKCU**） | **包数据库新增条目**（基线 `dpkg -l` / `rpm -qa` 中不存在） | **`pkgutil --pkgs` 新增 + receipt（`/var/db/receipts/*.bom`）** |
+| S2 落盘 diff | `watch_dirs` | `watch_dirs`（`/usr` `/opt` `/usr/local` `~/.local`） | `watch_dirs`（`/Applications` `/usr/local` `~/Applications`） |
+| S3 官方成功码 | MSI `{0,3010,1641}` 且来源为 msiexec | `dpkg` / `rpm` 退出码 0 | `installer` 退出码 0 |
+| S4 系统事件 | `MsiInstaller` 11707 | `/var/log/dpkg.log` 安装完成行 / `journalctl` | `/var/log/install.log` |
+| 反证据 | 11724 / 卸载键消失 / 文件数减少 | 包被 remove（条目消失） | receipt 被移除 |
+
+- 结论：新增平台时 **`internal/verify` 一行不改**，只需实现 `InstallVerifier` 的"取数"部分。
+- `watch_dirs` / `watch_exclude` 的**默认值按平台给出**（当前 Windows 五处 + 排除临时缓存），随 adapter 提供平台默认配置。
+
+**④ GUI 自动化的根本差异（最大工作量与不确定性，须提前认知）**
+
+- **Linux**：`X11` 下 `xdotool` 可合成键鼠；**`Wayland` 出于安全默认禁止合成输入** → 只能 ① 改用 `ydotool`（走 `uinput`，需 root/设备权限）或 ② **降级为"只识别不点击"**（识别结果仍写入 `gui_actions` 供消费）。**建议：Linux GUI 支持以 X11 为基线；Wayland 只保证识别、不保证点击**。
+- **macOS**：`osascript` / System Events 合成输入需用户授予**辅助功能（Accessibility）权限**；对 Electron/CEF 自绘界面控制力弱 → **模板匹配 + OCR 权重上升**。
+- 结论：**模板库、按钮关键词表、OCR 词表按平台分目录**（承接 4.5 已定原则），**Windows 模板不可直接复用**。
+
+**⑤ 交付与分发的平台差异**
+
+- 仍是"**每平台一个免安装单文件**"，但**二进制不通用**：`GOOS=windows/darwin`（`CGO_ENABLED=0` 静态）；`GOOS=linux` 默认纯静态以避免 glibc 依赖，必要时 `-ldflags '-extldflags "-static"'`。
+- **交付包内容随平台变化**：Linux 需随包 `tar`/`7z` + `tesseract`；macOS 的 `hdiutil`/`installer` 为系统内置，OCR 用 `tesseract`。交付物清单（8.3）须按平台分册。
+- **结果 JSON Schema、退出码语义、CLI 契约保持完全一致**（F19 不随平台变）；平台差异只写入 `platform_meta`。
+
+**⑥ 落地节奏建议（Windows 稳定之后）**
+
+| 阶段 | 内容 | 目的 |
+|------|------|------|
+| **P1 防泄漏**（低成本，建议提前做） | 把 `internal/platform/linux` 从"空占位"改为**可编译 stub**（方法返回 `ErrUnsupported`）；CI 增加 `GOOS=linux` / `GOOS=darwin` 的 `go build ./...` 卡点 | 用**编译期**强制"core 无平台泄漏"，把 A9 从人工检查变成 CI 红线 |
+| P2 Linux adapter | deb/rpm/sh 触发 + 包数据库证据 + X11 GUI（模板/OCR 为主） | 首个非 Windows 平台 |
+| P3 macOS adapter | pkg/dmg/app 触发 + `pkgutil` 证据 + AppleScript/OCR GUI | 第二个非 Windows 平台 |
+
+**⑦ 已知风险**
+
+- **Wayland 与 macOS 权限模型**对"无人值守点击"构成根本限制，可能只能提供"半自动 / 识别优先"模式（验收口径需与安全团队另行确认）。
+- Linux/macOS 安装器生态**极度碎片化**（不同发行版包管理器、AppImage/Flatpak/Snap、macOS notarization 拦截），静默参数表与入口识别表需长期维护。
+- "7-Zip 作为外部前置"的假设会分化（Linux/macOS 自带 `tar`/`hdiutil` / `installer`），前置依赖模型需按平台重定义（`PrereqManager` 已抽象，可承载）。
 
 ---
 
@@ -1927,7 +1997,7 @@ AutoTrigger-<版本>-win64\
 | D9 | 环境前置检查表与镜像构建指引（依赖清单、离线包放置路径、管理员权限 / UAC / AV 排除目录 / 可写临时目录、`--check-prereq` 卡点用法；对应 4.7 与 8.2） |
 | D2 | 外部覆盖配置模板 `config.example.json`（**可选**；含全部字段与内嵌默认值，**可由 `AutoTrigger.exe --dump-config` 生成**；字段含义与取值范围由 D14 说明，外部配置**只需写要修改的字段**，见 7.5.1） |
 | D3 | 可外部编辑的参数/关键词表（`silent_params.windows.json`、`buttons.zh-CN.json`、**`install_entries.json`（F17.2 安装入口命名模式）**、**`exclude_entries.json`（F17.3 排除清单模式）**、**`media_kinds.json`（F18.1 光盘映像介质性质判定规则）**）与图像模板目录（含 F14.2 初始模板集，均为可选覆盖） |
-| D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3）+ **Win7/Win10 差异说明（对应 4.6）** |
+| D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3）+ **Win7/Win10 差异说明（对应 4.6）** + **跨平台扩展指引（对应 4.8）** |
 | D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / **自绘界面 OCR 定位** / **光盘映像（含 `malware_lure` 与 `os_install_media` 两类）** / 需联网 / 装不成功 / 前置缺失 七类；**并在 Win7 环境复测**） |
 | D7 | 结果 JSON Schema 文件（供下游流水线校验；须覆盖 `error` / `truncated` / `finished_at: null` 等失败与中断形态，见 F10.2 R6/R7；A28 ④⑧ 以其为判据） |
 | D8 | 构建与检查脚本（Makefile / build.ps1：**Go 1.20.x 静态构建** + gofmt/vet/lint + 单测覆盖率 + **导入表核验**） |
@@ -1948,7 +2018,7 @@ AutoTrigger-<版本>-win64\
 | A6 | 批量处理 | 文件夹内 50 个文件全部处理完毕，单文件失败不影响整体，summary 计数正确 |
 | A7 | 结果输出 | JSON 含 `schema_version` 与 `prereq`（含 OCR 引擎探测结果），每次尝试含 method/result/duration，可通过 D7 Schema 校验 |
 | A8 | EDR 兼容 | 工具运行期间 EDR 能正常采集到样本行为，无冲突 |
-| A9 | 跨平台架构 | Core 层无直接平台 API 调用；适配层接口清晰可扩展；**Win7/Win10 差异集中在适配层** |
+| A9 | 跨平台架构 | ① Core 层无直接平台 API 调用；② 适配层接口清晰可扩展，**Win7/Win10 差异集中在适配层**；③ **跨平台编译卡点**：`GOOS=linux` 与 `GOOS=darwin` 下 `go build ./...` **必须通过**（stub 实现，调用返回明确的 `ErrUnsupported`），以此**编译期证明 core 无平台泄漏**（详见 4.8 ⑥ P1） |
 | A10 | 快捷方式/DLL | `.lnk` 能解析目标并触发；`.dll` 能通过 rundll32 尝试导出函数 |
 | A11 | 退出码 | 参数非法→2，配置错误→3，7-Zip 缺失→4，OCR 缺失且 require_ocr→5，正常完成→0 |
 | A12 | GUI 自动化安装 | 对向导式安装器样本（Inno Setup / NSIS / InstallShield），能通过 UIA 完成"同意 → 下一步 → 安装 → 完成"点击链 |
@@ -2074,8 +2144,8 @@ AutoTrigger-<版本>-win64\
 
 ## 13. 后续可扩展方向（非本期范围）
 
-- 实现 Linux 适配层（deb / rpm / sh / ELF 触发）
-- 实现 macOS 适配层（pkg / dmg / Mach-O 触发）
+- 实现 Linux 适配层（deb / rpm / sh / ELF 触发）—— **扩展路径、证据来源映射与难点见 4.8**
+- 实现 macOS 适配层（pkg / dmg / Mach-O 触发）—— **见 4.8**
 - 支持自定义触发脚本插件（针对特定样本类型写触发逻辑）
 - 支持与 EDR API 联动，触发后自动拉取行为报告（需环境提供通道）
 - 支持触发方式优先级动态调整（基于历史成功率）
