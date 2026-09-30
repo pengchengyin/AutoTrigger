@@ -5,12 +5,12 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.2（安装成功优先 · GUI 自动化 · 离线单文件 · Go · 7-Zip 前置） |
+| 版本 | v2.3（安装成功优先 · GUI 自动化含 OCR 辅助 · 离线免安装单文件 · Go · 7-Zip 前置检测） |
 | 状态 | 待开发 |
 | 目标平台 | Windows 10 1809+ / 11 / Server 2016+（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
-| 交付形态 | 单一可执行文件（Go 静态编译，目标机无需 Go 环境） |
-| 环境前置 | 7-Zip（建议镜像预置；工具启动自检，支持离线包自动静默安装） |
+| 交付形态 | **单一可执行文件，免安装、解压即用**（Go 静态编译，目标机无需 Go 环境） |
+| 环境前置 | 7-Zip（**由镜像/运维预先安装**；工具启动自检，缺失时提示用户安装后退出，**不代为安装**） |
 | 下游依赖 | EDR（负责行为采集与检测） |
 
 ### 1.1 变更说明（相对 v1.0）
@@ -30,19 +30,24 @@
 | C11 | 新增离线约束：全程不联网，安装器联网等待按超时记录 `requires_network` | 部署环境为离线沙箱 |
 | C12 | final_status 新增 `install_completed`，含退出码/完成页/落盘/注册表四类证据；新增 F15 安装结果验证 | "装成了"需可验证 |
 | C13 | 新增单一二进制分发约束 | 便于分发到各沙箱节点 |
-| C14 | **解压方案定案**：不接受内嵌/运行时释放的降级方案，统一依赖外部 7-Zip；环境预置为前提，工具启动自检，缺失时用同介质离线安装包自动静默安装 | 需求决策 |
+| C14 | **解压方案定案**：不接受内嵌/运行时释放的降级方案，统一依赖外部 7-Zip | 需求决策 |
 | C15 | **语言定案 Go**（静态编译单文件，目标机无需 Go 环境）；补充高内聚低耦合的工程规范与目录结构（7.3） | 需求决策 |
 | C16 | 补充 GUI 图像模板初始覆盖清单与模板库迭代机制（F14.2） | 明确模板范围 |
+| C17 | **交付形态定案**：交付物即**一个免安装、可直接运行的二进制文件**，不附带安装包、脚本与运行时；**7-Zip 作为环境前置由镜像/运维预装**，工具启动时检测，**缺失则提示用户先安装**（不代为安装、不静默降级） | 需求决策 |
+| C18 | **新增本地 OCR 辅助定位**：GUI 控件识别升级为「UIA → 图像模板 → 本地 OCR」三级策略，OCR 作为辅助手段补充自绘/未知界面定位（F14.2 / F14.6） | 需求决策，提升未知界面识别率 |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
 | 编号 | 决策 | 落点 |
 |------|------|------|
-| DC1 | 交付形态：单一可执行文件，目标机无需任何运行时 | 2.3、7.2 |
+| DC1 | 交付形态：**单一可执行文件，免安装、目标机无需任何运行时** | 2.3、7.2 |
 | DC2 | 语言：Go（`CGO_ENABLED=0` 静态编译） | 7.1、7.3 |
-| DC3 | 解压后端：外部 7-Zip（环境预置优先，工具可自动静默安装），**不做内嵌降级** | 7.4、F6 |
+| DC3 | 解压后端：外部 7-Zip；**不做内嵌降级** | 7.4、F6 |
 | DC4 | 主目标：尽可能安装成功，含 GUI 弹窗自动化 | 2.2、F3/F13/F14 |
 | DC5 | 环境：离线，全程无外连 | 2.3、6 |
+| DC6 | **7-Zip 缺失时的行为**：仅检测 + **明确提示用户先安装**，不代为安装、不静默降级 | F16、7.4、6.1 |
+| DC7 | GUI 识别三级策略：**UIA 首选 → 图像模板匹配 → 本地 OCR 辅助兜底**；OCR 是辅助手段，不得成为唯一依赖 | F14.2、F14.6 |
+| DC8 | OCR 引擎：**优先 Windows 系统内置 OCR**（离线、返回像素包围盒），可选外部 tesseract 后端；**禁止 CGO** | 7.1、F14.6 |
 
 ---
 
@@ -66,9 +71,11 @@
 | 约束 | 要求 |
 |------|------|
 | 离线 | 工具自身与触发流程**全程不访问网络**：不下载组件、不更新规则、不上报结果 |
-| 单文件 | 以**单一可执行文件**交付（Go 静态编译），目标机解压即用；无外部运行时（不需 Go / .NET / VC++ Redist）、无安装步骤 |
-| 环境前置 | 目标机需具备 **7-Zip**：推荐镜像预置；工具启动自检，缺失且允许时用**同介质离线安装包**静默安装；仍不可用则明确失败（退出码 4），不静默降级 |
-| 分发 | 支持通过共享目录 / 移动介质拷贝到各沙箱节点（如需自动预置 7-Zip，则将离线安装包与 exe 放在同一目录） |
+| 单文件免安装 | 交付物为**单一可执行文件**（Go 静态编译）：拷贝到任意目录即可运行，**无安装步骤、无外部运行时**（不需 Go / .NET / VC++ Redist），无注册表写入、无残留 |
+| 环境前置 | 目标机需**预先安装 7-Zip**（镜像构建阶段预置或运维手动安装）。工具启动即自检，**缺失时输出明确提示引导用户先安装**，随后以退出码 4 结束；**工具不代为安装任何前置依赖** |
+| 无随包依赖 | 交付物**不附带**安装包、脚本、动态库；工具同目录可放可选的 `config.json` 与 `templates/`（均为可选项，缺失时使用内嵌默认值） |
+| 分发 | 单个 exe 通过共享目录 / 移动介质拷贝到各沙箱节点即可运行 |
+| OCR 语言包（可选增强） | OCR 辅助默认启用，需系统具备对应语言包（`en-US` 通常内置，`zh-Hans` 建议镜像预置）；缺失时自动降级为「UIA + 模板」并记录，不中断流程 |
 | 架构 | 预留 Linux / macOS 扩展能力 |
 
 ### 2.4 非目标（明确不做）
@@ -78,6 +85,8 @@
 - 不负责样本静态分析、反混淆、脱壳
 - 不负责网络隔离策略配置；安装器需联网下载组件时不做网络补偿，按超时处理并标记 `requires_network`
 - **不自研、不内嵌文件解压实现**（解压能力统一由 7-Zip 提供）
+- **不代为安装环境前置依赖**（含 7-Zip）：只检测、只提示，安装动作交给镜像/运维（F16）
+- **不引入 CGO、不引入第三方原生 OCR 库作为硬依赖**（保证静态单文件）
 - 不追踪样本运行后释放的后续文件与链式行为（只负责"第一跳"，其余由 EDR 捕获）
 - 不保证所有样本都能装成功（反沙箱、需联网激活、依赖缺失等由环境侧解决）
 - 本期不实现 Linux / macOS，仅预留架构扩展点
@@ -90,6 +99,7 @@
 
 - 供应链安全检测工程师
 - 自动化检测流水线运维人员
+- 镜像/环境构建人员（负责预装 7-Zip 与 OCR 语言包）
 
 ### 3.2 典型场景
 
@@ -97,11 +107,13 @@
 |------|------|
 | 静默安装成功 | 传入 `.exe` 安装器，工具轮询静默参数完成无人值守安装，产出 `install_completed` |
 | 向导式安装 | 安装器只支持 GUI，工具识别弹窗按钮/协议勾选框并模拟点击，走完全流程 |
+| 自绘界面安装 | 安装器无 UIA 控件树（Electron/CEF 类），图像模板未命中时由本地 OCR 定位按钮文本像素位并点击 |
 | 单文件触发 | 传入一个 `.exe`，多种方式依次尝试并记录每次结果 |
 | 文件夹批量触发 | 传入一个目录，工具遍历所有文件，逐个识别并触发 |
 | 压缩包递归触发 | 传入 `.zip` / `.iso`，工具用 7-Zip 解压后递归触发内部所有可执行文件 |
 | 文档类触发 | 传入 `.docx` / `.pdf`，工具调用关联程序打开，触发宏/漏洞利用链 |
 | 未知格式兜底 | 传入扩展名未知或文件头与扩展名不符的文件，工具仍尝试执行 |
+| 前置缺失 | 目标机未装 7-Zip：工具检测后提示用户先安装，不尝试自行安装 |
 
 ### 3.3 使用方式
 
@@ -111,8 +123,9 @@
 AutoTrigger.exe --input "C:\samples\test.exe" --timeout 120 --output "C:\logs\result.json"
 AutoTrigger.exe --input "C:\samples\folder" --recursive --timeout 120
 AutoTrigger.exe --input "C:\samples" --config "C:\conf\config.json"
-AutoTrigger.exe --check-prereq          # 仅做环境自检（7-Zip 等），不处理样本
-AutoTrigger.exe --dump-ui --input "C:\samples\a.exe"   # 调试：导出窗口截图与控件树，用于扩充模板
+AutoTrigger.exe --check-prereq          # 仅做环境自检（7-Zip / OCR 语言包），不处理样本
+AutoTrigger.exe --dump-ui --input "C:\samples\a.exe"   # 调试：导出窗口截图 + UIA 控件树 + OCR 结果，用于扩充模板
+AutoTrigger.exe --no-archive --input "C:\samples"      # 无 7-Zip 时跳过压缩包，继续处理其余样本
 ```
 
 参数优先级：命令行参数 > 外部配置文件 > 内嵌默认值。
@@ -132,7 +145,8 @@ AutoTrigger.exe --dump-ui --input "C:\samples\a.exe"   # 调试：导出窗口�
 | Core（核心层） | 输入解析、任务调度、类型识别、参数探测、尝试编排、超时控制、结果输出 | 平台无关 |
 | Ports（接口层） | 定义统一接口（见 4.3），随 core 包定义 | 平台无关接口 |
 | Platform Adapter（平台适配层） | Windows 实现（本期）、Linux / macOS 实现（后期） | 平台相关 |
-| Prereq（前置依赖层） | 7-Zip 探测与自动静默安装 | 平台相关 |
+| Prereq（前置依赖层） | 7-Zip 探测与**用户提示**；OCR 语言包探测 | 平台相关 |
+| OCR（识别辅助层） | OCR 引擎适配（系统内置 / tesseract / 关闭） | 平台相关 |
 | CLI（入口层） | 命令行解析、依赖装配、调用 Core | 平台无关 |
 | Embedded Resources（内嵌资源） | 魔数表、静默参数表、按钮关键词表、图像模板、默认配置 | 平台无关 |
 
@@ -168,12 +182,20 @@ type ConfigProvider interface {
     Load(explicitPath string) (Config, error)     // 默认值 < 文件 < 命令行
 }
 
+// Control 为统一控件模型，含：
+//   ID / Text / Role / BoundingBox(像素) / Source(uia|template|ocr) / Confidence
 type GUIAutomator interface {
     WatchWindows(pidTree []int, interval time.Duration) ([]Window, error)
-    FindControls(w Window) ([]Control, error)     // UIA 优先
+    FindControls(w Window) ([]Control, error)                    // 一级：UIA 控件树
+    MatchByTemplate(w Window, templates []Template) ([]Control, error)  // 二级：图像模板匹配
+    LocateByOCR(w Window, keywords []string) ([]Control, error)  // 三级：本地 OCR 文本定位（辅助）
     Click(c Control) error
     SetText(c Control, text string) error
-    MatchByTemplate(w Window, templates []Template) (*Control, error)  // 图像识别兜底
+}
+
+type OcrEngine interface {                        // v2.3 新增（辅助能力，可整体关闭）
+    Available() (OcrInfo, error)                  // 引擎与语言包可用性
+    Recognize(img Image) ([]OcrText, error)       // 返回文本 + 像素包围盒
 }
 
 type InstallVerifier interface {
@@ -181,8 +203,8 @@ type InstallVerifier interface {
 }
 
 type PrereqManager interface {
-    CheckPrereqs() (PrereqReport, error)
-    EnsureArchiveBackend(ctx context.Context) (BackendInfo, error)  // 探测失败则尝试静默安装
+    CheckPrereqs() (PrereqReport, error)          // 仅检测，不安装
+    MissingHints() []string                       // 缺失项的用户提示与安装指引（供 CLI 打印）
 }
 ```
 
@@ -193,11 +215,12 @@ type PrereqManager interface {
 | 进程执行 | CreateProcess / Start-Process | fork+exec | posix_spawn |
 | 进程树终止 | Job Object / taskkill /T | kill process group | kill process group |
 | 默认程序打开 | ShellExecute | xdg-open | open |
-| 解压 | **外部 7z.exe**（环境预置/自动安装） | 7z / tar | 7z / tar |
+| 解压 | **外部 7z.exe（环境需预置）** | 7z / tar | 7z / tar |
 | 文件头识别 | 魔数表（平台无关，内嵌） | 魔数表 | 魔数表 |
 | 安装包触发 | msiexec / 静默参数 | dpkg / rpm / sh | pkg / dmg |
 | 脚本触发 | cmd / powershell / wscript | bash / sh / python | bash / zsh / osascript |
-| GUI 自动化 | UIA + SendInput + 截图模板匹配 | xdotool（后期） | AppleScript（后期） |
+| GUI 自动化 | UIA + SendInput + 截图模板匹配 + **本地 OCR** | xdotool（后期） | AppleScript（后期） |
+| OCR 引擎 | **Windows.Media.Ocr（系统内置）**；tesseract 可选 | tesseract | Vision.framework |
 | 安装证据采集 | 文件系统 + 注册表 | 包管理器数据库 | pkgutil |
 
 ### 4.5 跨平台扩展约束
@@ -205,6 +228,7 @@ type PrereqManager interface {
 - 核心层不得直接调用任何 Windows API，适配层之外的包不得 import `internal/platform/windows`
 - 所有平台相关行为必须通过 4.3 接口调用
 - 参数探测表、类型映射表、按钮关键词表、图像模板按平台组织，优先内嵌、支持外部覆盖
+- **OCR 引擎与语言包按平台适配**：core 只依赖 `OcrEngine` 接口，不感知具体引擎
 - 结果 JSON 结构保持平台无关，平台特有字段放 `platform_meta`
 
 ---
@@ -228,9 +252,9 @@ type PrereqManager interface {
 | F11 | 文件夹批量遍历 | P0 | 无关 | M2 |
 | F12 | 嵌套/链式触发 | P1 | 无关 | M2 |
 | F13 | 参数探测与多轮尝试机制 | P0 | 无关 | M1 |
-| F14 | GUI 弹窗识别与键鼠模拟 | P0 | 适配层 | M2 |
+| F14 | GUI 弹窗识别与键鼠模拟（含 OCR 辅助） | P0 | 适配层 | M2 |
 | F15 | 安装结果验证与证据采集 | P0 | 适配层 | M2 |
-| F16 | 前置依赖自检与自动安装（7-Zip） | P0 | 适配层 | M1 |
+| F16 | 前置依赖自检与用户提示（7-Zip / OCR 语言包） | P0 | 适配层 | M1 |
 
 ---
 
@@ -320,7 +344,7 @@ type PrereqManager interface {
 5. **解压后总大小限制：默认 2 GB（可配置）**，超限停止并记录 `extract_size_exceeded`（防 zip 炸弹）
 6. 解压失败时记录 `extract_failed` 与 7z 输出摘要，不阻塞后续文件
 7. 退出前清理临时目录（清理失败仅告警）
-8. `--no-archive` 时跳过压缩包处理（用于 7-Zip 不可用但需继续跑其余样本的场景）
+8. `--no-archive` 或 7-Zip 缺失时跳过压缩包处理，相关文件记 `skipped: prereq_missing`（见 F16）
 
 #### F7 文档类触发
 
@@ -353,12 +377,19 @@ type PrereqManager interface {
 
 ```json
 {
-  "schema_version": "2.2",
+  "schema_version": "2.3",
   "task_id": "uuid",
   "started_at": "2026-09-30T09:40:00+08:00",
   "finished_at": "2026-09-30T09:52:31+08:00",
   "platform": "windows",
-  "prereq": { "archive_backend": "C:\\Program Files\\7-Zip\\7z.exe", "sevenzip_version": "23.01", "installed_by_tool": false },
+  "prereq": {
+    "archive_backend": "C:\\Program Files\\7-Zip\\7z.exe",
+    "sevenzip_version": "23.01",
+    "archive_backend_status": "ok",
+    "ocr_engine": "windows_media_ocr",
+    "ocr_languages_available": ["en-US"],
+    "ocr_languages_missing": ["zh-Hans"]
+  },
   "summary": {
     "total": 50,
     "installed": 12,
@@ -391,8 +422,9 @@ type PrereqManager interface {
           "exit_code": 0,
           "duration_sec": 45,
           "gui_actions": [
-            { "window": "Setup - Test", "control_text": "我接受", "action": "click", "at": "2026-09-30T09:41:02+08:00" },
-            { "window": "Setup - Test", "control_text": "安装", "action": "click", "at": "2026-09-30T09:41:15+08:00" }
+            { "window": "Setup - Test", "control_text": "我接受", "source": "uia", "action": "click", "at": "2026-09-30T09:41:02+08:00" },
+            { "window": "Setup - Test", "control_text": "安装", "source": "template", "action": "click", "at": "2026-09-30T09:41:15+08:00" },
+            { "window": "Setup - Test", "control_text": "下一步", "source": "ocr", "confidence": 0.78, "action": "click", "at": "2026-09-30T09:41:22+08:00" }
           ]
         }
       ],
@@ -411,9 +443,9 @@ type PrereqManager interface {
 | `triggered` | 进程成功启动并运行结束，但无安装成功证据（非安装类样本的正常结果） | triggered |
 | `killed_on_timeout` | 进程成功启动但被超时终结 —— 行为已被 EDR 采集，视为有效触发 | triggered（另计 timeout） |
 | `failed` | 所有方式均无法启动进程 | failed |
-| `skipped` | 无可用触发方式（空文件 / 文档无宿主程序等） | skipped |
+| `skipped` | 无可用触发方式（空文件 / 文档无宿主程序 / 前置依赖缺失等） | skipped |
 
-> 说明：v1.0 将 `timeout` 单列为负面结果，与触发语义冲突，v2.0 起并入触发成功口径；v2.1 新增 `install_completed`，区分"跑起来了"与"装成了"。
+> 说明：v1.0 将 `timeout` 单列为负面结果，与触发语义冲突，v2.0 起并入触发成功口径；v2.1 新增 `install_completed`，区分"跑起来了"与"装成了"；v2.3 在 `gui_actions` 中新增 `source`（uia/template/ocr）字段，用于回溯每个点击动作的识别来源与效果。
 
 #### F11 文件夹批量遍历
 
@@ -460,10 +492,20 @@ type PrereqManager interface {
 - 每次触发尝试期间，后台协程轮询该进程树的可见顶层窗口（默认每 500ms 一次，可配置）
 - 发现新窗口即进入控件识别流程；窗口关闭后回到监控状态
 
-**F14.2 控件识别（两级策略）**
+**F14.2 控件识别（三级策略，v2.3 新增 OCR 级）**
 
-1. **首选 UI Automation（UIA）**：读取控件树，获取按钮/输入框/复选框的文本、AutomationId 与屏幕坐标
-2. **兜底图像识别**：窗口未暴露 UIA 树（自绘界面）时，截图 + 按钮模板匹配定位
+| 级别 | 手段 | 适用场景 | 说明 |
+|------|------|---------|------|
+| 一级 | **UI Automation（UIA）** | 标准 Win32/WPF/WinForms 向导 | 读取控件树，取文本、AutomationId、屏幕坐标与角色，语义最准确 |
+| 二级 | **图像模板匹配** | 已知安装器家族、UIA 缺失 | 截图 + 按钮模板匹配定位；模板集内嵌、支持外部热更新 |
+| 三级 | **本地 OCR 文本定位（辅助）** | 自绘界面、模板未命中、未知安装器 | 离线识别窗口内文本及其**像素包围盒**，按语义关键词定位可点击项（详见 F14.6） |
+
+**融合与仲裁规则**
+
+1. **优先级**：UIA 命中 > 模板命中 > OCR 命中；同级内按语义优先级（如"安装"优先于"下一步"）与置信度排序
+2. **OCR 引导模板匹配**：OCR 先给出候选文本包围盒，在其外扩 ROI（默认 ±12px）内做模板精修，既提速又提高准确率
+3. **串行降级**：某级在合理时间内未取到候选时，才进入下一级，避免无谓开销
+4. 全部级别均不可用（无 UIA 树、无模板、OCR 未启用或语言包缺失）→ 记录 `gui_identify_failed`，按超时处理
 
 **图像模板初始覆盖清单（建议）**
 
@@ -471,13 +513,13 @@ type PrereqManager interface {
 |------|-----------|---------|
 | 第一梯队（必做） | Inno Setup、NSIS、InstallShield、Windows Installer 标准 UI（MSI）、WiX Burn | **UIA 应能覆盖，模板仅作兜底**；必须首轮验证并各存 2~3 张关键按钮模板 |
 | 第二梯队（建议做） | Advanced Installer、InstallAware、Setup Factory、Wise Installation Studio、Smart Install Maker | 老式向导自绘比例高，需模板支撑 |
-| 第三梯队（按需） | Electron/CEF 自绘安装器（多家国产软件）、游戏启动器型安装器 | 基本无 UIA 树，以模板识别为主 |
+| 第三梯队（按需） | Electron/CEF 自绘安装器（多家国产软件）、游戏启动器型安装器 | 基本无 UIA 树，**以模板 + OCR 协同识别为主** |
 
 **初始模板集建议为 8~12 张**：三大主流向导的「下一步 / 安装 / 完成 / 我接受（协议）」按钮各 1~2 张，加上第二梯队 2~3 个代表性安装器的关键按钮。模板按"安装器家族 + 界面语言"命名，避免重复。
 
 **模板库迭代机制**
 
-- 工具提供 `--dump-ui` 调试模式：输出窗口截图 + UIA 控件树 JSON，供人工标注后补充模板
+- 工具提供 `--dump-ui` 调试模式：输出窗口截图 + UIA 控件树 JSON + **OCR 识别结果（含包围盒）**，供人工标注后补充模板
 - 模板目录支持外部覆盖（`gui_automation.template_dir`），便于现场热更新，无需重新发版
 - 一次识别失败不视为永久失败，下次任务仍会重试匹配
 
@@ -492,8 +534,9 @@ type PrereqManager interface {
 | 拒绝类（黑名单，禁止点击） | 取消 / 退出 / 否 / 卸载 / Cancel / Exit / No / Uninstall | 不点击，仅记录 |
 
 - 同屏多个推进类按钮时按预置优先级选取（如"安装"优先于"下一步"）
-- 点击坐标加入微小随机偏移，避免固定坐标点击被反自动化识别
+- 点击坐标加入微小随机偏移（`click_jitter_px`），避免固定坐标点击被反自动化识别
 - 单窗口内同类动作设置次数上限，防止死循环点击
+- **文本归一化（v2.3）**：UIA 名称、模板名、OCR 文本统一按"去首尾空白 → 去除助记符 `&` → 全角转半角 → 折叠连续空白 → 大小写不敏感"后参与关键词匹配
 
 **F14.4 安装成功判定证据（满足任一即成功）**
 
@@ -505,9 +548,55 @@ type PrereqManager interface {
 **F14.5 边界与约束**
 
 - UAC 安全桌面无法自动化：沙箱镜像应关闭 UAC 弹窗或以最高权限运行（见第 11 节风险）
-- 全部键鼠动作写入 `gui_actions`（窗口标题 / 控件文本 / 动作 / 时间戳），可回放审计
+- 全部键鼠动作写入 `gui_actions`（窗口标题 / 控件文本 / 识别来源 / 动作 / 时间戳），可回放审计
 - 安装器进入"正在下载组件"状态（离线环境必然卡住）：记录 `requires_network`，按超时处理
 - 批量模式下需保证前台桌面可用（GUI 自动化依赖真实桌面会话）
+- **高 DPI 缩放**：截图得到的像素坐标与系统逻辑坐标须按窗口 DPI 比例换算（`GetDpiForWindow`），否则高 DPI 下会出现点击偏移；点击前校验目标坐标落在窗口矩形内
+- **OCR 使用边界**：仅在 UIA 与模板均未命中时启用；OCR 属于辅助手段，其失效不得导致整体流程失败
+
+**F14.6 本地 OCR 辅助定位（v2.3 新增，P0）**
+
+**定位目标**：窗口内按钮、复选框、输入框标签等**可见文本**，据此推算可点击像素位置。
+
+**引擎选择**
+
+| 引擎 | 说明 | 依赖 |
+|------|------|------|
+| `windows`（默认） | **Windows 内置 OCR（`Windows.Media.Ocr`，Win10 1809+）**：完全离线、无需随包文件、返回每行/词的 `BoundingRect` 像素坐标，与"像素位定位"需求天然契合 | 系统组件 + 语言包（`en-US` 通常内置；`zh-Hans` 需镜像预置） |
+| `tesseract`（可选） | 外部 `tesseract.exe` + 离线 `traineddata`，作为镜像裁剪掉系统 OCR 时的备选后端 | 环境预置（同 7-Zip 策略：仅检测 + 提示） |
+| `off` | 关闭 OCR，仅用 UIA + 模板 | 无 |
+
+> Go 调用 Windows 内置 OCR 需经 COM/WinRT 互操作（激活 `Windows.Media.Ocr.OcrEngine` 实例并调用其方法），属于本方案的主要技术风险点，M1 阶段须完成可行性验证（见第 11 节风险）。
+
+**识别与点击流程**
+
+1. 仅截取**活动窗口客户区**（缩小识别范围、降低噪声），必要时按 DPI 换算像素
+2. 调用 `OcrEngine.Recognize` 获取「文本 + 像素包围盒」列表
+3. 文本按 F14.3 规则归一化后与关键词表比对，判定语义类别
+4. **白名单/推进类命中**：取包围盒 → 外扩 `roi_padding_px` 形成 ROI → 优先在 ROI 内做模板精修（命中则用模板中心，更精确）；未命中模板则以包围盒中心为点击点
+5. **黑名单命中**：仅记录，绝不点击
+6. 最终点击点 = 目标中心 + 随机偏移（`click_jitter_px`），落点须在窗口矩形内
+7. 命中记录写入 `gui_actions`，`source: "ocr"`，并标注置信度评估值
+
+**置信度评估（用于仲裁与抑制误判）**
+
+Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
+
+- 关键词**完整词匹配**（非子串模糊命中）得高分
+- 包围盒尺寸合理（文字行高在 `min_text_height_px`~`max_text_height_px` 区间，默认 10~80px）得高分
+- 目标位于窗口下半部/右下角（多数向导按钮区）适度加分
+- 同窗同时命中多个候选时，分数高者优先；分数接近时取预置语义优先级
+
+**性能与缓存**
+
+- 单次窗口 OCR 目标耗时 ≤ 300ms；对同一窗口截图做哈希，画面未变化时复用上次结果，避免无效重复 OCR
+- OCR 与模板/ UIA 的识别流程串行执行，避免同时占用前台资源影响样本行为
+
+**降级与容错**
+
+- OCR 引擎不可用（系统组件被裁剪、非 Windows、引擎初始化失败）→ 记录 `ocr_unavailable`，自动降级为「UIA + 模板」，**不中断流程**
+- 语言包缺失（如仅有 `en-US` 而界面为中文）→ 记录 `ocr_lang_missing`，仍尝试用现有语言包识别，效果不佳时自然回落到模板
+- 同一窗口 OCR 触发动作次数计入 `max_actions_per_window`，防止误识别导致的重复点击
 
 #### F15 安装结果验证与证据采集
 
@@ -516,14 +605,55 @@ type PrereqManager interface {
 - 未取得证据但进程正常运行结束 → `triggered`；仅被超时终结 → `killed_on_timeout`
 - 采集应在安装器退出后再等待一个稳定期（默认 3 秒，可配置），避免写入延迟导致误判
 
-#### F16 前置依赖自检与自动安装（7-Zip）
+#### F16 前置依赖自检与用户提示（7-Zip / OCR 语言包）
 
-- **探测顺序**：配置指定路径 → 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 `Wow6432Node`）→ `PATH` 查找 → 常见默认路径（`C:\Program Files\7-Zip\7z.exe`、`C:\Program Files (x86)\7-Zip\7z.exe`）
-- **自动安装**：均未命中且配置允许时，若**工具同目录存在离线安装包**（`7z*.msi` 或 `7z*.exe`），按 F4 逻辑静默安装（MSI：`msiexec /i ... /quiet /norestart`；EXE：`/S`），安装后复检
-- **安装包来源**：随介质提供，工具**不联网下载**
-- **失败处理**：仍不可用则以退出码 `4` 明确失败（除非 `--no-archive`），**不静默降级**（不内嵌解压实现）
-- `--check-prereq` 可单独执行自检并输出报告（供镜像构建阶段验证）
-- 自检结果写入结果 JSON 的 `prereq` 字段
+**定位（v2.3 定案）**：本工具为**免安装单文件**，**不代为安装任何环境前置依赖**。前置依赖由镜像构建阶段或运维负责预置，工具只做"检测 → 提示 → 明确退出"。
+
+**F16.1 7-Zip 检测**
+
+- **探测顺序**：配置指定路径（`archive.sevenzip_path`，非 `auto` 时优先）→ 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 `Wow6432Node`）→ `PATH` 查找 → 常见默认路径（`C:\Program Files\7-Zip\7z.exe`、`C:\Program Files (x86)\7-Zip\7z.exe`）
+- 命中后记录路径与版本到结果 JSON 的 `prereq` 字段
+
+**F16.2 缺失时的行为（关键）**
+
+1. **不静默降级**（不内嵌解压实现）、**不代为安装**（不调用任何安装包）
+2. 在 stdout 与日志输出**明确的用户提示**，内容至少包含：缺失项、影响范围、安装方式（含官方离线包文件名与静默安装命令示例）、绕过方式
+3. **输入中不含压缩包** → 继续正常处理其余样本，仅在 `prereq.archive_backend_status` 标记 `missing` 并在汇总处告警
+4. **输入中含压缩包** → 相关文件记 `skipped: prereq_missing`；若非 `--no-archive`，任务结束时以**退出码 4** 结束
+5. `--no-archive` → 显式跳过压缩包处理，继续跑其余样本，不报错
+
+**提示文案要求（示例）**
+
+```
+[ERROR] 前置依赖缺失：未检测到 7-Zip
+        影响：压缩包类样本（zip / 7z / rar / tar / gz / iso 等）无法解压处理
+        解决方式（离线环境，任选其一）：
+          1) 以管理员身份运行离线安装包：msiexec /i 7z<版本>-x64.msi /quiet /norestart
+          2) 运行离线安装包：7z<版本>-x64.exe /S
+          3) 已解压的绿色版：将 7z.exe 目录加入 PATH，或在 config.json 中设置 archive.sevenzip_path
+        临时绕过（跳过压缩包，继续处理其余样本）：AutoTrigger.exe --no-archive ...
+        仅检查环境：AutoTrigger.exe --check-prereq
+```
+
+**F16.3 OCR 语言包检测（可选增强）**
+
+- 启动时检测系统可用 OCR 语言（`ocr.languages`，默认 `zh-Hans, en-US`）
+- 缺失语言包仅**告警 + 自动降级**（不报错、不影响退出码），提示内容说明如何离线安装语言包
+
+**F16.4 `--check-prereq`**
+
+- 单独执行环境自检并输出人类可读报告（供镜像构建/部署前验证），不含样本处理
+- 全部满足 → 退出码 0；7-Zip 缺失 → 退出码 4
+
+**F16.5 前置依赖清单（部署检查表）**
+
+| 依赖 | 必需性 | 缺失后果 | 检测/处理 |
+|------|--------|---------|----------|
+| 7-Zip | 必需（除非 `--no-archive`） | 压缩包样本无法处理；含压缩包时退出码 4 | F16.1 / F16.2 |
+| OCR 语言包（`zh-Hans` 等） | 可选 | 中文自绘界面 OCR 识别率下降，自动降级为 UIA + 模板 | F16.3 |
+| tesseract（仅当 `ocr.engine=tesseract`） | 可选 | OCR 后端不可用，自动降级 | F16.3 |
+
+> 该"检测 + 提示 + 不代装"策略同样适用于后期新增的任何前置依赖。
 
 ---
 
@@ -531,17 +661,17 @@ type PrereqManager interface {
 
 | 类别 | 要求 |
 |------|------|
-| 性能 | 单文件触发不超过配置超时；批量并发度可配置（默认串行，避免干扰 EDR 与 GUI 自动化） |
-| 稳定性 | 单文件失败不影响整体流程；全局看门狗防挂死（F9）；无协程泄漏 |
+| 性能 | 单文件触发不超过配置超时；批量并发度可配置（默认串行，避免干扰 EDR 与 GUI 自动化）；单次窗口 OCR 目标 ≤ 300ms |
+| 稳定性 | 单文件失败不影响整体流程；全局看门狗防挂死（F9）；无协程泄漏；OCR/模板任一失败均可降级 |
 | 兼容性 | Windows 10 1809+ / Windows 11 / Server 2016+；架构预留 Linux / macOS |
 | 权限 | 以管理员权限运行（静默安装需要）；启动时自检权限，无管理员权限则告警并继续；沙箱镜像建议关闭 UAC 弹窗以允许 GUI 自动化 |
 | 日志 | 除 JSON 结果外，输出可读日志到 stdout 与文件（时间戳、级别、文件名、阶段）；日志与 JSON 结果分流，不混写 stdout |
-| 可配置 | 超时、并发度、递归深度、解压大小上限、尝试间隔与次数、参数表、按钮关键词表均可配置 |
-| 无残留 | 退出前清理临时目录；不修改系统默认文件关联 |
+| 可配置 | 超时、并发度、递归深度、解压大小上限、尝试间隔与次数、参数表、按钮关键词表、OCR 引擎与语言、模板目录均可配置 |
+| 无残留 | 退出前清理临时目录；不修改系统默认文件关联；**不写入注册表、不产生安装残留**（免安装约束） |
 | 可移植 | 核心层不依赖 Windows API；平台相关逻辑全部走适配层 |
 | 可维护 | 见 7.3 工程规范：接口由使用方定义、依赖注入、`gofmt`/`go vet`/`golangci-lint` 零 error、core 层单测覆盖率 ≥ 70% |
-| 离线 | 全程不访问网络；环境前置缺失时用同介质离线包安装 |
-| 分发 | **单一可执行文件**（Go 静态编译）：无外部运行时、无安装步骤、解压即用；如启用 7-Zip 自动安装，则将离线安装包与 exe 同目录分发 |
+| 离线 | 全程不访问网络；前置缺失时只提示、不下载、不安装 |
+| 分发 | **单一可执行文件、免安装**：拷贝即用、无安装步骤、无外部运行时、无随包依赖；可选 `config.json` / `templates/` 均为外部可选项 |
 
 ### 6.1 工具自身退出码表
 
@@ -551,7 +681,7 @@ type PrereqManager interface {
 | 1 | 工具自身运行期异常崩溃 |
 | 2 | 输入参数/路径非法，未开始处理 |
 | 3 | 配置文件解析失败 |
-| 4 | 前置依赖缺失（7-Zip 不可用且自动安装失败） |
+| 4 | **前置依赖缺失（未检测到 7-Zip）—— 工具已提示用户先安装，不代为安装** |
 
 ---
 
@@ -565,10 +695,11 @@ type PrereqManager interface {
 | 构建 | `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o AutoTrigger.exe ./cmd/autotrigger` |
 | 跨平台策略 | Core 层平台无关；Platform Adapter 分平台实现（`_windows.go` 构建标签隔离） |
 | 进程树管理 | Windows：Job Object（`syscall`/中继库）；Linux/macOS：进程组 |
-| 文件解压 | **外部 7-Zip 命令行**（环境预置 / F16 自动静默安装），不引入解压库、不使用 CGO |
+| 文件解压 | **外部 7-Zip 命令行**（环境需预置）；工具**仅检测与提示**，不引入解压库、不使用 CGO |
 | 文件头识别 | 自实现魔数表（约 20 条），`go:embed` 内嵌 |
-| GUI 自动化 | Windows UIA（通过 `syscall` + COM 中继库调用）+ SendInput 键鼠注入 + 模板匹配兜底；**禁止 CGO** |
-| 截图与模板匹配 | 使用系统 GDI 截屏 API + 自实现模板匹配（纯 Go），避免 OpenCV/CGO |
+| GUI 自动化 | Windows UIA（`syscall` + COM 中继库调用）+ SendInput 键鼠注入 + 自实现模板匹配（纯 Go，不引入 OpenCV/CGO） |
+| **OCR 辅助** | **默认 Windows 内置 OCR（`Windows.Media.Ocr`）**：经 COM/WinRT 互操作调用，离线、无需随包文件、返回像素包围盒；可选后端 `tesseract.exe`（环境预置）；**禁止 CGO** |
+| 截图 | 系统 GDI 截屏 API（`BitBlt`/`PrintWindow`），纯 Go 封装 |
 | 结果输出 | JSON（主结果）+ 文本日志（辅助），仅写本地文件 |
 | 配置与资源 | 默认值、参数表、关键词表、图像模板 `go:embed` 内嵌；支持外部同名文件覆盖 |
 | 静态检查 | `gofmt` / `go vet` / `golangci-lint`（errcheck、govet、staticcheck、revive、gocritic） |
@@ -577,12 +708,13 @@ type PrereqManager interface {
 
 | 要求 | 说明 |
 |------|------|
-| 产物 | 单个 `AutoTrigger.exe`，放任意目录可运行，无需安装、无需 Go 环境 |
+| 产物 | **单个 `AutoTrigger.exe`**，放任意目录可运行，**免安装、无需 Go 环境** |
 | 无运行时依赖 | `CGO_ENABLED=0` 静态编译，目标机无需 Go / .NET / VC++ Redist |
+| 无随包依赖 | 交付物**不携带**安装包、脚本、动态库；OCR 使用系统组件，不随包分发模型文件 |
 | 无网络依赖 | 校验与版本信息不得联网查询 |
 | 体积控制 | 目标 ≤ 30 MB（模板与关键词表资源压缩内嵌） |
-| 可选同目录文件 | `7z*.msi` / `7z*.exe`（仅当需要自动预置 7-Zip 时）、`config.json`（可选覆盖） |
-| 验证 | 在未安装任何运行时的干净镜像上冒烟测试（对应验收 A14） |
+| 可选同目录文件（均非必需） | `config.json`（外部配置覆盖）、`templates/`（额外图像模板）；两者缺失时使用内嵌默认值 |
+| 验证 | 在**未安装 Go 及任何运行时、无网络**的干净镜像上，仅拷贝单个 exe 即可完成全部功能（对应验收 A14） |
 
 ### 7.3 工程规范与架构约束（高内聚、低耦合）
 
@@ -594,7 +726,9 @@ internal/core/                   # 平台无关核心：调度、类型识别、
 internal/core/ports/             # 接口定义（使用方定义接口，随 core 走）
 internal/platform/windows/       # Windows 适配：进程/Job Object、UIA、注册表、文件系统证据
 internal/platform/linux/         # 空实现占位（编译期可选）
-internal/prereq/                 # 7-Zip 探测与静默安装
+internal/prereq/                 # 7-Zip / OCR 语言包探测与用户提示（不执行安装）
+internal/ocr/                    # OCR 引擎适配：系统内置 OCR、tesseract 后端、关闭实现
+internal/gui/                    # GUI 识别编排：UIA/模板/OCR 三级仲裁、键鼠注入
 internal/resources/              # go:embed 内嵌资源（魔数表/参数表/关键词表/模板）
 internal/config/                 # 配置加载与合并（默认值 < 文件 < 命令行）
 internal/logging/                # 日志接口与实现
@@ -606,25 +740,26 @@ testdata/                        # 测试样本与期望结果
 
 | 约束 | 说明 |
 |------|------|
-| 依赖方向 | `cmd → core → ports`；适配层实现 ports，**core 永不 import platform** |
+| 依赖方向 | `cmd → core → ports`；适配层实现 ports，**core 永不 import platform / ocr / gui 具体实现** |
 | 接口归属 | 接口由使用方（core）定义，禁止"实现方定义接口" |
 | 依赖注入 | 统一在 `main` 装配；core 内不得 `new` 具体实现、不得使用包级全局状态 |
 | 禁止 CGO | 全部依赖纯 Go 或 `syscall`/中继库，保证静态单文件 |
+| 识别策略可插拔 | UIA / 模板 / OCR 三级识别实现同一 `Control` 模型，新增识别手段不需改 core 编排逻辑 |
 | 错误处理 | `fmt.Errorf("...: %w", err)` 包裹 + `errors.Is/As` 判定；不用 panic 控制流程；错误须带上下文（文件、阶段） |
 | 并发 | 统一 `context.Context` 传递取消与超时；`errgroup` 控制并发；`defer cancel()` 防泄漏 |
 | 配置与资源 | 全部经 `config` / `resources` 包访问，禁止散落硬编码常量与路径 |
 | 命名与注释 | 导出标识符必须有 doc comment；单文件建议 ≤ 400 行；包职责单一 |
-| 测试 | core 层单测覆盖率 ≥ 70%；适配层以表驱动测试覆盖关键路径；Windows API 交互通过接口 mock，测试不依赖真实安装器 |
+| 测试 | core 层单测覆盖率 ≥ 70%；适配层以表驱动测试覆盖关键路径；Windows API / OCR 交互通过接口 mock，测试不依赖真实安装器与真实 OCR |
 | 静态检查 | CI（或提交前脚本）执行 `gofmt -l`、`go vet`、`golangci-lint run`，要求零 error |
 | 日志 | 统一 logger 接口；禁止 `fmt.Println` 直接写 stdout 干扰结果解析 |
 
-### 7.4 7-Zip 依赖与自动安装（替代内嵌降级方案）
+### 7.4 7-Zip 前置依赖（检测 + 提示，不代装）
 
 1. **能力来源**：压缩包支持（zip / 7z / rar / tar / gz / iso 等）**完全由外部 7-Zip 提供**，工具不自研、不内嵌解压实现，也不做"运行时释放内嵌 7z.exe"的降级
-2. **探测顺序**：配置指定路径 → 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 Wow6432Node）→ `PATH` → 常见默认路径
-3. **自动安装**：未命中且允许时，用**同目录离线安装包**静默安装（MSI `/quiet /norestart`；EXE `/S`），随后复检
-4. **失败处理**：仍不可用 → 退出码 `4` 明确失败；或按 `--no-archive` 跳过压缩包处理继续运行
-5. **前置约定**：**推荐镜像构建时预置 7-Zip**，自动安装仅作为兜底（镜像预置更可控、避免每台机器重复安装）
+2. **部署前提**：**由镜像构建或运维预先安装 7-Zip**；工具**不随包分发安装包、不代为安装**
+3. **探测顺序**：配置指定路径 → 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 Wow6432Node）→ `PATH` → 常见默认路径
+4. **缺失处理**：输出 F16.2 规定的用户提示 → 含压缩包样本时以退出码 `4` 结束；可用 `--no-archive` 跳过压缩包继续处理其余样本
+5. **部署建议**：推荐镜像构建阶段预置 7-Zip 并在构建流程末尾执行 `AutoTrigger.exe --check-prereq` 作为卡点校验，避免运行时才发现缺失
 
 ### 7.5 config.json 结构（全部字段有内嵌默认值，可选覆盖）
 
@@ -638,8 +773,7 @@ testdata/                        # 测试样本与期望结果
     "max_depth": 3,
     "max_extract_size_bytes": 2147483648,
     "sevenzip_path": "auto",
-    "auto_install_sevenzip": true,
-    "prereq_package_dir": "."
+    "require_sevenzip": true
   },
   "gui_automation": {
     "enabled": true,
@@ -648,6 +782,16 @@ testdata/                        # 测试样本与期望结果
     "max_actions_per_window": 10,
     "keyword_file": "buttons.zh-CN.json",
     "template_dir": "templates"
+  },
+  "ocr": {
+    "enabled": true,
+    "engine": "windows",
+    "languages": ["zh-Hans", "en-US"],
+    "roi_padding_px": 12,
+    "min_text_height_px": 10,
+    "max_text_height_px": 80,
+    "cache_by_screenshot_hash": true,
+    "tesseract_path": "auto"
   },
   "install_verify": {
     "settle_sec": 3,
@@ -658,21 +802,23 @@ testdata/                        # 测试样本与期望结果
 }
 ```
 
+> `sevenzip_path` / `tesseract_path` 取值为 `auto` 时按 F16.1 探测顺序自动查找；`require_sevenzip: false` 等价于默认启用 `--no-archive` 行为。
+
 ---
 
 ## 8. 交付物
 
 | 编号 | 交付物 |
 |------|--------|
-| D1 | **单一可执行文件** `AutoTrigger.exe`（Go 静态编译，目标机无需运行时；Linux / macOS 预留接口与空实现） |
-| D2 | 外部覆盖配置模板（config.json，可选） |
-| D3 | 可外部编辑的参数/关键词表（silent_params.windows.json、buttons.zh-CN.json）与图像模板目录（含 F14.2 初始模板集） |
+| D1 | **单一可执行文件** `AutoTrigger.exe`（Go 静态编译，**免安装、拷贝即用**，目标机无需运行时；Linux / macOS 预留接口与空实现） |
+| D2 | 外部覆盖配置模板（config.json，**可选**，缺失时使用内嵌默认值） |
+| D3 | 可外部编辑的参数/关键词表（silent_params.windows.json、buttons.zh-CN.json）与图像模板目录（含 F14.2 初始模板集，均为可选覆盖） |
 | D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3） |
-| D5 | 使用说明文档（README：离线部署、7-Zip 前置要求、退出码表、`--check-prereq` / `--dump-ui` 用法） |
-| D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / 需联网 / 装不成功 四类） |
+| D5 | 使用说明文档（README：**免安装部署方式**、7-Zip 前置要求与安装指引、OCR 语言包说明、退出码表、`--check-prereq` / `--dump-ui` / `--no-archive` 用法） |
+| D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / 自绘界面 OCR 定位 / 需联网 / 装不成功 / 前置缺失 六类） |
 | D7 | 结果 JSON Schema 文件（供下游流水线校验） |
 | D8 | 构建与检查脚本（Makefile / build.ps1：静态构建 + gofmt/vet/lint + 单测覆盖率） |
-| D9 | 环境前置说明与 7-Zip 离线安装包放置规范（镜像构建指引） |
+| D9 | **环境前置检查表与镜像构建指引**（7-Zip 安装位置与验证命令、OCR 语言包预置方式、`--check-prereq` 卡点用法） |
 
 ---
 
@@ -693,10 +839,12 @@ testdata/                        # 测试样本与期望结果
 | A11 | 退出码 | 参数非法→2，配置错误→3，前置依赖缺失→4，正常完成→0 |
 | A12 | GUI 自动化安装 | 对向导式安装器样本（Inno Setup / NSIS / InstallShield），能通过 UIA 完成"同意 → 下一步 → 安装 → 完成"点击链 |
 | A13 | 安装成功判定 | 静默与 GUI 两条路径均能产出 `install_completed` 并附证据，且**无误报**（未装成功不得标记） |
-| A14 | 单一二进制分发 | 在**未安装 Go / 任何运行时、无网络**的干净 Windows 镜像上，仅拷贝单个 exe 即可完成全部功能 |
+| A14 | 免安装单文件交付 | 在**未安装 Go / 任何运行时、无网络**的干净 Windows 镜像上，仅拷贝单个 exe 即可完成全部功能；全程无安装步骤、无注册表残留 |
 | A15 | 离线合规 | 全程无外连行为；安装器联网等待场景标记 `requires_network` 并按超时结束 |
-| A16 | 7-Zip 前置依赖 | ① 预置场景直接可用；② 未预置且同目录有离线包时能自动静默安装成功并复检通过；③ 两者皆不可用时以退出码 4 明确失败，不静默降级 |
+| A16 | 7-Zip 前置依赖处理 | ① 已预置时功能正常；② **未预置时输出明确安装提示（含离线安装命令）并以退出码 4 结束，全程不尝试自行安装**；③ `--no-archive` 可跳过压缩包继续处理其余样本；④ `--check-prereq` 报告准确反映实际状态 |
 | A17 | 代码质量 | `gofmt`/`go vet`/`golangci-lint` 零 error；core 层单测覆盖率 ≥ 70%；构建产物为单文件且 `CGO_ENABLED=0` |
+| A18 | OCR 辅助定位 | 对**无 UIA 控件树的自绘安装器**，能通过本地 OCR 定位"下一步/安装"等按钮文本像素位并成功点击推进（`gui_actions` 中 `source: "ocr"`）；**OCR 引擎或语言包不可用时自动降级为 UIA + 模板且不中断流程** |
+| A19 | OCR 安全边界 | OCR 识别到"取消/卸载"等黑名单文本时**不产生点击动作**；OCR 点击次数受单窗口动作上限约束 |
 
 ---
 
@@ -704,9 +852,9 @@ testdata/                        # 测试样本与期望结果
 
 | 里程碑 | 内容 | 覆盖功能 |
 |--------|------|---------|
-| M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + 超时清理 + JSON 输出 + 7-Zip 自检 | F1 F2 F3 F4 F5 F9 F10 F13 F16 |
-| M2 安装成功能力 | GUI 弹窗自动化 + 安装证据判定 + 文件夹遍历 + 压缩包递归 + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 |
-| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README、离线环境冒烟、lint 与覆盖率达标 | D1~D9、A8~A17 |
+| M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + 超时清理 + JSON 输出 + **7-Zip 自检与用户提示** + **OCR 引擎可行性验证（WinRT 调用 spike）** | F1 F2 F3 F4 F5 F9 F10 F13 F16 |
+| M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 三级识别**）+ 安装证据判定 + 文件夹遍历 + 压缩包递归 + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 |
+| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README、离线环境冒烟、lint 与覆盖率达标 | D1~D9、A8~A19 |
 
 ---
 
@@ -718,14 +866,18 @@ testdata/                        # 测试样本与期望结果
 | 安装器需联网下载组件 | 离线环境按超时处理并标记 `requires_network`，不做网络补偿 |
 | 安装程序卡在 GUI 等待输入 | 超时强制结束并记录；有 F14 时优先由 GUI 自动化推进 |
 | 压缩包嵌套过深或 zip 炸弹 | 递归深度限制（默认 3 层）+ 解压大小限制（默认 2 GB） |
-| **目标机未预置 7-Zip** | 启动自检 + 同介质离线包自动静默安装；仍失败以退出码 4 明确失败，不静默降级 |
+| **目标机未预置 7-Zip** | 启动自检 + **明确提示用户先安装**（含离线安装命令与绕过方式）+ 退出码 4；`--no-archive` 可跳过压缩包继续处理；镜像构建阶段用 `--check-prereq` 卡点 |
 | 静默参数抑制行为或直接失败 | 静默与无参数两种模式均作为独立尝试执行，尽量多试（F3/F13） |
 | UAC 安全桌面拦截自动化点击 | UIA 无法作用于安全桌面；沙箱镜像关闭 UAC 弹窗或工具随系统自启于最高权限 |
-| GUI 自动化误点（取消/卸载类按钮） | 黑名单关键词禁止点击（F14.3）；全部键鼠动作留痕可回放审计 |
+| GUI 自动化误点（取消/卸载类按钮） | 黑名单关键词禁止点击（F14.3），**OCR 结果同样受黑名单约束**；全部键鼠动作留痕可回放审计 |
 | GUI 自动化在无桌面会话（Session 0）失效 | 明确要求前台桌面可用；批量模式默认串行，避免抢焦点 |
-| 自绘安装器无 UIA 树导致识别失败 | 图像模板兜底 + `--dump-ui` 采集补模板 + 模板目录外部热更新 |
+| 自绘安装器无 UIA 树导致识别失败 | 图像模板兜底 + **本地 OCR 文本定位辅助** + `--dump-ui`（含 OCR 结果）采集补模板 + 模板目录外部热更新 |
+| **Go 调用 Windows 内置 OCR（WinRT/COM）实现复杂度高** | M1 立项 spike 验证可行性；封装在 `internal/ocr` 并以 `OcrEngine` 接口隔离，失败时可切换到可选 tesseract 后端或直接降级为 UIA + 模板，**不影响主链路** |
+| **OCR 语言包缺失 / 镜像裁剪掉系统 OCR 组件** | 启动自检纳入语言包探测（F16.3）；缺失时告警并自动降级、记录 `ocr_lang_missing` / `ocr_unavailable`，不中断流程 |
+| **OCR 误识别导致误点** | 完整词匹配 + 包围盒尺寸合理性 + 黑名单优先 + 单窗口动作上限 + 全量留痕审计（F14.6） |
+| **高 DPI 缩放导致 OCR/模板点击坐标偏移** | 截图坐标按窗口 DPI 换算；点击前校验目标坐标在窗口矩形内（F14.5） |
 | 安装成功误判（退出码 0 但实际未装） | F15 多重证据（落盘/注册表/完成页）+ 退出后稳定期 |
-| Go 生态调用 Windows API / COM | 使用 `syscall` + 成熟中继库，禁止 CGO；对 UIA 交互做接口隔离以便 mock 测试 |
+| Go 生态调用 Windows API / COM | 使用 `syscall` + 成熟中继库，禁止 CGO；对 UIA / OCR 交互做接口隔离以便 mock 测试 |
 | 工具自身被样本攻击 | 运行在沙箱内，崩溃不波及宿主机；建议工具与样本进程隔离 |
 | EDR 与工具进程冲突 | 工具自身进程可加入 EDR 白名单，避免误报 |
 | 跨平台抽象过度设计 | 本期只实现 Windows 适配层，接口保持最小可用，后期按需扩展 |
@@ -737,14 +889,15 @@ testdata/                        # 测试样本与期望结果
 
 | 编号 | 问题 | 影响 |
 |------|------|------|
-| Q1 | 7-Zip 由镜像统一预置（推荐），还是依赖工具自动静默安装兜底？（决定是否需随介质分发安装包） | 影响 7.4、D9 与部署流程 |
 | Q2 | `.dll` 触发用 rundll32 探测导出函数的数量与选取策略（按导出表顺序 / 关键字优先 / 随机）？ | 影响 F3 与 EDR 采集效果 |
 | Q3 | 批量场景下单文件结束后是否需要"冷却间隔"（如 5 秒），让 EDR 完成行为上报落盘？ | 影响 F11 与 EDR 对接效果 |
 | Q4 | 结果 JSON 的交付方式？（离线环境无上传通道：本地文件 / 共享目录 / 人工拷贝） | 影响 F10 输出通道 |
 | Q5 | 是否需要保留同一文件多次任务的尝试历史（用于"触发方式优先级动态调整"）？ | 影响结果存储设计 |
 | Q6 | 安装成功是否需要更强证据（如启动安装后的程序验证可用性）？ | 影响 F15 判定精度与工作量 |
+| Q7 | OCR 引擎最终方案：**Windows 内置 OCR 作为默认是否可行**（需 M1 spike 验证 WinRT 调用）？若不可行，是否接受预置 tesseract 作为环境前置？ | 影响 7.1、F14.6 与镜像前置清单 |
+| Q8 | 中文 OCR 语言包（`zh-Hans`）是否统一在镜像预置？其体积较大且需离线分发，若不确定则建议先按"仅 en-US + 降级"验收 | 影响镜像构建、F16.3 与验收 A18 |
 
-> 已决策项（不再讨论）：交付形态（单文件）、语言（Go）、解压后端（外部 7-Zip，不降级）、主目标（安装成功优先）、环境（离线）—— 见 1.2。
+> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、GUI 识别策略（UIA → 模板 → OCR 三级）、主目标（安装成功优先）、环境（离线）—— 见 1.2。
 
 ---
 
@@ -757,6 +910,7 @@ testdata/                        # 测试样本与期望结果
 - 支持触发方式优先级动态调整（基于历史成功率）
 - 支持分布式批量触发（多沙箱并行）
 - GUI 自动化模板库众包扩充（按安装器家族沉淀模板）
+- **OCR 结果与模板/ UIA 的融合策略持续调优（按键位区域先验、按钮样式聚类）**
 - 触发成功率看板（按安装器家族统计安装成功 / 触发成功比例）
 
 ---
