@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.6（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
+| 版本 | v2.7（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · **判定口径定案为「宽松 / 宁可多报」（F15.7、DC19）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
 | 状态 | 待开发 |
 | 目标平台 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
@@ -53,6 +53,8 @@
 | C31 | **新增安装成功证据分级与基线快照**：原 F14.4/F15 的"四类证据满足任一即成功"过于宽松——安装器退出码 0 存在大量假成功（bootstrapper 解压后立即退出、部分 InstallShield 恒返回 0），且"出现**新增**文件 / **新增**卸载项"在原文中**未定义基线**，无从判定"新增"。改为：① 证据分 **S/A/B 三级**（S：注册表卸载项 diff / 文件系统落盘 diff / MSI 官方成功码 / `MsiInstaller` 事件 11707；A：通用退出码 0 / 完成页被点击；B：安装日志成功关键字）；② **判定前必须先做基线快照**（F15.2）：注册表三处 Uninstall 根（HKLM + Wow6432Node + **HKCU**）+ 文件系统 `watch_dirs` + **`MsiInstaller` 事件日志水位线**；③ `install_completed` 收紧为"**至少 1 条 S 级证据，或 ≥2 条 A 级证据**"；④ 仅弱证据不再判成功，新增状态 `install_unverified` | 原验收口径会让"假成功"被计入已安装，直接污染下游判定 |
 | C32 | **新增反证据机制与安装后校验**：原方案只收集正面证据，无法识别"看着成功实则失败/回滚"。新增 **F15.3 反证据**（失败类退出码、GUI 失败页与回滚提示、`MsiInstaller` **11724 卸载事件**、卸载键消失、`watch_dirs` 文件数减少）并规定**反证据优先于正面证据**，冲突时降级为 `install_partial` 并写 `evidence_conflicts`；新增 **F15.4 安装后校验**（校验卸载项指向的主程序存在且为有效 PE，`launch_check` 默认关闭）；新增 **F15.5 已安装检测**（`pre_installed`），解决第三方重复调用时的假阴性 | 结果可靠性核心：只报喜不报忧等于不可用 |
 | C33 | **超时策略改为「活动感知 + 分阶段」**：原 F9 仅有单文件固定 120s 超时。安装耗时差异极大（Inno/NSIS 数秒~1 分钟，Office/VS 类 10 分钟以上），固定超时必然"该等的没等、该杀的没杀"。改为四段式：**启动期超时**（进程无任何动作）/ **静默期超时**（无进展信号才计时）/ **单文件硬上限**（默认 600s）/ **任务级上限**；进展信号包括 CPU 时间增长、目标目录写入、子进程新增、窗口与进度变化、注册表变化；超时后**先优雅关闭再终止进程树**，且**超时后仍执行 F15 证据采集**（可能已部分安装） | 直接决定"安装时间过长"时是等还是杀，以及杀完之后结果怎么报 |
+| C34 | **定案「安装成功判定口径为宽松（宁可多报）」**：测试团队选择**减少漏判（假阴性）优先**——"实际装成但只拿到中/弱证据"的软件应尽量计入 `install_completed`。据此**放宽 F15.7 阈值**（≥1 条 A 级或 ≥2 条 B 级即可判完成，不再强制"≥2 条 A 且含 A1/A2"），并引入 `install_verify.judgment_profile`（`loose` 默认 / `strict` 可选）。**同时定案 `verify.launch_check` 暂不开启**（维持默认 `false`），本期不做"真正启动一次"的重量校验 | 需求决策：验收口径由测试团队给出（Q17 答复） |
+| C35 | **定案 `watch_dirs` 默认全量包含用户/数据目录 + 临时目录排除**：默认监控范围由"仅 Program Files 两处"扩展为**五处**（`C:\Program Files`、`C:\Program Files (x86)`、`%ProgramData%`、`%LOCALAPPDATA%`、`%APPDATA%`），与示例配置（7.5）对齐；并新增 `watch_exclude`（默认排除 `%TEMP%` / `%LOCALAPPDATA%\Temp` 及各类缓存目录）避免临时落盘造成假阳性。修正原文档"默认仅两处、建议追加"与示例配置"已含五处"的**自相矛盾** | 避免 per-user 安装与绿色版漏判（Q18 答复），与"宁可多报"口径一致 |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
@@ -73,9 +75,10 @@
 | DC13 | **工具使用极简、部署一并交付**：运维只需两层动作——① 按**部署说明文档**安装交付包内的第三方离线包（7-Zip / OCR 引擎）；② 拷贝 `AutoTrigger.exe` 到运行目录。**工具本体不含任何安装逻辑**（不代为安装、不释放文件、不写注册表） | 8.1、8.3、F16 |
 | DC14 | **OCR 引擎维持现选**：`PaddleOCR-json`（默认）+ `RapidOCR-json`（免 AVX 备选），**不引入 Python / PyTorch / GPU 依赖，不引入文档解析类或 VLM 类模型**；外部候选评估结论见 7.7 | 7.1、7.6、7.7 |
 | DC15 | **输出通道严格分流**：**stdout 只承载机器可读输出**（`--dump-config` 的配置 JSON、`--output -` 的结果 JSON），**日志一律走 stderr + 日志文件**，绝不写 stdout；结果 JSON 采用**原子写**、固定字段恒存在、失败路径亦产出结构完整产物，保证下游可无条件解析（详见 F10.1~F10.3、验收 A28） | F10.1、6、7.1、3.3 |
-| DC16 | **安装成功判定以「证据分级 + 基线 diff」为准**：`install_completed` 需 **≥1 条 S 级证据或 ≥2 条 A 级证据**；仅弱证据判 `install_unverified`；检测到明确未完成/回滚判 `install_partial`；结果附 `install_confidence`。**能力边界明确声明**：本工具判定的是"安装器是否完成了安装动作"，**不等于"软件可正常使用"**（依赖缺失、需重启、需激活等不在判定范围） | F15、F10、A29 |
+| DC16 | **安装成功判定以「证据分级 + 基线 diff」为准**：判定阈值见 **DC19（宽松 / 宁可多报，默认）**——`install_completed` 需「≥1 条 S **或** ≥1 条 A **或** ≥2 条 B」，仅 1 条 A1 且无副作用等弱证据判 `install_unverified`；检测到明确未完成/回滚判 `install_partial`；结果附 `install_confidence`。**能力边界明确声明**：本工具判定的是"安装器是否完成了安装动作"，**不等于"软件可正常使用"**（依赖缺失、需重启、需激活等不在判定范围） | F15、F10、A29 |
 | DC17 | **超时采用活动感知（无进展才计时）**：默认 `startup_timeout_sec: 30`、`idle_timeout_sec: 60`、`timeout_sec: 600`（单文件硬上限）、`task_timeout_sec: 0`（任务级，0 = 不限）；超时后**先优雅关闭、再终止进程树**，且**仍采集安装证据** | F9、7.5、A30 |
 | DC18 | **对第三方暴露稳定集成契约**：CLI 参数、退出码语义、stdout/stderr 通道、结果 JSON Schema **只做加法**（枚举只增不改、固定字段恒存在、破坏性变更才升主版本）；单实例锁防并发实例互相污染安装证据 diff；`--capabilities --json` 供调用方做能力/版本协商；**调用方以结果 JSON 为唯一判定依据，不得用退出码推断单文件结果** | F19、A31 |
+| DC19 | **判定口径定案为「宽松 / 宁可多报」**（测试团队给出）：`install_completed` 阈值放宽为「≥1 条 S 级 **或** ≥1 条 A 级（A1/A2/A3 任一）**或** ≥2 条 B 级」，**优先减少假阴性**；唯一底线保护——**仅 1 条 A1（纯退出码 0）且无任何落盘/注册表副作用 → 仍判 `install_unverified`**（防止"任何返回 0 的 exe 都被当成装成功"）。`install_verify.judgment_profile` 提供 `loose`（默认）/ `strict`（原从严阈值）两档，第三方可显式切换。**`verify.launch_check` 暂不开启**（默认 `false`） | F15.7、F15.4、7.5、A29 |
 
 ---
 
@@ -549,7 +552,7 @@ type PrereqManager interface {
 
 ```json
 {
-  "schema_version": "2.7",
+  "schema_version": "2.8",
   "task_id": "uuid",
   "config_digest": "sha256:...",
   "error": null,
@@ -668,7 +671,7 @@ type PrereqManager interface {
 
 | 取值 | 定义 | `by_status` 归类 | 可信度 |
 |------|------|-----------------|--------|
-| `install_completed` | **≥1 条 S 级证据**（或 ≥2 条 A 级且含 A1/A2），且无反证据 | `installed` | high / medium |
+| `install_completed` | **≥1 条 S 级证据**，或（`loose` 默认口径下）**≥1 条 A 级且带可归因副作用 / ≥2 条 A 级含 A2·A3 / ≥2 条 B 级**；均要求无反证据 | `installed` | high / medium |
 | `install_unverified` | 仅弱证据（单条 A 级或 B 级），无反证据 —— **疑似装成但未经证实** | `unverified` | low |
 | `install_partial` | 有安装副作用但存在反证据（失败页 / 回滚 / 卸载事件），**明确未完成** | `partial` | low |
 | `already_installed` | 基线中已存在该软件，本次 diff 为空 —— **环境本就具备** | `already_installed` | high |
@@ -735,7 +738,7 @@ type PrereqManager interface {
 
 **结果文件的 Schema 兼容策略**：
 
-- `schema_version` 为**语义化字符串**（当前 `"2.7"`）；**只做加法**（新增字段）不视为破坏性变更
+- `schema_version` 为**语义化字符串**（当前 `"2.8"`）；**只做加法**（新增字段）不视为破坏性变更
 - **破坏性变更**（删除字段、改字段含义、改枚举取值）才升主版本号，并在第 1 节变更记录中说明迁移方式
 - **下游必须容忍未知字段**（忽略而非报错），与本工具对配置文件的兼容策略一致（7.5.1 ③）
 - **退出码与结果 JSON 是两条独立通道**：退出码只表示"工具自身"的状态（6.1），单文件结果**只在 JSON 里**；下游判定样本结果时**以 JSON 为准**，不要用退出码推断（批量场景下退出码 0 不等于全部装成功）
@@ -958,7 +961,7 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 | 事件日志水位线 | 记录 `MsiInstaller` 当前最新记录 ID（O(1)），用于判定"基线之后是否新发生" |
 | 性能预算 | 单次快照 < **500ms**；`snapshot_max_entries`（默认 20000）保护，超限降级为**仅目录层**并告警 |
 | 体积控制 | 基线明细是否写入结果由 `verify.write_baseline` 控制（默认 `false`，只写 `baseline_digest` + 计数），避免结果体积爆炸 |
-| **扫描范围可配** | `watch_dirs` 默认 `C:\Program Files`、`C:\Program Files (x86)`；建议按样本情况追加 `%ProgramData%`、`%LOCALAPPDATA%`、`%APPDATA%`（否则 per-user 与数据型安装漏判） |
+| **扫描范围（v2.7 默认全量）** | `watch_dirs` **默认即含五处**：`C:\Program Files`、`C:\Program Files (x86)`、`%ProgramData%`、`%LOCALAPPDATA%`、`%APPDATA%`——覆盖 per-user 安装与数据型安装，与"宁可多报"口径一致；另由 **`watch_exclude` 排除 `%TEMP%` / `%LOCALAPPDATA%\Temp` 及缓存目录**，避免临时落盘造成假阳性（见 C35、DC19） |
 
 **F15.3 反证据（negative evidence）与冲突处理**
 
@@ -989,7 +992,7 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 
 - 结果记 `artifact_check: "ok" / "failed" / "unknown"` 与 `artifact_runnable`（重量模式才有值）
 - 校验失败**不推翻**已成立的 S 级证据，但**降低置信度**并写明原因（典型：安装器装了但缺依赖运行库）
-- 重量模式的取舍：能区分"安装器假成功"与"真的可用"，且**对 EDR 反而是额外的样本行为**；代价是可能弹窗（由 F14 接管）、可能需要重启。**默认关闭**，由测试口径决定是否开
+- 重量模式的取舍：能区分"安装器假成功"与"真的可用"，且**对 EDR 反而是额外的样本行为**；代价是可能弹窗（由 F14 接管）、可能需要重启。**默认关闭**；**v2.7 定案：本期暂不开启**（`verify.launch_check` 维持 `false`，测试口径 Q17 答复），接口保留，后续如需可一键开启
 
 **F15.5 已安装检测与重复调用（回答"第三方反复调用会怎样"）**
 
@@ -1008,13 +1011,19 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 - 收敛上限 `settle_max_sec`（默认 30s），超时即按当前状态判定
 - 例外：退出码为 `3010` / `1641`（需重启）时，**部分落盘可能推迟到重启后** —— 此时无法取得 S2 级证据，**以 S3/S4 为准**，并置 `requires_reboot: true`
 
-**F15.7 判定决策表**
+**F15.7 判定决策表（v2.7：默认「宽松 / 宁可多报」，见 DC19）**
+
+判定口径由 `install_verify.judgment_profile` 控制，**默认 `loose`**（测试团队定案，优先减少假阴性）。两档共用同一条**底线保护**：**仅 1 条 A1（纯退出码 0）且无任何落盘/注册表副作用 → 永不判 `install_completed`**（防止"任何返回 0 的 exe 都被当成装成功"）。
+
+**`loose`（默认，宁可多报）**
 
 | 条件 | `final_status` | `install_confidence` |
 |------|---------------|---------------------|
 | 有 ≥1 条 S 级证据，且无反证据 | `install_completed` | `high` |
-| 有 ≥2 条 A 级证据（其中至少 1 条为 A1 或 A2），且无反证据 | `install_completed` | `medium` |
-| 仅 1 条 A 级，或仅有 B 级证据，无反证据 | `install_unverified` | `low` |
+| 无 S 级，但 ≥1 条 A 级证据（A1/A2/A3 任一），且**存在可归因副作用**（落盘或注册表有变化），无反证据 | `install_completed` | `medium` |
+| 无 S 级，但 ≥2 条 A 级证据且**含至少 1 条 A2/A3**（即不可能是纯退出码），无反证据 | `install_completed` | `medium` |
+| 仅 ≥2 条 B 级证据，无反证据 | `install_completed` | `low` |
+| 仅 1 条 A1（纯退出码 0）且无任何副作用，或仅 1 条 B 级，无反证据 | `install_unverified` | `low` |
 | 有反证据，且存在正面副作用（落盘/注册表有变化） | `install_partial` | `low` |
 | diff 为空，`pre_installed: true` | `already_installed` | `high` |
 | diff 为空，`pre_installed: false`，进程正常结束 | `triggered` | — |
@@ -1022,8 +1031,17 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 | 进程无法启动 / 反证据且无副作用 | `failed` | — |
 | 无可触发方式（空文件 / 文档无宿主 / 前置缺失） | `skipped` | — |
 
+**`strict`（从严，可选，宁缺毋滥）**
+
+| 条件 | `final_status` | `install_confidence` |
+|------|---------------|---------------------|
+| 有 ≥1 条 S 级证据，且无反证据 | `install_completed` | `high` |
+| 有 ≥2 条 A 级证据（其中至少 1 条为 A1 或 A2），且无反证据 | `install_completed` | `medium` |
+| 仅 1 条 A 级，或仅有 B 级证据，无反证据 | `install_unverified` | `low` |
+| 其余各行（反证据 / 已安装 / 触发 / 超时 / 失败 / 跳过）与 `loose` 一致 | — | — |
+
 - `install_confidence` **恒存在**（非安装判定为 `null`）
-- 结果同时给出 `install_evidence`（结构化数组，见 F10）与 `evidence_conflicts`，**让下游能自行复核，而不是只拿到一个布尔值**
+- 结果同时给出 `install_evidence`（结构化数组，见 F10）、`evidence_conflicts` 与**生效的 `judgment_profile`**，**让下游能自行复核并解释判定松紧，而不是只拿到一个布尔值**
 
 **F15.8 可靠性边界声明（必须与结果一起交付给使用方）**
 
@@ -1666,10 +1684,12 @@ testdata/                        # 测试样本与期望结果
     "cache_by_screenshot_hash": true
   },
   "install_verify": {
+    "judgment_profile": "loose",
     "settle_sec": 3,
     "quiet_polls": 3,
     "settle_max_sec": 30,
     "watch_dirs": ["C:\\Program Files", "C:\\Program Files (x86)", "%ProgramData%", "%LOCALAPPDATA%", "%APPDATA%"],
+    "watch_exclude": ["%TEMP%", "%LOCALAPPDATA%\\Temp", "%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache", "%LOCALAPPDATA%\\CrashDumps"],
     "snapshot_depth": 2,
     "snapshot_max_entries": 20000,
     "write_baseline": false,
@@ -1714,7 +1734,7 @@ testdata/                        # 测试样本与期望结果
 > - `output.journal` 控制是否写 `<结果文件名>.journal.ndjson`（逐文件追加，供中断找回）；`keep_journal_on_success` 决定正常结束后是否保留（默认 `false`，即删除，符合第 6 节"无残留"）
 > - `output.pretty` 仅影响缩进（语义等价），默认 `false`（紧凑单行）；`max_file_size_mb` 超限时截断 `attempts` 明细并置 `truncated: true`
 > - **超时（F9）**：`timeout_sec` 为**单文件硬上限**（默认 600，`0` = 不限）；`startup_timeout_sec` 为进程无任何动作的容忍时长；**`idle_timeout_sec` 才是真正的把关**——连续无进展信号超过该值即判定卡死；`task_timeout_sec` 为任务级上限（`0` = 不限）；`activity_*_epsilon_*` 为进展信号的判定阈值，用于避免把极小波动误判为进展
-> - **安装验证（F15）**：`settle_sec` / `quiet_polls` / `settle_max_sec` 共同定义"静默期收敛"（退出后等待稳定，而非固定 sleep）；`watch_dirs` 支持 `%VAR%` 展开，**建议追加 `%LOCALAPPDATA%` / `%APPDATA%` / `%ProgramData%`，否则 per-user 安装与数据型安装会漏判**；`snapshot_depth` 控制文件系统快照深度（不枚举全部文件，控性能）；`write_baseline` 决定基线明细是否写入结果（默认 `false`，只写 digest + 计数）；`min_new_files` / `shrink_tolerance` 为落盘判定的灵敏度；`require_artifact` 校验卸载项指向的主程序**存在且为有效 PE**；`launch_check` 为**重量校验**（真正启动一次），默认关闭
+> - **安装验证（F15）**：`judgment_profile` 为**判定口径**，`loose`（默认，宁可多报，优先减少假阴性）/ `strict`（从严，宁缺毋滥），见 DC19 与 F15.7；`settle_sec` / `quiet_polls` / `settle_max_sec` 共同定义"静默期收敛"（退出后等待稳定，而非固定 sleep）；`watch_dirs` 支持 `%VAR%` 展开，**默认即含 `%ProgramData%` / `%LOCALAPPDATA%` / `%APPDATA%` 五处**（避免 per-user 与数据型安装漏判），`watch_exclude` 用于排除临时/缓存目录避免假阳性；`snapshot_depth` 控制文件系统快照深度（不枚举全部文件，控性能）；`write_baseline` 决定基线明细是否写入结果（默认 `false`，只写 digest + 计数）；`min_new_files` / `shrink_tolerance` 为落盘判定的灵敏度；`require_artifact` 校验卸载项指向的主程序**存在且为有效 PE**；`launch_check` 为**重量校验**（真正启动一次），默认关闭，**v2.7 定案暂不开启**
 > - **单实例锁（F19.4）**：`lock.enabled` 默认 `true`，`lock.wait_sec: 0` 表示不等待、直接以退出码 6 返回；**并发实例会互相污染安装证据 diff，除非确认无状态交叉，否则不建议关闭**
 > - **`--timeout` 命令行参数**只覆盖 `timeout_sec`（单文件硬上限），不会覆盖 `idle_timeout_sec` / `task_timeout_sec`
 
@@ -1752,7 +1772,7 @@ testdata/                        # 测试样本与期望结果
 | 文件不存在 / 不可读 | 退出码 3，**不静默回落默认值**（否则用户会误以为配置已生效） |
 | JSON 语法错误 | 退出码 3，输出出错位置 |
 | 字段类型不符（如 `timeout_sec: "abc"`） | 退出码 3，输出**字段路径**与期望类型 |
-| 取值越界（`timeout_sec <= 0`、`concurrency < 1`、`min_score` 不在 `[0,1]` 等） | 退出码 3，输出字段路径与合法范围 |
+| 取值越界（`timeout_sec <= 0`、`concurrency < 1`、`min_score` 不在 `[0,1]`、`install_verify.judgment_profile` 不在 `{loose, strict}` 等） | 退出码 3，输出字段路径与合法范围 |
 
 **⑤ `--dump-config`：导出生效配置**
 
@@ -1941,7 +1961,7 @@ AutoTrigger-<版本>-win64\
 | A26 | **光盘映像介质判定与安全拦截（F18.1 / F18.5）** | ① 含 `sources\install.wim` 的 Windows 安装 ISO：**判定为 `os_install_media` 且全程不执行任何文件**，结果记 `skipped: os_media`（`allow_os_media: false` 时）；② 含 `BDMV\STREAM\*.m2ts` 的影碟 ISO 记 `skipped: media_disc`；③ 仅含一个 `.lnk` + 载荷的 ISO 判定为 `malware_lure` 且**优先执行该 `.lnk`**；④ 含 `autorun.inf`（`open=setup.exe`）的 ISO：`setup.exe` 被列为 **P0** 并按先于其他入口执行；⑤ 乱码文件名（GBK/Joliet）场景下 `setup.exe` 仍能被识别为 P1/P2，**不因乱码整体跳过**；⑥ 所有判定结果出现在 `layout_analysis.media_kind` |
 | A27 | **光盘映像双轨与挂载清理（F18.2 / F18.3）** | ① 常规 ISO 在 `extract_first` 下走解压轨，`iso_strategy_used: "extract"`；② 构造一个 7-Zip 无法解析的映像（或用损坏/非标准 UDF 样本）：**自动回退挂载轨**，`iso_strategy_used: "extract→mount"`，且**后续仍能正常触发入口**；③ 挂载轨安装期间**保持挂载**，`install_completed` 判定与 `settle_sec` 稳定期结束后才卸载，`dismount_status: "ok"`；④ **异常终止（强杀）后重新启动工具，遗留挂载被自动清理**（或无法确认归属时只告警不误卸）；⑤ `mount_only` 且挂载后端缺失时：告警 + 记录 `mount_failed`，**不新增退出码**，其余样本继续处理；⑥ Win7 上默认走解压轨可完整跑通（不依赖挂载后端）；⑦ `iso.keep_extracted_on_success: false` 时解压目录被清理，`true` 时目录保留且路径写入结果 |
 | A28 | **输出可解析性（F10.1~F10.3）** | ① `--dump-config > f.json` 与 `--output - > f.json` 产出的文件**均能被严格 JSON 解析器一次解析成功**（stdout 无任何日志/进度/提示混入），`--output - \| jq` 可直接工作；② 结果文件为 **UTF-8 无 BOM、单个完整文档、无尾随文本**，固定字段（`schema_version` / `task_id` / `error` / `results` / `truncated` 等）**恒存在**，无值字段为 `null`；③ 输出到 `--output` 指定路径与 `--output -` 的**内容语义完全一致**；④ 输入不存在（退出码 2）/ 配置错误（3）/ 7-Zip 缺失（4）三条失败路径**同样产出结构完整的结果 JSON**（`results: []` + `error.code` 与 `error.message`），且可过 D7 Schema；⑤ 未指定 `--output` 时结果落在**当前工作目录** `.\autotrigger-result.json`，且**不落在输入目录内**；⑥ 任务被强杀（模拟）时目标路径**不存在半截 JSON**（原子写生效），且 `.journal.ndjson` 保留、可逐行解析并含已完成文件结果；⑦ 正常结束后 journal 被删除（`keep_journal_on_success: false`），无 `.tmp` 残留；⑧ 超过 `max_file_size_mb` 的结果置 `truncated: true` 且**仍可解析、可通过 Schema 校验**；⑨ `--check-prereq --json` 输出可被机器解析（供镜像构建流水线卡点） |
-| A29 | **安装成功判定的可靠性（F15）** | ① **假成功识别**：构造一个"只解压落盘到 `%TEMP%`、退出码 0、无卸载项"的 bootstrapper 样本 → **不得判 `install_completed`**（至多 `install_unverified`）；② **S 级证据成立**：标准 MSI/Inno 安装成功 → `install_completed` + `install_confidence: high` + `install_evidence` 内含 S 级条目；③ **基线生效**：`watch_dirs` 预先放置同名目录时，**不得**把已有文件误判为"新增落盘"；④ **HKCU 覆盖**：per-user 安装（仅写 `HKCU\...\Uninstall`）→ **能判定 `install_completed`**；⑤ **反证据优先**：安装器退出码 0 但 GUI 出现失败页/日志含回滚 → 判 `install_partial` 且 `evidence_conflicts` 非空，**不得**判成功；⑥ **MsiInstaller 事件**：MSI 安装后基线水位线之后出现 11707 → 记入 S4；随后执行卸载（11724）→ 判 `install_partial`/`failed`；⑦ **同一文件多次尝试共用基线**：第 1 次尝试已落盘部分文件、第 2 次成功时，**仍能正确判定**（不因基线被刷新而漏判）；⑧ 结果中 `install_confidence` **恒存在**（非安装判定为 `null`） |
+| A29 | **安装成功判定的可靠性（F15）** | ① **假成功识别**：构造一个"只解压落盘到 `%TEMP%`、退出码 0、无卸载项"的 bootstrapper 样本 → **不得判 `install_completed`**（至多 `install_unverified`）；② **S 级证据成立**：标准 MSI/Inno 安装成功 → `install_completed` + `install_confidence: high` + `install_evidence` 内含 S 级条目；③ **基线生效**：`watch_dirs` 预先放置同名目录时，**不得**把已有文件误判为"新增落盘"；④ **HKCU 覆盖**：per-user 安装（仅写 `HKCU\...\Uninstall`）→ **能判定 `install_completed`**；⑤ **反证据优先**：安装器退出码 0 但 GUI 出现失败页/日志含回滚 → 判 `install_partial` 且 `evidence_conflicts` 非空，**不得**判成功；⑥ **MsiInstaller 事件**：MSI 安装后基线水位线之后出现 11707 → 记入 S4；随后执行卸载（11724）→ 判 `install_partial`/`failed`；⑦ **同一文件多次尝试共用基线**：第 1 次尝试已落盘部分文件、第 2 次成功时，**仍能正确判定**（不因基线被刷新而漏判）；⑧ 结果中 `install_confidence` **恒存在**（非安装判定为 `null`）；⑨ **宽松口径生效（默认）**：对"拿到 ≥1 条 A 级且存在可归因副作用（落盘/注册表变化）"的样本 → 判 `install_completed`（不同于 `strict` 下的 `install_unverified`），且结果中 `judgment_profile: "loose"`；⑩ **底线保护**：构造"退出码 0 但无任何落盘/注册表副作用"的样本 → **仍判 `install_unverified`**，不得因宽松口径而判 `install_completed` |
 | A30 | **活动感知超时与超时后判定（F9）** | ① **长安装不被误杀**：构造持续写入文件的慢安装器（总时长 > `idle_timeout_sec` 且 < `timeout_sec`）→ **不触发静默期超时**，正常完成；② **卡死被识别**：构造启动后无任何动作的进程 → 在 `startup_timeout_sec`（±20%）内判定 `failed: no_activity`；构造运行中突然静止的进程 → 在 `idle_timeout_sec`（±20%）内判定卡死并进入终止流程；③ **终止顺序**：终止过程依次为优雅（`WM_CLOSE`）→ 温和 → Job Object 强杀，`termination_mode` 如实记录；④ **超时后仍采集证据**：安装已完成主体、仅卡在"完成"页而被超时终结的样本 → **仍判 `install_completed`**（notes 注明超时终结）；⑤ `timeout_sec: 0` 时单文件不限时；⑥ `task_timeout_sec` 生效：超时后停止派发新文件、未处理项记 `skipped: task_timeout`、结果 JSON 正常写出；⑦ 心跳按 `progress_interval_sec` 出现在 **stderr**，`stdout` 无任何心跳内容；⑧ `Ctrl+C` 中断 → 退出码 130、结果 JSON 完整（含 `error.code: 130`）、journal 保留 |
 | A31 | **第三方集成契约（F19）** | ① 传入**未知命令行参数** → 以退出码 2 失败并提示参数名（**不得静默忽略**）；② `--capabilities --json` 输出可被解析，且其 `supported_final_status` 与实际可返回的枚举值**完全一致**；③ `--version` 与 `--capabilities` 中的 `schema_version` 一致；④ **单实例锁**：并发启动两个实例 → 第二个以**退出码 6** 返回（或按 `lock_wait_sec` 等待），且**不产生交叉污染的安装证据**；⑤ **重复调用同一已安装软件** → 得 `already_installed`（或凭 A3/S1 得 `install_completed`），**不得**报成 `triggered`/装不上；⑥ **Schema 兼容**：用上一版本的 golden 结果 JSON 跑当前 Schema 校验**必须通过**（只做加法）；⑦ `summary.by_status` 各项之和**恒等于 `total`**；⑧ 契约测试套件与集成示例随交付提供，且示例脚本可直接跑通 |
 
@@ -2036,12 +2056,12 @@ AutoTrigger-<版本>-win64\
 | **Q14** | **MotW 策略默认值**（`native` / `preserve` / `clear`）由谁定？即：EDR 测试是否**希望 SmartScreen 拦截链也参与**（`preserve`）还是排除其干扰（`clear`）？ | 影响 F18.4 默认值与测试口径（安全团队决策项） |
 | **Q15** | ① 样本集中是否有**操作系统安装 ISO**（需明确是否允许触发）？② 是否存在 7-Zip 无法解析、必须靠挂载的映像（决定 Win7 是否需要随包 WinCDEmu）？ | 影响 F18.1 默认拦截策略、D15 交付物与镜像部署说明 |
 | **Q16** | 下游流水线**何时消费结果**：任务全部结束后整体读取结果 JSON，还是需要**过程中流式读取**（决定是否额外提供 `--ndjson` 逐条输出模式）？另：结果文件默认落在**当前工作目录**是否可接受，还是需固定为共享目录？ | 影响 F10 输出模式与调用方约定 |
-| **Q17** | **"安装成功"的验收口径由谁定**：判定标准从严后（需 S 级证据），会出现一批"实际可用但只拿到 A 级证据"的软件被记为 `install_unverified`。测试团队**希望更严（宁缺毋滥）还是更宽（宁可多报）**？另：是否需要开启 `verify.launch_check`（真正启动一次验证可用性）？ | 影响 F15.7 判定阈值与 F15.4 默认值 |
-| **Q18** | 默认 `install_verify.watch_dirs` 是否**追加 `%LOCALAPPDATA%` / `%APPDATA%` / `%ProgramData%`**？若样本以 per-user 安装或"绿色版解压即用"为主，必须追加，否则大量漏判 | 影响 F15.2 快照范围与判定准确率 |
+| ~~Q17~~ | ✅ **已定案（测试团队答复）**：口径取**宽松（宁可多报）**——优先减少假阴性，"实际装成但只拿到中/弱证据"的软件尽量计入 `install_completed`；`launch_check` **暂不开启**。落点见 DC19、F15.7（`judgment_profile: loose` 默认）、F15.4 | 已落 F15.7 / F15.4 |
+| ~~Q18~~ | ✅ **已定案**：默认 `watch_dirs` **全量追加** `%ProgramData%` / `%LOCALAPPDATA%` / `%APPDATA%`（共五处），并新增 `watch_exclude` 排除临时/缓存目录。理由：这些是 **per-user 安装**（默认装到用户目录）与**绿色版解压即用**的落点，不监控就大量漏判。落点见 C35、F15.2、7.5 | 已落 F15.2 / 7.5 |
 | **Q19** | 第三方是否为**多实例并发调用**场景？`--lock` 默认开启会串行化调用（第二实例退出码 6）。若调用方流水线本来就并行派发，需要协商队列策略（等待时长 / 调用方自建队列 / 关闭锁并接受归因风险） | 影响 F19.4 锁策略与调用方集成方式 |
 | **Q20** | 单文件硬上限默认 **600s** 是否合适？若样本中确有大软件（Office / VS / 大型游戏载体），需上调或用 `0` 不限；同时 `task_timeout_sec` 是否需要一个默认值（当前 `0` = 不限，长批量任务可能跑到数小时） | 影响 F9.1 默认值与调用方外部超时设置 |
 
-> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、**光盘映像处理（专项流程 F18：介质性质判定 + 解压/挂载双轨 + 解压轨优先）**、**安装成功判定（F15：证据分级 S/A/B + 基线 diff + 反证据，`install_completed` 需强证据，附 `install_confidence`）**、**超时策略（F9：活动感知 + 四段式，`idle_timeout_sec` 为主把关）**、**输出与集成契约（F10.1~F10.3 + F19：三通道分流、只做加法、单实例锁、第三方以结果 JSON 为准）**、主目标（安装成功优先）、环境（离线）—— 见 1.2。
+> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、**光盘映像处理（专项流程 F18：介质性质判定 + 解压/挂载双轨 + 解压轨优先）**、**安装成功判定（F15：证据分级 S/A/B + 基线 diff + 反证据，附 `install_confidence`；**判定口径定案为宽松 / 宁可多报——`judgment_profile: loose` 默认，`launch_check` 暂不开启**）**、**监控范围（`watch_dirs` 默认五处含用户/数据目录，`watch_exclude` 排除临时缓存）**、**超时策略（F9：活动感知 + 四段式，`idle_timeout_sec` 为主把关）**、**输出与集成契约（F10.1~F10.3 + F19：三通道分流、只做加法、单实例锁、第三方以结果 JSON 为准）**、主目标（安装成功优先）、环境（离线）—— 见 1.2。
 
 ---
 
