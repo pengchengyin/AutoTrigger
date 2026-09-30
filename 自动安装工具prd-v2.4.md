@@ -5,12 +5,12 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.3（安装成功优先 · GUI 自动化含 OCR 辅助 · 离线免安装单文件 · Go · 7-Zip 前置检测） |
+| 版本 | v2.4（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · 离线免安装单文件 · Go · **Win7 SP1+ 兼容**） |
 | 状态 | 待开发 |
-| 目标平台 | Windows 10 1809+ / 11 / Server 2016+（架构预留跨平台扩展） |
+| 目标平台 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
 | 交付形态 | **单一可执行文件，免安装、解压即用**（Go 静态编译，目标机无需 Go 环境） |
-| 环境前置 | 7-Zip（**由镜像/运维预先安装**；工具启动自检，缺失时提示用户安装后退出，**不代为安装**） |
+| 环境前置 | ① **7-Zip** ② **OCR 引擎**（默认 PaddleOCR-json）（均为**由镜像/运维预先安装**；工具启动自检，缺失时提示用户安装，**不代为安装**） |
 | 下游依赖 | EDR（负责行为采集与检测） |
 
 ### 1.1 变更说明（相对 v1.0）
@@ -33,9 +33,12 @@
 | C14 | **解压方案定案**：不接受内嵌/运行时释放的降级方案，统一依赖外部 7-Zip | 需求决策 |
 | C15 | **语言定案 Go**（静态编译单文件，目标机无需 Go 环境）；补充高内聚低耦合的工程规范与目录结构（7.3） | 需求决策 |
 | C16 | 补充 GUI 图像模板初始覆盖清单与模板库迭代机制（F14.2） | 明确模板范围 |
-| C17 | **交付形态定案**：交付物即**一个免安装、可直接运行的二进制文件**，不附带安装包、脚本与运行时；**7-Zip 作为环境前置由镜像/运维预装**，工具启动时检测，**缺失则提示用户先安装**（不代为安装、不静默降级） | 需求决策 |
-| C18 | **新增本地 OCR 辅助定位**：GUI 控件识别升级为「UIA → 图像模板 → 本地 OCR」三级策略，OCR 作为辅助手段补充自绘/未知界面定位（F14.2 / F14.6） | 需求决策，提升未知界面识别率 |
-| C19 | **OCR 可行性实测结论回填（2026-09-30）**：系统内置 OCR 引擎确认可用，但实测环境**仅装有 `zh-Hans-CN`、无 `en-US`**；且 Windows OCR 为**单语言引擎**。由此确立约束：**不得假设英文界面一定能被 OCR 识别**，英文安装器优先走 UIA + 模板，镜像需补 `en-US` 语言包（F14.6 / F16.3 / 第 11 节） | 实测验证结果 |
+| C17 | **交付形态定案**：交付物即**一个免安装、可直接运行的二进制文件**，不附带安装包、脚本与运行时；**7-Zip 作为环境前置由镜像/运维预装**，工具启动时检测，**缺失则提示用户先安装** | 需求决策 |
+| C18 | 新增 OCR 辅助定位：GUI 控件识别升级为「UIA → 图像模板 → OCR」三级策略 | 需求决策 |
+| C19 | Windows 内置 OCR 实测结论（2026-09-30）：引擎可用但**仅装 `zh-Hans-CN`、无 `en-US`**，且为**单语言引擎** | 实测验证结果 |
+| C20 | **目标平台下探至 Windows 7 SP1 x64 及以上**；由此**锁定 Go 1.20.x 工具链**（Go 1.21+ 已放弃 Win7 支持），新增第 4.6 节 Win7 兼容性约束 + 验收 A20 | 需求决策 |
+| C21 | **OCR 引擎选型改为外部开源 OCR（默认 PaddleOCR-json）**：作为**环境前置依赖**由镜像预装，工具检测 + 提示、不代装；进程外调用（stdio / TCP），**不使用 CGO**。Windows 内置 OCR 降为**可选回退后端**（默认关闭） | 需求决策：内置 OCR 语言包受限、Win7 不可用 |
+| C22 | OCR 置信度由"启发式打分"升级为**引擎原生 `score` 阈值过滤**（PaddleOCR-json 返回逐文本框置信度） | 外部引擎能力增强 |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
@@ -47,8 +50,11 @@
 | DC4 | 主目标：尽可能安装成功，含 GUI 弹窗自动化 | 2.2、F3/F13/F14 |
 | DC5 | 环境：离线，全程无外连 | 2.3、6 |
 | DC6 | **7-Zip 缺失时的行为**：仅检测 + **明确提示用户先安装**，不代为安装、不静默降级 | F16、7.4、6.1 |
-| DC7 | GUI 识别三级策略：**UIA 首选 → 图像模板匹配 → 本地 OCR 辅助兜底**；OCR 是辅助手段，不得成为唯一依赖 | F14.2、F14.6 |
-| DC8 | OCR 引擎：**优先 Windows 系统内置 OCR**（离线、返回像素包围盒），可选外部 tesseract 后端；**禁止 CGO**。**实测确认引擎可用**，但语言覆盖取决于镜像语言包（见 C19） | 7.1、F14.6 |
+| DC7 | GUI 识别三级策略：**UIA 首选 → 图像模板匹配 → OCR 辅助兜底**；OCR 是辅助手段，不得成为唯一依赖 | F14.2、F14.6 |
+| DC8 | **OCR 引擎：外部开源 OCR 进程（默认 `PaddleOCR-json`）**，环境预置、进程外调用（stdio/TCP）、**禁止 CGO**；Windows 内置 OCR 仅作可选回退后端且默认关闭 | 7.1、7.6、F14.6 |
+| DC9 | **平台基线：Windows 7 SP1 x64 及以上**；**Go 工具链锁定 1.20.x**（Go 1.21+ 不支持 Win7） | 4.6、7.1、A20 |
+| DC10 | **OCR 引擎与 7-Zip 同策略**：仅检测 + 提示 + 不代装；缺失时 OCR 自动降级为「UIA + 模板」，不中断主流程（`require_ocr: true` 时除外） | F16.3、6.1 |
+| DC11 | OCR 置信度采用**引擎原生 `score`** + `min_score` 阈值过滤，取代 v2.3 的启发式打分 | F14.6 |
 
 ---
 
@@ -72,11 +78,12 @@
 | 约束 | 要求 |
 |------|------|
 | 离线 | 工具自身与触发流程**全程不访问网络**：不下载组件、不更新规则、不上报结果 |
-| 单文件免安装 | 交付物为**单一可执行文件**（Go 静态编译）：拷贝到任意目录即可运行，**无安装步骤、无外部运行时**（不需 Go / .NET / VC++ Redist），无注册表写入、无残留 |
-| 环境前置 | 目标机需**预先安装 7-Zip**（镜像构建阶段预置或运维手动安装）。工具启动即自检，**缺失时输出明确提示引导用户先安装**，随后以退出码 4 结束；**工具不代为安装任何前置依赖** |
-| 无随包依赖 | 交付物**不附带**安装包、脚本、动态库；工具同目录可放可选的 `config.json` 与 `templates/`（均为可选项，缺失时使用内嵌默认值） |
+| 单文件免安装 | 交付物为**单一可执行文件**（Go 静态编译）：拷贝到任意目录即可运行，**无安装步骤、无外部运行时**（不需 Go / .NET），无注册表写入、无残留 |
+| 环境前置 ① 7-Zip | 目标机需**预先安装 7-Zip**。工具启动即自检，**缺失时提示用户先安装**并以退出码 4 结束；**工具不代为安装** |
+| 环境前置 ② OCR 引擎 | 目标机需**预先安装 OCR 引擎**（默认 PaddleOCR-json，绿色解压即用）。工具启动自检；缺失时**提示用户安装**并自动降级为「UIA + 模板」（默认不阻断流程） |
+| 无随包依赖 | 交付物**不携带**安装包、脚本、动态库、OCR 模型；工具同目录可放可选的 `config.json` 与 `templates/`（缺失时使用内嵌默认值） |
 | 分发 | 单个 exe 通过共享目录 / 移动介质拷贝到各沙箱节点即可运行 |
-| OCR 语言包（可选增强） | OCR 辅助默认启用，需系统具备对应语言包（**实测环境默认只有 `zh-Hans-CN`，`en-US` 不可用**）；未安装的语言自动跳过并降级为「UIA + 模板」并记录，不中断流程 |
+| 平台基线 | **Windows 7 SP1 x64 及以上**（Win7 无 UIA 增强与新 DPI API，见 4.6） |
 | 架构 | 预留 Linux / macOS 扩展能力 |
 
 ### 2.4 非目标（明确不做）
@@ -86,8 +93,9 @@
 - 不负责样本静态分析、反混淆、脱壳
 - 不负责网络隔离策略配置；安装器需联网下载组件时不做网络补偿，按超时处理并标记 `requires_network`
 - **不自研、不内嵌文件解压实现**（解压能力统一由 7-Zip 提供）
-- **不代为安装环境前置依赖**（含 7-Zip）：只检测、只提示，安装动作交给镜像/运维（F16）
-- **不引入 CGO、不引入第三方原生 OCR 库作为硬依赖**（保证静态单文件）
+- **不自研、不训练 OCR 模型**（识别能力统一由外部开源 OCR 引擎提供）
+- **不代为安装环境前置依赖**（7-Zip、OCR 引擎）：只检测、只提示（F16）
+- **不引入 CGO、不链接任何原生 OCR SDK**（保持静态单文件；OCR 一律走进程外调用）
 - 不追踪样本运行后释放的后续文件与链式行为（只负责"第一跳"，其余由 EDR 捕获）
 - 不保证所有样本都能装成功（反沙箱、需联网激活、依赖缺失等由环境侧解决）
 - 本期不实现 Linux / macOS，仅预留架构扩展点
@@ -100,7 +108,7 @@
 
 - 供应链安全检测工程师
 - 自动化检测流水线运维人员
-- 镜像/环境构建人员（负责预装 7-Zip 与 OCR 语言包）
+- 镜像/环境构建人员（负责预装 7-Zip 与 OCR 引擎）
 
 ### 3.2 典型场景
 
@@ -108,13 +116,16 @@
 |------|------|
 | 静默安装成功 | 传入 `.exe` 安装器，工具轮询静默参数完成无人值守安装，产出 `install_completed` |
 | 向导式安装 | 安装器只支持 GUI，工具识别弹窗按钮/协议勾选框并模拟点击，走完全流程 |
-| 自绘界面安装 | 安装器无 UIA 控件树（Electron/CEF 类），图像模板未命中时由本地 OCR 定位按钮文本像素位并点击 |
+| 自绘界面安装 | 安装器无 UIA 控件树（Electron/CEF 类），图像模板未命中时由外部 OCR 引擎定位按钮文本像素位并点击 |
+| 中文界面识别 | 中文安装向导：OCR 引擎（PaddleOCR）对中文界面识别率高，弥补 UIA 覆盖不足 |
+| 老系统环境 | Windows 7 沙箱：无 Windows 内置 OCR，UIA 覆盖较弱，主要依赖图像模板 + 外部 OCR |
+| 低配/无 AVX 环境 | CPU 不支持 AVX 时无法运行 PaddleOCR-json，改用 RapidOCR-json 引擎（配置切换） |
 | 单文件触发 | 传入一个 `.exe`，多种方式依次尝试并记录每次结果 |
 | 文件夹批量触发 | 传入一个目录，工具遍历所有文件，逐个识别并触发 |
 | 压缩包递归触发 | 传入 `.zip` / `.iso`，工具用 7-Zip 解压后递归触发内部所有可执行文件 |
 | 文档类触发 | 传入 `.docx` / `.pdf`，工具调用关联程序打开，触发宏/漏洞利用链 |
 | 未知格式兜底 | 传入扩展名未知或文件头与扩展名不符的文件，工具仍尝试执行 |
-| 前置缺失 | 目标机未装 7-Zip：工具检测后提示用户先安装，不尝试自行安装 |
+| 前置缺失 | 目标机未装 7-Zip / OCR 引擎：工具检测后提示用户先安装，不尝试自行安装 |
 
 ### 3.3 使用方式
 
@@ -124,9 +135,10 @@
 AutoTrigger.exe --input "C:\samples\test.exe" --timeout 120 --output "C:\logs\result.json"
 AutoTrigger.exe --input "C:\samples\folder" --recursive --timeout 120
 AutoTrigger.exe --input "C:\samples" --config "C:\conf\config.json"
-AutoTrigger.exe --check-prereq          # 仅做环境自检（7-Zip / OCR 语言包），不处理样本
+AutoTrigger.exe --check-prereq          # 仅做环境自检（7-Zip / OCR 引擎），不处理样本
 AutoTrigger.exe --dump-ui --input "C:\samples\a.exe"   # 调试：导出窗口截图 + UIA 控件树 + OCR 结果，用于扩充模板
 AutoTrigger.exe --no-archive --input "C:\samples"      # 无 7-Zip 时跳过压缩包，继续处理其余样本
+AutoTrigger.exe --no-ocr --input "C:\samples"          # 无 OCR 引擎时强制仅用 UIA + 模板
 ```
 
 参数优先级：命令行参数 > 外部配置文件 > 内嵌默认值。
@@ -146,8 +158,8 @@ AutoTrigger.exe --no-archive --input "C:\samples"      # 无 7-Zip 时跳过压�
 | Core（核心层） | 输入解析、任务调度、类型识别、参数探测、尝试编排、超时控制、结果输出 | 平台无关 |
 | Ports（接口层） | 定义统一接口（见 4.3），随 core 包定义 | 平台无关接口 |
 | Platform Adapter（平台适配层） | Windows 实现（本期）、Linux / macOS 实现（后期） | 平台相关 |
-| Prereq（前置依赖层） | 7-Zip 探测与**用户提示**；OCR 语言包探测 | 平台相关 |
-| OCR（识别辅助层） | OCR 引擎适配（系统内置 / tesseract / 关闭） | 平台相关 |
+| Prereq（前置依赖层） | 7-Zip 与 OCR 引擎探测、能力自检与**用户提示** | 平台相关 |
+| OCR（识别辅助层） | **外部 OCR 引擎适配**（进程外调用：PaddleOCR-json / RapidOCR-json / Umi-OCR / tesseract）；可选回退到系统内置 OCR | 平台相关 |
 | CLI（入口层） | 命令行解析、依赖装配、调用 Core | 平台无关 |
 | Embedded Resources（内嵌资源） | 魔数表、静默参数表、按钮关键词表、图像模板、默认配置 | 平台无关 |
 
@@ -189,15 +201,21 @@ type GUIAutomator interface {
     WatchWindows(pidTree []int, interval time.Duration) ([]Window, error)
     FindControls(w Window) ([]Control, error)                    // 一级：UIA 控件树
     MatchByTemplate(w Window, templates []Template) ([]Control, error)  // 二级：图像模板匹配
-    LocateByOCR(w Window, keywords []string) ([]Control, error)  // 三级：本地 OCR 文本定位（辅助）
+    LocateByOCR(w Window, keywords []string) ([]Control, error)  // 三级：外部 OCR 文本定位（辅助）
     Click(c Control) error
     SetText(c Control, text string) error
 }
 
-type OcrEngine interface {                        // v2.3 新增（辅助能力，可整体关闭）
-    Available() (OcrInfo, error)                  // 引擎与语言包可用性
-    Recognize(img Image) ([]OcrText, error)       // 返回文本 + 像素包围盒
+// OcrEngine —— v2.4：外部 OCR 引擎的进程外适配（禁止 CGO）
+type OcrEngine interface {
+    Name() string                                 // paddleocr_json | rapidocr_json | umi_ocr | tesseract | windows | none
+    Probe() (OcrInfo, error)                      // 探测：可执行文件路径、版本、是否支持 AVX、可用语言
+    Start(ctx context.Context) error              // 启动常驻引擎进程（避免每次识别重复初始化）
+    Stop() error                                  // 任务结束回收进程
+    Recognize(img Image) ([]OcrText, error)       // 返回 文本 + 四角像素坐标 + 原生 score
+    HealthCheck() error                           // 卡死/崩溃探测，供自动重启
 }
+// OcrText: Text string / Box [4]Point（四角） / Score float64 / Center Point
 
 type InstallVerifier interface {
     Verify(ctx InstallContext) (*InstallEvidence, error)  // 四类证据，见 F15/F14.4
@@ -213,15 +231,17 @@ type PrereqManager interface {
 
 | 能力 | Windows（本期） | Linux（后期） | macOS（后期） |
 |------|----------------|--------------|--------------|
-| 进程执行 | CreateProcess / Start-Process | fork+exec | posix_spawn |
+| 进程执行 | CreateProcess / Start-Process（Win7 可用） | fork+exec | posix_spawn |
 | 进程树终止 | Job Object / taskkill /T | kill process group | kill process group |
 | 默认程序打开 | ShellExecute | xdg-open | open |
 | 解压 | **外部 7z.exe（环境需预置）** | 7z / tar | 7z / tar |
 | 文件头识别 | 魔数表（平台无关，内嵌） | 魔数表 | 魔数表 |
 | 安装包触发 | msiexec / 静默参数 | dpkg / rpm / sh | pkg / dmg |
 | 脚本触发 | cmd / powershell / wscript | bash / sh / python | bash / zsh / osascript |
-| GUI 自动化 | UIA + SendInput + 截图模板匹配 + **本地 OCR** | xdotool（后期） | AppleScript（后期） |
-| OCR 引擎 | **Windows.Media.Ocr（系统内置）**；tesseract 可选 | tesseract | Vision.framework |
+| GUI 自动化 | UIA（Win7 为 UIAutomationCore 基础版）+ SendInput + 截图模板匹配 + **外部 OCR** | xdotool（后期） | AppleScript（后期） |
+| OCR 引擎 | **外部开源引擎进程（PaddleOCR-json / RapidOCR-json / Umi-OCR / tesseract）**；可选回退 Windows 内置 OCR（仅 Win10 1809+） | 同左（tesseract / PaddleOCR） | 同左 |
+| 截屏 | GDI `BitBlt` / `PrintWindow`（后者 Vista+ 可用） | X11 | CGWindowListCreateImage |
+| DPI 感知 | Win10 1607+：`GetDpiForWindow`；**Win7/8.1 回退 `GetDeviceCaps(LOGPIXELSX)` + `SetProcessDPIAware`** | — | — |
 | 安装证据采集 | 文件系统 + 注册表 | 包管理器数据库 | pkgutil |
 
 ### 4.5 跨平台扩展约束
@@ -229,8 +249,23 @@ type PrereqManager interface {
 - 核心层不得直接调用任何 Windows API，适配层之外的包不得 import `internal/platform/windows`
 - 所有平台相关行为必须通过 4.3 接口调用
 - 参数探测表、类型映射表、按钮关键词表、图像模板按平台组织，优先内嵌、支持外部覆盖
-- **OCR 引擎与语言包按平台适配**：core 只依赖 `OcrEngine` 接口，不感知具体引擎
+- **OCR 引擎按平台适配**：core 只依赖 `OcrEngine` 接口，不感知具体引擎；引擎的探测、启动、通信、回收全部封装在 `internal/ocr` 内
 - 结果 JSON 结构保持平台无关，平台特有字段放 `platform_meta`
+
+### 4.6 Windows 7 兼容性约束（v2.4 新增，重要）
+
+平台基线定为 **Windows 7 SP1 x64 及以上**，带来以下硬性约束：
+
+| 约束项 | 说明 | 对策 |
+|--------|------|------|
+| **Go 工具链** | **Go 1.21+ 已放弃 Win7/8/8.1 支持**（要求 Win10 / Server 2016+）；**Go 1.20.x 是最后一个支持 Win7 的版本** | 构建环境固定 Go 1.20.x；`go.mod` 声明 `go 1.20`；**引入任何第三方库前须确认其最低 Go 版本要求 ≤ 1.20** |
+| UIA 能力 | Win7 提供 `UIAutomationCore`（随 .NET 3.0+），对标准 Win32 控件可读；**WPF / 新式框架覆盖度明显弱于 Win10**，部分属性/模式缺失 | UIA 命中失败时**更早**回落到图像模板与 OCR；不依赖 Win10 专有 UIA 特性；UIA 调用全部包在能力探测里 |
+| DPI API | Win7 无 `GetDpiForWindow`（Win10 1607+）、无 `SetProcessDpiAwarenessContext`（Win10 1703+） | 运行时按系统版本分支：优先新 API，回退 `GetDeviceCaps(LOGPIXELSX)` 取 DPI + `SetProcessDPIAware`（Vista+ 可用） |
+| 截屏 | `PrintWindow` 在 Vista+ 可用；`PW_RENDERFULLCONTENT` 标志为 Win8.1+ | 按版本选择标志；失败时回退 `BitBlt` |
+| 进程树终止 | Job Object 自 Vista 起可用 | 无需回退 |
+| 运行库 | OCR 引擎（PaddleOCR-json / Umi-OCR）可能依赖 **VC++ 2015-2022 运行库** | 列入镜像前置检查表（F16.5）；若缺失需镜像预置 |
+| 哈希 | SHA-256 需 Win7 SP1 及以上 | 平台基线明确为 **SP1**；启动时校验系统版本，低于 SP1 输出告警 |
+| 实测要求 | Win7 与 Win10 的 UIA / 截屏 / DPI 行为差异较大 | **必须准备 Win7 x64 实测环境**，验收 A20 在 Win7 上执行 |
 
 ---
 
@@ -253,9 +288,9 @@ type PrereqManager interface {
 | F11 | 文件夹批量遍历 | P0 | 无关 | M2 |
 | F12 | 嵌套/链式触发 | P1 | 无关 | M2 |
 | F13 | 参数探测与多轮尝试机制 | P0 | 无关 | M1 |
-| F14 | GUI 弹窗识别与键鼠模拟（含 OCR 辅助） | P0 | 适配层 | M2 |
+| F14 | GUI 弹窗识别与键鼠模拟（含外部 OCR 辅助） | P0 | 适配层 | M2 |
 | F15 | 安装结果验证与证据采集 | P0 | 适配层 | M2 |
-| F16 | 前置依赖自检与用户提示（7-Zip / OCR 语言包） | P0 | 适配层 | M1 |
+| F16 | 前置依赖自检与用户提示（7-Zip / OCR 引擎） | P0 | 适配层 | M1 |
 
 ---
 
@@ -268,7 +303,7 @@ type PrereqManager interface {
 - 支持 `--timeout` 指定单个文件的最大触发时长（秒），默认 120
 - 支持 `--output` 指定结果输出路径（JSON）
 - 支持 `--config` 指定外部配置文件路径（覆盖内嵌默认值，见 7.5）
-- 支持 `--check-prereq` 仅执行环境自检、`--no-archive` 跳过压缩包处理
+- 支持 `--check-prereq` 仅执行环境自检、`--no-archive` 跳过压缩包处理、`--no-ocr` 跳过 OCR
 - 输入路径不存在或无权限时：记录错误、输出**空结果 JSON + 错误摘要**（保证下游始终有产物可解析）、退出码 `2`
 - 输入为空文件（0 字节）：跳过并记录 `skipped: empty_file`
 
@@ -330,7 +365,7 @@ type PrereqManager interface {
 | 类型 | 执行方式 |
 |------|----------|
 | .bat / .cmd | `cmd.exe /c "文件"` |
-| .ps1 | `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "文件"` |
+| .ps1 | `powershell.exe -ExecutionPolicy Bypass -NoProfile -File "文件"`（Win7 默认 PS 2.0，指令兼容 2.0） |
 | .vbs / .js | `wscript.exe "文件"`；若 30 秒内疑似弹 GUI，改 `cscript.exe "文件"` 重试一次 |
 | .wsf | `wscript.exe "文件"` |
 
@@ -368,9 +403,9 @@ type PrereqManager interface {
 
 - 每个文件的触发流程有独立超时（默认 120 秒，可配置）
 - 超时后：记录当前阶段与已尝试参数 → 结束该文件及其派生进程树 → 该次尝试记 `killed_on_timeout`（属"已触发"）→ 继续下一个文件
-- 工具退出前清理所有临时解压目录
+- 工具退出前清理所有临时解压目录，并回收常驻 OCR 引擎进程
 - **全局看门狗**：单文件累计时长不得超过 `timeout × 尝试次数上限 + 60s`，防止挂死阻塞批量任务
-- GUI 弹窗处理耗时计入单文件总超时
+- GUI 弹窗处理与 OCR 识别耗时计入单文件总超时
 
 #### F10 执行结果记录与输出
 
@@ -378,18 +413,21 @@ type PrereqManager interface {
 
 ```json
 {
-  "schema_version": "2.3",
+  "schema_version": "2.4",
   "task_id": "uuid",
   "started_at": "2026-09-30T09:40:00+08:00",
   "finished_at": "2026-09-30T09:52:31+08:00",
   "platform": "windows",
+  "platform_meta": { "os_version": "6.1.7601", "dpi_awareness": "system", "cpu_avx": true },
   "prereq": {
     "archive_backend": "C:\\Program Files\\7-Zip\\7z.exe",
     "sevenzip_version": "23.01",
     "archive_backend_status": "ok",
-    "ocr_engine": "windows_media_ocr",
-    "ocr_languages_available": ["en-US"],
-    "ocr_languages_missing": ["zh-Hans"]
+    "ocr_engine": "paddleocr_json",
+    "ocr_engine_path": "C:\\tools\\PaddleOCR-json\\PaddleOCR-json.exe",
+    "ocr_engine_status": "ok",
+    "ocr_engine_languages": ["ch", "en"],
+    "ocr_startup_ms": 680
   },
   "summary": {
     "total": 50,
@@ -425,7 +463,7 @@ type PrereqManager interface {
           "gui_actions": [
             { "window": "Setup - Test", "control_text": "我接受", "source": "uia", "action": "click", "at": "2026-09-30T09:41:02+08:00" },
             { "window": "Setup - Test", "control_text": "安装", "source": "template", "action": "click", "at": "2026-09-30T09:41:15+08:00" },
-            { "window": "Setup - Test", "control_text": "下一步", "source": "ocr", "confidence": 0.78, "action": "click", "at": "2026-09-30T09:41:22+08:00" }
+            { "window": "Setup - Test", "control_text": "下一步", "source": "ocr", "ocr_score": 0.94, "recognize_ms": 210, "action": "click", "at": "2026-09-30T09:41:22+08:00" }
           ]
         }
       ],
@@ -446,7 +484,7 @@ type PrereqManager interface {
 | `failed` | 所有方式均无法启动进程 | failed |
 | `skipped` | 无可用触发方式（空文件 / 文档无宿主程序 / 前置依赖缺失等） | skipped |
 
-> 说明：v1.0 将 `timeout` 单列为负面结果，与触发语义冲突，v2.0 起并入触发成功口径；v2.1 新增 `install_completed`，区分"跑起来了"与"装成了"；v2.3 在 `gui_actions` 中新增 `source`（uia/template/ocr）字段，用于回溯每个点击动作的识别来源与效果。
+> 说明：v2.0 起将 `killed_on_timeout` 并入触发成功口径；v2.1 新增 `install_completed`；v2.3 起 `gui_actions` 记录识别来源 `source`；**v2.4 起记录 OCR 原生 `ocr_score` 与识别耗时，并把 `prereq` 扩展为完整的引擎探测结果**。
 
 #### F11 文件夹批量遍历
 
@@ -493,26 +531,27 @@ type PrereqManager interface {
 - 每次触发尝试期间，后台协程轮询该进程树的可见顶层窗口（默认每 500ms 一次，可配置）
 - 发现新窗口即进入控件识别流程；窗口关闭后回到监控状态
 
-**F14.2 控件识别（三级策略，v2.3 新增 OCR 级）**
+**F14.2 控件识别（三级策略）**
 
 | 级别 | 手段 | 适用场景 | 说明 |
 |------|------|---------|------|
-| 一级 | **UI Automation（UIA）** | 标准 Win32/WPF/WinForms 向导 | 读取控件树，取文本、AutomationId、屏幕坐标与角色，语义最准确 |
+| 一级 | **UI Automation（UIA）** | 标准 Win32 / WPF / WinForms 向导 | 读取控件树，取文本、AutomationId、屏幕坐标与角色，语义最准确。**Win7 上覆盖度弱于 Win10**，失败更早回落 |
 | 二级 | **图像模板匹配** | 已知安装器家族、UIA 缺失 | 截图 + 按钮模板匹配定位；模板集内嵌、支持外部热更新 |
-| 三级 | **本地 OCR 文本定位（辅助）** | 自绘界面、模板未命中、未知安装器 | 离线识别窗口内文本及其**像素包围盒**，按语义关键词定位可点击项（详见 F14.6） |
+| 三级 | **外部 OCR 引擎文本定位（辅助）** | 自绘界面、模板未命中、未知安装器、**Win7 环境** | 离线识别窗口内文本及其**像素包围盒**，按语义关键词定位可点击项（详见 F14.6） |
 
 **融合与仲裁规则**
 
 1. **优先级**：UIA 命中 > 模板命中 > OCR 命中；同级内按语义优先级（如"安装"优先于"下一步"）与置信度排序
 2. **OCR 引导模板匹配**：OCR 先给出候选文本包围盒，在其外扩 ROI（默认 ±12px）内做模板精修，既提速又提高准确率
 3. **串行降级**：某级在合理时间内未取到候选时，才进入下一级，避免无谓开销
-4. 全部级别均不可用（无 UIA 树、无模板、OCR 未启用或语言包缺失）→ 记录 `gui_identify_failed`，按超时处理
+4. **Win7 权重调整**：平台基线含 Win7 时，UIA 覆盖度较低，**模板与 OCR 的权重相对提高**（实现上体现为 UIA 更早回落、模板匹配范围放宽）
+5. 全部级别均不可用（无 UIA 树、无模板、OCR 未启用或引擎缺失）→ 记录 `gui_identify_failed`，按超时处理
 
 **图像模板初始覆盖清单（建议）**
 
 | 梯队 | 安装器家族 | 覆盖策略 |
 |------|-----------|---------|
-| 第一梯队（必做） | Inno Setup、NSIS、InstallShield、Windows Installer 标准 UI（MSI）、WiX Burn | **UIA 应能覆盖，模板仅作兜底**；必须首轮验证并各存 2~3 张关键按钮模板 |
+| 第一梯队（必做） | Inno Setup、NSIS、InstallShield、Windows Installer 标准 UI（MSI）、WiX Burn | Win10 上 UIA 基本可覆盖；**Win7 上须实际验证**，模板各存 2~3 张关键按钮 |
 | 第二梯队（建议做） | Advanced Installer、InstallAware、Setup Factory、Wise Installation Studio、Smart Install Maker | 老式向导自绘比例高，需模板支撑 |
 | 第三梯队（按需） | Electron/CEF 自绘安装器（多家国产软件）、游戏启动器型安装器 | 基本无 UIA 树，**以模板 + OCR 协同识别为主** |
 
@@ -520,7 +559,7 @@ type PrereqManager interface {
 
 **模板库迭代机制**
 
-- 工具提供 `--dump-ui` 调试模式：输出窗口截图 + UIA 控件树 JSON + **OCR 识别结果（含包围盒）**，供人工标注后补充模板
+- 工具提供 `--dump-ui` 调试模式：输出窗口截图 + UIA 控件树 JSON + **OCR 识别结果（含四角坐标与 score）**，供人工标注后补充模板
 - 模板目录支持外部覆盖（`gui_automation.template_dir`），便于现场热更新，无需重新发版
 - 一次识别失败不视为永久失败，下次任务仍会重试匹配
 
@@ -537,7 +576,7 @@ type PrereqManager interface {
 - 同屏多个推进类按钮时按预置优先级选取（如"安装"优先于"下一步"）
 - 点击坐标加入微小随机偏移（`click_jitter_px`），避免固定坐标点击被反自动化识别
 - 单窗口内同类动作设置次数上限，防止死循环点击
-- **文本归一化（v2.3）**：UIA 名称、模板名、OCR 文本统一按"去首尾空白 → 去除助记符 `&` → 全角转半角 → 折叠连续空白 → 大小写不敏感"后参与关键词匹配
+- **文本归一化**：UIA 名称、模板名、OCR 文本统一按"去首尾空白 → 去除助记符 `&` → 全角转半角 → 折叠连续空白 → 大小写不敏感"后参与关键词匹配
 
 **F14.4 安装成功判定证据（满足任一即成功）**
 
@@ -552,68 +591,80 @@ type PrereqManager interface {
 - 全部键鼠动作写入 `gui_actions`（窗口标题 / 控件文本 / 识别来源 / 动作 / 时间戳），可回放审计
 - 安装器进入"正在下载组件"状态（离线环境必然卡住）：记录 `requires_network`，按超时处理
 - 批量模式下需保证前台桌面可用（GUI 自动化依赖真实桌面会话）
-- **高 DPI 缩放**：截图得到的像素坐标与系统逻辑坐标须按窗口 DPI 比例换算（`GetDpiForWindow`），否则高 DPI 下会出现点击偏移；点击前校验目标坐标落在窗口矩形内
+- **高 DPI 缩放**：截图得到的像素坐标与系统逻辑坐标须按窗口 DPI 比例换算；**Win10 1607+ 用 `GetDpiForWindow`，Win7/8.1 回退 `GetDeviceCaps(LOGPIXELSX)` + `SetProcessDPIAware`**；点击前校验目标坐标落在窗口矩形内
 - **OCR 使用边界**：仅在 UIA 与模板均未命中时启用；OCR 属于辅助手段，其失效不得导致整体流程失败
 
-**F14.6 本地 OCR 辅助定位（v2.3 新增，P0）**
+**F14.6 外部 OCR 引擎辅助定位（v2.4 重写，P0）**
 
 **定位目标**：窗口内按钮、复选框、输入框标签等**可见文本**，据此推算可点击像素位置。
 
-**引擎选择**
+**引擎选型（默认 PaddleOCR-json）**
 
-| 引擎 | 说明 | 依赖 |
-|------|------|------|
-| `windows`（默认） | **Windows 内置 OCR（`Windows.Media.Ocr`，Win10 1809+）**：完全离线、无需随包文件、返回每行/词的 `BoundingRect` 像素坐标，与"像素位定位"需求天然契合 | 系统组件 + 语言包（`en-US` 通常内置；`zh-Hans` 需镜像预置） |
-| `tesseract`（可选） | 外部 `tesseract.exe` + 离线 `traineddata`，作为镜像裁剪掉系统 OCR 时的备选后端 | 环境预置（同 7-Zip 策略：仅检测 + 提示） |
-| `off` | 关闭 OCR，仅用 UIA + 模板 | 无 |
+| 引擎 | 项目 / 许可 | Win7 | 优缺点 | 配置值 |
+|------|------------|------|--------|--------|
+| **`paddleocr_json`（默认）** | PaddleOCR-json（开源） | ✅ | **首选**：基于 PaddleOCR C++ 版（PP-OCRv3/v4），中英日韩识别率高；**绿色解压即用、零依赖**；输出 JSON 含**四角坐标 + 原生 score**；支持 stdio 与 TCP；初始化约 0.6s。**需 CPU 支持 AVX 指令集** | `paddleocr_json` |
+| `rapidocr_json` | RapidOCR-json（开源） | ✅ | 姊妹项目，**不需要 AVX**，老 CPU / 虚拟化环境适用；速度中等；接口与 PaddleOCR-json 一致，可无缝切换 | `rapidocr_json` |
+| `umi_ocr` | Umi-OCR（MIT） | ✅（x64） | 完整 GUI 软件（内置 PaddleOCR-json / RapidOCR-json 引擎，可切换），体积较大（约 500MB）；提供**命令行调用**与 **HTTP 接口**（`127.0.0.1:1224/api/ocr`）；解压即用、完全离线 | `umi_ocr` |
+| `tesseract` | Tesseract（Apache-2.0） | ✅ | 兼容性最广、有正式安装包；**中文与复杂排版识别率明显弱于 PaddleOCR**，界面小字号文本需图像预处理（放大、二值化） | `tesseract` |
+| `windows`（可选回退） | Windows.Media.Ocr（系统内置） | ❌ | 零外部依赖，**但仅 Win10 1809+ 可用**；实测为单语言引擎且语言包受限（见下方实测记录）；**默认关闭** | `windows` |
+| `none` | — | — | 关闭 OCR，仅用 UIA + 模板（等价于 `--no-ocr`） | `none` |
 
-> Go 调用 Windows 内置 OCR 需经 COM/WinRT 互操作（激活 `Windows.Media.Ocr.OcrEngine` 实例并调用其方法），属于本方案的主要技术风险点，M1 阶段须完成可行性验证（见第 11 节风险）。
+**推荐部署**：镜像预置 **PaddleOCR-json**（首选）；若目标机 CPU 无 AVX 或为老式虚拟机，追加 **RapidOCR-json**；两者均无时退化为 UIA + 模板。
 
-**实测记录（2026-09-30，本机验证脚本 `scripts/verify-ocr.ps1`）**
+**v2.3 实测记录（保留下来的重要背景）**
 
-| 探测项 | 实测结果 | 含义 |
+v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
+
+| 探测项 | 实测结果 | 结论 |
 |--------|---------|------|
-| `OcrEngine.AvailableRecognizerLanguages` | 仅 `zh-Hans-CN`（简体中文），`Count = 1` | 引擎实际只支持中文识别 |
-| `OcrEngine.TryCreateFromLanguage('zh-Hans-CN')` | 非 null（可用） | 中文引擎可创建 |
-| `OcrEngine.TryCreateFromLanguage('en-US')` | **null（不可用）** | **该环境无法用 OCR 识别英文界面** |
-| `OcrEngine.TryCreateFromUserProfileLanguages()` | 非 null，语言 `zh-Hans-CN` | 按系统显示语言取引擎，行为符合预期 |
-| `OcrEngine.MaxImageDimension` | `10000` | 单边最大 10000px，4K 全屏截图（3840×2160）无压力 |
-| `C:\Windows\OCR` 目录 | 仅 `zh-cn` | 与引擎探测结果一致 |
+| `OcrEngine.AvailableRecognizerLanguages` | 仅 `zh-Hans-CN`，Count = 1 | 引擎实际只支持中文 |
+| `TryCreateFromLanguage('en-US')` | **null（不可用）** | 该环境无法识别英文界面 |
+| `MaxImageDimension` | 10000 | 4K 截图无压力 |
 
-**由此确立两条硬约束**
+→ 内置 OCR **受语言包限制且为单语言引擎，Win7 上根本不存在**，故 v2.4 改为外部开源引擎为主，内置 OCR 降为可选回退。
 
-1. **Windows OCR 是"单语言引擎"**：一个引擎实例只按创建时指定的语言识别。`ocr.languages` 配置的是**期望列表**，实际生效语言以 `AvailableRecognizerLanguages` 为准，未安装的会被跳过。
-2. **英文安装器界面的 OCR 定位不可靠**（实测环境 `en-US` 引擎创建失败）。Inno Setup / NSIS 等的英文版安装器在样本中占比不低，因此**英文界面必须优先依赖 UIA 与图像模板，OCR 仅作为中文界面的补充**；若确需覆盖英文界面，需在镜像中预置 `en-US` OCR 语言包（见 F16.3、Q8）。
+**外部引擎调用方式（进程外，禁止 CGO）**
+
+1. **stdio 模式（默认）**：由工具启动引擎子进程，通过 **stdin 发送 JSON 请求、stdout 读取 JSON 结果**，请求示例 `{"image_path": "C:\\tmp\\shot.png"}` 或 Base64 图像
+2. **TCP 模式（可选）**：启动时传 `-port=<端口> -addr=loopback`，工具通过环回 TCP 请求（适合需要复用的场景）
+3. **HTTP 模式（仅 Umi-OCR）**：POST `http://127.0.0.1:1224/api/ocr`
+4. 引擎进程**常驻复用**（初始化一次，任务期间反复识别）；任务结束或工具退出时回收
+5. 引擎返回结构（PaddleOCR-json 系）：
+   ```json
+   {"code":100,"data":[{"box":[[13,5],[161,5],[161,27],[13,27]],"score":0.9996,"text":"安装"}]}
+   ```
+   `box` 为**四角像素坐标**，中心点即 `((x1+x3)/2, (y1+y3)/2)`，可直接作为点击坐标来源
 
 **识别与点击流程**
 
-1. 仅截取**活动窗口客户区**（缩小识别范围、降低噪声），必要时按 DPI 换算像素
-2. 调用 `OcrEngine.Recognize` 获取「文本 + 像素包围盒」列表
-3. 文本按 F14.3 规则归一化后与关键词表比对，判定语义类别
-4. **白名单/推进类命中**：取包围盒 → 外扩 `roi_padding_px` 形成 ROI → 优先在 ROI 内做模板精修（命中则用模板中心，更精确）；未命中模板则以包围盒中心为点击点
-5. **黑名单命中**：仅记录，绝不点击
-6. 最终点击点 = 目标中心 + 随机偏移（`click_jitter_px`），落点须在窗口矩形内
-7. 命中记录写入 `gui_actions`，`source: "ocr"`，并标注置信度评估值
+1. 仅截取**活动窗口客户区**（缩小范围、降低噪声），按 DPI 换算像素后写入临时 PNG（或转 Base64）
+2. 调用 `OcrEngine.Recognize` 获取「文本 + 四角坐标 + score」列表
+3. **先按 `min_score`（默认 0.6）过滤低置信结果**（引擎原生 score，比启发式可靠）
+4. 文本按 F14.3 规则归一化后与关键词表比对，判定语义类别
+5. **白名单/推进类命中**：取包围盒 → 外扩 `roi_padding_px` 形成 ROI → 优先在 ROI 内做模板精修（命中则用模板中心）；未命中模板则以包围盒中心为点击点
+6. **黑名单命中**：仅记录，绝不点击（黑名单优先级高于一切）
+7. 最终点击点 = 目标中心 + 随机偏移（`click_jitter_px`），落点须在窗口矩形内
+8. 命中记录写入 `gui_actions`：`source: "ocr"`、`ocr_score`、`recognize_ms`
 
-**置信度评估（用于仲裁与抑制误判）**
+**置信度与仲裁**
 
-Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
-
-- 关键词**完整词匹配**（非子串模糊命中）得高分
-- 包围盒尺寸合理（文字行高在 `min_text_height_px`~`max_text_height_px` 区间，默认 10~80px）得高分
-- 目标位于窗口下半部/右下角（多数向导按钮区）适度加分
-- 同窗同时命中多个候选时，分数高者优先；分数接近时取预置语义优先级
+- 主判据为**引擎原生 `score`**，配合文本**完整词匹配**（非子串模糊命中）
+- 包围盒合理性校验：宽高须在合理范围（文字行高 `min_text_height_px`~`max_text_height_px`，默认 10~80px）
+- 同窗多候选：先比语义优先级，再比 score
+- **界面语种与引擎语言不匹配时**（如中文界面用纯英文模型识别），结果仅记录、**不触发点击**
 
 **性能与缓存**
 
-- 单次窗口 OCR 目标耗时 ≤ 300ms；对同一窗口截图做哈希，画面未变化时复用上次结果，避免无效重复 OCR
-- OCR 与模板/ UIA 的识别流程串行执行，避免同时占用前台资源影响样本行为
+- 单次识别目标耗时 ≤ 800ms（含截屏与进程通信）；对同一窗口截图做哈希，画面未变化时复用上次结果
+- 引擎初始化耗时在结果 JSON 的 `prereq.ocr_startup_ms` 中记录，便于性能回归
+- OCR 与 UIA/模板的识别流程串行执行，避免同时占用前台资源影响样本行为
 
 **降级与容错**
 
-- OCR 引擎不可用（系统组件被裁剪、非 Windows、引擎初始化失败）→ 记录 `ocr_unavailable`，自动降级为「UIA + 模板」，**不中断流程**
-- 语言包缺失（如仅有 `en-US` 而界面为中文）→ 记录 `ocr_lang_missing`，仍尝试用现有语言包识别，效果不佳时自然回落到模板
-- 同一窗口 OCR 触发动作次数计入 `max_actions_per_window`，防止误识别导致的重复点击
+- 引擎不存在 / 启动失败 / 健康检查失败 → 记录 `ocr_unavailable`，自动降级为「UIA + 模板」，**不中断流程**（`require_ocr: true` 时除外，见 F16.3）
+- 引擎进程卡死或崩溃 → 按 `restart_on_failure` 自动重启（上限可配），超限则本次任务内禁用 OCR
+- 单次识别超时（`recognize_timeout_ms`，默认 3000ms）→ 放弃本次识别，不阻塞 GUI 流程
+- 同一窗口 OCR 触发动作次数计入 `max_actions_per_window`，防止误识别导致重复点击
 
 #### F15 安装结果验证与证据采集
 
@@ -622,16 +673,16 @@ Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
 - 未取得证据但进程正常运行结束 → `triggered`；仅被超时终结 → `killed_on_timeout`
 - 采集应在安装器退出后再等待一个稳定期（默认 3 秒，可配置），避免写入延迟导致误判
 
-#### F16 前置依赖自检与用户提示（7-Zip / OCR 语言包）
+#### F16 前置依赖自检与用户提示（7-Zip / OCR 引擎）
 
-**定位（v2.3 定案）**：本工具为**免安装单文件**，**不代为安装任何环境前置依赖**。前置依赖由镜像构建阶段或运维负责预置，工具只做"检测 → 提示 → 明确退出"。
+**定位**：本工具为**免安装单文件**，**不代为安装任何环境前置依赖**。前置依赖由镜像构建阶段或运维负责预置，工具只做"检测 → 提示 → 明确退出/降级"。
 
 **F16.1 7-Zip 检测**
 
 - **探测顺序**：配置指定路径（`archive.sevenzip_path`，非 `auto` 时优先）→ 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 `Wow6432Node`）→ `PATH` 查找 → 常见默认路径（`C:\Program Files\7-Zip\7z.exe`、`C:\Program Files (x86)\7-Zip\7z.exe`）
 - 命中后记录路径与版本到结果 JSON 的 `prereq` 字段
 
-**F16.2 缺失时的行为（关键）**
+**F16.2 7-Zip 缺失时的行为**
 
 1. **不静默降级**（不内嵌解压实现）、**不代为安装**（不调用任何安装包）
 2. 在 stdout 与日志输出**明确的用户提示**，内容至少包含：缺失项、影响范围、安装方式（含官方离线包文件名与静默安装命令示例）、绕过方式
@@ -652,33 +703,53 @@ Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
         仅检查环境：AutoTrigger.exe --check-prereq
 ```
 
-**F16.3 OCR 语言包检测（P0，实测确认必需）**
+**F16.3 OCR 引擎检测（v2.4 重写，P0）**
 
-- **检测方式（三层，以第一层为准）**：
-  1. `OcrEngine.AvailableRecognizerLanguages` —— **最权威判据**，直接反映引擎可识别的语言
-  2. `OcrEngine.IsLanguageSupported(Language(tag))` —— 判定单个目标语言是否可用
-  3. `C:\Windows\OCR\<tag>` 资源目录与 `Get-WindowsCapability -Online -Name "Language.OCR*"` —— 辅助交叉验证
-- **实测结论（2026-09-30，见 F14.6 实测记录）**：环境默认**只装 `zh-Hans-CN`，`en-US` 不可用**；`TryCreateFromLanguage('en-US')` 返回 null
-- **检测结果用途**：
-  - 写入 `prereq.ocr_languages_available` / `prereq.ocr_languages_missing`
-  - **仅装载可用语言的引擎**：`ocr.languages` 是期望列表，实际按 `AvailableRecognizerLanguages` 求交集逐个 `TryCreateFromLanguage`；求交为空则不创建任何引擎并整体降级
-  - 界面语言与可用引擎语言不匹配时（如中文界面但仅有 en-US 包），OCR 结果视为低置信，**不参与自动点击**（避免误点）
-- **缺失语言包的处理**：仅**告警 + 自动降级**为「UIA + 模板」（不报错、不影响退出码），提示内容说明如何离线安装语言包
-- **部署建议**：把 OCR 语言包与 7-Zip 一并纳入镜像前置检查表（F16.5）；`--check-prereq` 输出实际可用语言清单
-- **参考工具**：`scripts/verify-ocr.ps1` 为此检测的可执行原型（列出语言、生成测试图、端到端识别并输出像素包围盒）
+- **探测方式**：
+  1. 配置指定路径（`ocr.engine_path`，非 `auto` 时优先）
+  2. `PATH` 查找引擎可执行文件名（`PaddleOCR-json.exe` / `RapidOCR-json.exe` / `Umi-OCR.exe` / `tesseract.exe`）
+  3. 常见默认路径（如 `C:\tools\PaddleOCR-json\`、`C:\Program Files\Tesseract-OCR\`）
+  4. 命中后**实际启动一次**做能力自检（取版本、语言、初始化耗时），而非仅看文件存在
+- **能力自检项**：
+  - 引擎可执行文件路径与版本
+  - 语言支持（PaddleOCR 系默认含 `ch` / `en`）
+  - **AVX 指令集检测**（`paddleocr_json` 必需）：CPU 不支持时给出"请改用 `rapidocr_json`"的明确提示
+  - 初始化耗时（`prereq.ocr_startup_ms`）
+- **缺失时的行为**：
+  - 默认（`require_ocr: false`）：**提示用户安装 + 自动降级**为「UIA + 模板」，记 `prereq.ocr_engine_status: missing`，**不影响退出码**
+  - `require_ocr: true`：视为必需前置，缺失时以**退出码 5** 结束
+- **提示文案要求（示例）**
+
+```
+[WARN] 前置依赖缺失：未检测到 OCR 引擎
+       影响：无 UIA 控件树的自绘安装器界面无法通过 OCR 辅助定位，将仅使用 UIA + 图像模板
+       解决方式（离线环境，任选其一）：
+         1) 下载 PaddleOCR-json 发行包并解压到任意目录（绿色免安装），
+            然后在 config.json 中设置 ocr.engine_path 指向 PaddleOCR-json.exe
+         2) 将解压目录加入 PATH
+         3) 若 CPU 不支持 AVX，请改用 RapidOCR-json 并设置 ocr.engine = "rapidocr_json"
+       临时绕过（强制仅用 UIA + 模板）：AutoTrigger.exe --no-ocr ...
+       仅检查环境：AutoTrigger.exe --check-prereq
+```
+
+- **部署建议**：OCR 引擎与 7-Zip 一并纳入镜像前置检查表（F16.5）；`--check-prereq` 输出引擎类型、路径、版本、语言与 AVX 支持情况
+- **参考工具**：`scripts/verify-ocr.ps1`（v2.3 用于验证 Windows 内置 OCR；**M1 阶段需扩展为多引擎探测与端到端验证**）
 
 **F16.4 `--check-prereq`**
 
 - 单独执行环境自检并输出人类可读报告（供镜像构建/部署前验证），不含样本处理
-- 全部满足 → 退出码 0；7-Zip 缺失 → 退出码 4
+- 报告内容：系统版本与 SP、CPU AVX、7-Zip 路径与版本、OCR 引擎类型/路径/版本/语言/初始化耗时
+- 全部满足 → 退出码 0；7-Zip 缺失 → 退出码 4；OCR 引擎缺失且 `require_ocr: true` → 退出码 5
 
 **F16.5 前置依赖清单（部署检查表）**
 
 | 依赖 | 必需性 | 缺失后果 | 检测/处理 |
 |------|--------|---------|----------|
 | 7-Zip | 必需（除非 `--no-archive`） | 压缩包样本无法处理；含压缩包时退出码 4 | F16.1 / F16.2 |
-| OCR 语言包（`zh-Hans` / `en-US`） | 可选（缺失则对应语言 OCR 失效并降级） | 该语言界面的按钮文本无法被 OCR 定位，自动降级为 UIA + 模板；实测环境默认仅装 `zh-Hans-CN` | F16.3 |
-| tesseract（仅当 `ocr.engine=tesseract`） | 可选 | OCR 后端不可用，自动降级 | F16.3 |
+| OCR 引擎（`paddleocr_json` 默认） | 建议必需（否则 OCR 降级） | 自绘界面无法 OCR 定位，降级为 UIA + 模板 | F16.3 |
+| CPU AVX 指令集 | 仅 `paddleocr_json` 需要 | 引擎无法启动，需改用 `rapidocr_json` | F16.3 能力自检 |
+| VC++ 2015-2022 运行库 | 部分引擎可能依赖（Win7 尤其） | 引擎启动失败 | 镜像预置；`--check-prereq` 验证 |
+| （可选）tesseract / Umi-OCR | 可选 | 对应后端不可用 | F16.3 |
 
 > 该"检测 + 提示 + 不代装"策略同样适用于后期新增的任何前置依赖。
 
@@ -688,16 +759,16 @@ Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
 
 | 类别 | 要求 |
 |------|------|
-| 性能 | 单文件触发不超过配置超时；批量并发度可配置（默认串行，避免干扰 EDR 与 GUI 自动化）；单次窗口 OCR 目标 ≤ 300ms |
-| 稳定性 | 单文件失败不影响整体流程；全局看门狗防挂死（F9）；无协程泄漏；OCR/模板任一失败均可降级 |
-| 兼容性 | Windows 10 1809+ / Windows 11 / Server 2016+；架构预留 Linux / macOS |
+| 性能 | 单文件触发不超过配置超时；批量并发度可配置（默认串行）；单次 OCR 识别 ≤ 800ms；引擎常驻复用，避免重复初始化 |
+| 稳定性 | 单文件失败不影响整体流程；全局看门狗防挂死（F9）；无协程泄漏；OCR / 模板任一失败均可降级；OCR 引擎崩溃可自动重启 |
+| 兼容性 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**；架构预留 Linux / macOS |
 | 权限 | 以管理员权限运行（静默安装需要）；启动时自检权限，无管理员权限则告警并继续；沙箱镜像建议关闭 UAC 弹窗以允许 GUI 自动化 |
 | 日志 | 除 JSON 结果外，输出可读日志到 stdout 与文件（时间戳、级别、文件名、阶段）；日志与 JSON 结果分流，不混写 stdout |
-| 可配置 | 超时、并发度、递归深度、解压大小上限、尝试间隔与次数、参数表、按钮关键词表、OCR 引擎与语言、模板目录均可配置 |
-| 无残留 | 退出前清理临时目录；不修改系统默认文件关联；**不写入注册表、不产生安装残留**（免安装约束） |
-| 可移植 | 核心层不依赖 Windows API；平台相关逻辑全部走适配层 |
+| 可配置 | 超时、并发度、递归深度、解压大小上限、尝试间隔与次数、参数表、按钮关键词表、**OCR 引擎与路径/传输方式/置信度阈值**、模板目录均可配置 |
+| 无残留 | 退出前清理临时目录、**回收 OCR 引擎子进程**；不修改系统默认文件关联；**不写入注册表、不产生安装残留** |
+| 可移植 | 核心层不依赖 Windows API；平台相关逻辑全部走适配层；**Win7 / Win10 差异（DPI、UIA、截屏）全部封装在适配层** |
 | 可维护 | 见 7.3 工程规范：接口由使用方定义、依赖注入、`gofmt`/`go vet`/`golangci-lint` 零 error、core 层单测覆盖率 ≥ 70% |
-| 离线 | 全程不访问网络；前置缺失时只提示、不下载、不安装 |
+| 离线 | 全程不访问网络（OCR 走本地进程 / 环回 TCP）；前置缺失时只提示、不下载、不安装 |
 | 分发 | **单一可执行文件、免安装**：拷贝即用、无安装步骤、无外部运行时、无随包依赖；可选 `config.json` / `templates/` 均为外部可选项 |
 
 ### 6.1 工具自身退出码表
@@ -708,25 +779,28 @@ Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
 | 1 | 工具自身运行期异常崩溃 |
 | 2 | 输入参数/路径非法，未开始处理 |
 | 3 | 配置文件解析失败 |
-| 4 | **前置依赖缺失（未检测到 7-Zip）—— 工具已提示用户先安装，不代为安装** |
+| 4 | **必需前置依赖缺失（未检测到 7-Zip）** —— 工具已提示用户先安装，不代为安装 |
+| 5 | **OCR 引擎缺失且 `require_ocr: true`** —— 已提示用户安装（默认 `require_ocr: false` 时降级运行，不返回此码） |
 
 ---
 
 ## 7. 技术方案
 
-### 7.1 技术选型（Go 定案）
+### 7.1 技术选型
 
 | 组件 | 方案 |
 |------|------|
 | 语言 | **Go（定案）**：`CGO_ENABLED=0` 静态编译单文件，目标机**无需 Go 环境** |
-| 构建 | `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o AutoTrigger.exe ./cmd/autotrigger` |
+| **工具链版本** | **锁定 Go 1.20.x** —— Go 1.21 起已放弃 Windows 7/8/8.1 支持（要求 Win10 / Server 2016+）。`go.mod` 声明 `go 1.20`；**选型第三方库前必须确认其最低 Go 版本 ≤ 1.20** |
+| 构建 | `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go1.20.x build -trimpath -ldflags "-s -w" -o AutoTrigger.exe ./cmd/autotrigger` |
 | 跨平台策略 | Core 层平台无关；Platform Adapter 分平台实现（`_windows.go` 构建标签隔离） |
-| 进程树管理 | Windows：Job Object（`syscall`/中继库）；Linux/macOS：进程组 |
+| 进程树管理 | Windows：Job Object（Vista+ 可用）；Linux/macOS：进程组 |
 | 文件解压 | **外部 7-Zip 命令行**（环境需预置）；工具**仅检测与提示**，不引入解压库、不使用 CGO |
 | 文件头识别 | 自实现魔数表（约 20 条），`go:embed` 内嵌 |
-| GUI 自动化 | Windows UIA（`syscall` + COM 中继库调用）+ SendInput 键鼠注入 + 自实现模板匹配（纯 Go，不引入 OpenCV/CGO） |
-| **OCR 辅助** | **默认 Windows 内置 OCR（`Windows.Media.Ocr`）**：经 COM/WinRT 互操作调用，离线、无需随包文件、返回像素包围盒；**实测确认引擎可用**（语言覆盖随镜像语言包而定，见 F14.6）；可选后端 `tesseract.exe`（环境预置）；**禁止 CGO** |
-| 截图 | 系统 GDI 截屏 API（`BitBlt`/`PrintWindow`），纯 Go 封装 |
+| GUI 自动化 | Windows UIA（`syscall` + COM 中继库调用；**Win7 走 UIAutomationCore 基础能力**）+ SendInput 键鼠注入 + 自实现模板匹配（纯 Go，不引入 OpenCV/CGO） |
+| **OCR 辅助** | **外部开源 OCR 引擎进程（默认 PaddleOCR-json）**：绿色免安装、离线；通过 **stdio 或环回 TCP** 通信；返回**文本 + 四角像素坐标 + 原生 score**；Windows 内置 OCR 仅作可选回退（`ocr.engine=windows`，默认关闭）；**禁止 CGO、禁止链接原生 OCR SDK** |
+| 截屏 | GDI `BitBlt` / `PrintWindow`（按系统版本选择 `PW_RENDERFULLCONTENT` 等标志） |
+| DPI 处理 | Win10 1607+ 用 `GetDpiForWindow`；**Win7/8.1 回退 `GetDeviceCaps(LOGPIXELSX)` + `SetProcessDPIAware`** |
 | 结果输出 | JSON（主结果）+ 文本日志（辅助），仅写本地文件 |
 | 配置与资源 | 默认值、参数表、关键词表、图像模板 `go:embed` 内嵌；支持外部同名文件覆盖 |
 | 静态检查 | `gofmt` / `go vet` / `golangci-lint`（errcheck、govet、staticcheck、revive、gocritic） |
@@ -736,11 +810,12 @@ Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
 | 要求 | 说明 |
 |------|------|
 | 产物 | **单个 `AutoTrigger.exe`**，放任意目录可运行，**免安装、无需 Go 环境** |
-| 无运行时依赖 | `CGO_ENABLED=0` 静态编译，目标机无需 Go / .NET / VC++ Redist |
-| 无随包依赖 | 交付物**不携带**安装包、脚本、动态库；OCR 使用系统组件，不随包分发模型文件 |
-| 无网络依赖 | 校验与版本信息不得联网查询 |
+| 无运行时依赖 | `CGO_ENABLED=0` 静态编译，目标机无需 Go / .NET |
+| 无随包依赖 | 交付物**不携带**安装包、脚本、动态库、OCR 模型；OCR 引擎作为独立前置依赖单独部署 |
+| 无网络依赖 | 校验与版本信息不得联网查询；OCR 走本地进程 / 环回 TCP |
 | 体积控制 | 目标 ≤ 30 MB（模板与关键词表资源压缩内嵌） |
-| 可选同目录文件（均非必需） | `config.json`（外部配置覆盖）、`templates/`（额外图像模板）；两者缺失时使用内嵌默认值 |
+| 可选同目录文件（均非必需） | `config.json`（外部配置覆盖）、`templates/`（额外图像模板）；缺失时使用内嵌默认值 |
+| Win7 构建验证 | 产物须在 **Win7 SP1 x64** 实机/虚拟机冒烟（对应验收 A20） |
 | 验证 | 在**未安装 Go 及任何运行时、无网络**的干净镜像上，仅拷贝单个 exe 即可完成全部功能（对应验收 A14） |
 
 ### 7.3 工程规范与架构约束（高内聚、低耦合）
@@ -751,10 +826,11 @@ Windows 内置 OCR 不提供逐词置信度，采用启发式打分：
 cmd/autotrigger/main.go          # 仅做依赖装配与启动，业务逻辑为零
 internal/core/                   # 平台无关核心：调度、类型识别、尝试编排、结果模型
 internal/core/ports/             # 接口定义（使用方定义接口，随 core 走）
-internal/platform/windows/       # Windows 适配：进程/Job Object、UIA、注册表、文件系统证据
+internal/platform/windows/       # Windows 适配：进程/Job Object、UIA、注册表、截屏、DPI、文件系统证据
+internal/platform/windows/winver/# 系统版本判定与 API 能力分支（Win7 / Win10 差异集中在此）
 internal/platform/linux/         # 空实现占位（编译期可选）
-internal/prereq/                 # 7-Zip / OCR 语言包探测与用户提示（不执行安装）
-internal/ocr/                    # OCR 引擎适配：系统内置 OCR、tesseract 后端、关闭实现
+internal/prereq/                 # 7-Zip / OCR 引擎探测、能力自检与用户提示（不执行安装）
+internal/ocr/                    # OCR 引擎适配：进程生命周期、stdio/TCP/HTTP 通信、结果解析、崩溃重启
 internal/gui/                    # GUI 识别编排：UIA/模板/OCR 三级仲裁、键鼠注入
 internal/resources/              # go:embed 内嵌资源（魔数表/参数表/关键词表/模板）
 internal/config/                 # 配置加载与合并（默认值 < 文件 < 命令行）
@@ -771,12 +847,14 @@ testdata/                        # 测试样本与期望结果
 | 接口归属 | 接口由使用方（core）定义，禁止"实现方定义接口" |
 | 依赖注入 | 统一在 `main` 装配；core 内不得 `new` 具体实现、不得使用包级全局状态 |
 | 禁止 CGO | 全部依赖纯 Go 或 `syscall`/中继库，保证静态单文件 |
-| 识别策略可插拔 | UIA / 模板 / OCR 三级识别实现同一 `Control` 模型，新增识别手段不需改 core 编排逻辑 |
+| 识别策略可插拔 | UIA / 模板 / OCR 三级识别实现同一 `Control` 模型；**OCR 引擎可配置切换（PaddleOCR-json / RapidOCR-json / Umi-OCR / tesseract / 内置 / 关闭）**，新增引擎不改 core 编排逻辑 |
+| 平台能力分支集中 | Win7 与 Win10 的 API 差异（DPI、截屏标志、UIA 特性）统一封装在 `platform/windows/winver`，禁止散落 `if win7` 判断 |
+| 外部进程管理 | OCR 引擎等外部进程统一经 `ProcessRunner` 启停，纳入 Job Object 与全局清理流程，保证无残留子进程 |
 | 错误处理 | `fmt.Errorf("...: %w", err)` 包裹 + `errors.Is/As` 判定；不用 panic 控制流程；错误须带上下文（文件、阶段） |
 | 并发 | 统一 `context.Context` 传递取消与超时；`errgroup` 控制并发；`defer cancel()` 防泄漏 |
 | 配置与资源 | 全部经 `config` / `resources` 包访问，禁止散落硬编码常量与路径 |
 | 命名与注释 | 导出标识符必须有 doc comment；单文件建议 ≤ 400 行；包职责单一 |
-| 测试 | core 层单测覆盖率 ≥ 70%；适配层以表驱动测试覆盖关键路径；Windows API / OCR 交互通过接口 mock，测试不依赖真实安装器与真实 OCR |
+| 测试 | core 层单测覆盖率 ≥ 70%；适配层以表驱动测试覆盖关键路径；Windows API / OCR 交互通过接口 mock，测试不依赖真实安装器与真实 OCR 引擎 |
 | 静态检查 | CI（或提交前脚本）执行 `gofmt -l`、`go vet`、`golangci-lint run`，要求零 error |
 | 日志 | 统一 logger 接口；禁止 `fmt.Println` 直接写 stdout 干扰结果解析 |
 
@@ -786,7 +864,7 @@ testdata/                        # 测试样本与期望结果
 2. **部署前提**：**由镜像构建或运维预先安装 7-Zip**；工具**不随包分发安装包、不代为安装**
 3. **探测顺序**：配置指定路径 → 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 Wow6432Node）→ `PATH` → 常见默认路径
 4. **缺失处理**：输出 F16.2 规定的用户提示 → 含压缩包样本时以退出码 `4` 结束；可用 `--no-archive` 跳过压缩包继续处理其余样本
-5. **部署建议**：推荐镜像构建阶段预置 7-Zip 并在构建流程末尾执行 `AutoTrigger.exe --check-prereq` 作为卡点校验，避免运行时才发现缺失
+5. **部署建议**：镜像构建阶段预置 7-Zip 并在构建流程末尾执行 `AutoTrigger.exe --check-prereq` 作为卡点校验
 
 ### 7.5 config.json 结构（全部字段有内嵌默认值，可选覆盖）
 
@@ -812,13 +890,21 @@ testdata/                        # 测试样本与期望结果
   },
   "ocr": {
     "enabled": true,
-    "engine": "windows",
-    "languages": ["zh-Hans", "en-US"],
+    "engine": "paddleocr_json",
+    "engine_path": "auto",
+    "transport": "stdio",
+    "tcp_port": 0,
+    "startup_timeout_ms": 10000,
+    "recognize_timeout_ms": 3000,
+    "keep_alive": true,
+    "restart_on_failure": true,
+    "max_restarts": 2,
+    "require_ocr": false,
+    "min_score": 0.6,
     "roi_padding_px": 12,
     "min_text_height_px": 10,
     "max_text_height_px": 80,
-    "cache_by_screenshot_hash": true,
-    "tesseract_path": "auto"
+    "cache_by_screenshot_hash": true
   },
   "install_verify": {
     "settle_sec": 3,
@@ -829,9 +915,27 @@ testdata/                        # 测试样本与期望结果
 }
 ```
 
-> `sevenzip_path` / `tesseract_path` 取值为 `auto` 时按 F16.1 探测顺序自动查找；`require_sevenzip: false` 等价于默认启用 `--no-archive` 行为。
->
-> `ocr.languages` 为**期望语言列表**，实际生效语言以 `OcrEngine.AvailableRecognizerLanguages` 求交集为准，未安装的语言会被跳过并记入 `prereq.ocr_languages_missing`（实测环境默认只有 `zh-Hans-CN`，见 F14.6）。
+> - `sevenzip_path` / `ocr.engine_path` 取值为 `auto` 时按 F16.1 / F16.3 的探测顺序自动查找
+> - `require_sevenzip: false` 等价于默认启用 `--no-archive` 行为
+> - `ocr.engine` 可选 `paddleocr_json`（默认）/ `rapidocr_json` / `umi_ocr` / `tesseract` / `windows`（Win10+ 可选回退）/ `none`
+> - `ocr.transport` 可选 `stdio`（默认）/ `tcp` / `http`（仅 Umi-OCR）
+> - `ocr.require_ocr: false` 表示 OCR 缺失时**降级而非失败**；设为 `true` 则缺失时以退出码 5 结束
+> - `ocr.min_score` 为**引擎原生置信度阈值**，低于该值的识别结果不参与点击
+
+### 7.6 OCR 引擎接入约定（v2.4 新增）
+
+| 约定 | 说明 |
+|------|------|
+| 通信方式 | 优先 **stdio**（stdin 发 JSON、stdout 读 JSON）；可选环回 TCP（`-port` / `-addr=loopback`）；Umi-OCR 支持 HTTP |
+| 进程生命周期 | **常驻复用**：任务开始启动一次 → 多次识别 → 任务结束回收；禁止每次识别都启停进程 |
+| 启动超时 | `startup_timeout_ms`（默认 10s）；超时视为引擎不可用并降级 |
+| 识别超时 | `recognize_timeout_ms`（默认 3s）；超时放弃本次识别，不阻塞 GUI 流程 |
+| 健康检查 | 定期或被调用前检查进程存活；卡死/崩溃按 `restart_on_failure` 重启（上限 `max_restarts`），超限后本次任务内禁用 OCR |
+| 输入格式 | 优先传**图片文件路径**（避免大 Base64 传输开销）；需要时支持 Base64 |
+| 结果解析 | 统一解析为 `[]OcrText{Text, Box[4], Score}`；不同引擎的输出差异在 `internal/ocr` 内归一化 |
+| 语言 | PaddleOCR 系默认含中英；语言配置写入 `prereq.ocr_engine_languages`；**界面语种与引擎语言不匹配时结果不参与点击** |
+| 资源占用 | 引擎进程独立于样本进程，避免相互影响；OCR 处理与样本运行尽量错峰（GUI 空闲时识别） |
+| 安全 | 仅本地进程 / 环回通信，**绝不外连**；引擎可执行文件由镜像提供，工具不校验签名但记录路径与版本 |
 
 ---
 
@@ -839,16 +943,16 @@ testdata/                        # 测试样本与期望结果
 
 | 编号 | 交付物 |
 |------|--------|
-| D1 | **单一可执行文件** `AutoTrigger.exe`（Go 静态编译，**免安装、拷贝即用**，目标机无需运行时；Linux / macOS 预留接口与空实现） |
+| D1 | **单一可执行文件** `AutoTrigger.exe`（Go 1.20.x 静态编译，**免安装、拷贝即用**，目标机无需运行时；**须在 Win7 SP1 x64 与 Win10 上分别验证**） |
 | D2 | 外部覆盖配置模板（config.json，**可选**，缺失时使用内嵌默认值） |
 | D3 | 可外部编辑的参数/关键词表（silent_params.windows.json、buttons.zh-CN.json）与图像模板目录（含 F14.2 初始模板集，均为可选覆盖） |
-| D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3） |
-| D5 | 使用说明文档（README：**免安装部署方式**、7-Zip 前置要求与安装指引、OCR 语言包说明、退出码表、`--check-prereq` / `--dump-ui` / `--no-archive` 用法） |
-| D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / 自绘界面 OCR 定位 / 需联网 / 装不成功 / 前置缺失 六类） |
+| D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3）+ **Win7/Win10 差异说明（对应 4.6）** |
+| D5 | 使用说明文档（README：**免安装部署方式**、7-Zip 与 OCR 引擎前置要求与安装指引、退出码表、`--check-prereq` / `--dump-ui` / `--no-archive` / `--no-ocr` 用法） |
+| D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / **自绘界面 OCR 定位** / 需联网 / 装不成功 / 前置缺失 六类；**并在 Win7 环境复测**） |
 | D7 | 结果 JSON Schema 文件（供下游流水线校验） |
-| D8 | 构建与检查脚本（Makefile / build.ps1：静态构建 + gofmt/vet/lint + 单测覆盖率） |
-| D9 | **环境前置检查表与镜像构建指引**（7-Zip 安装位置与验证命令、OCR 语言包预置方式、`--check-prereq` 卡点用法） |
-| D10 | **环境 OCR 能力验证脚本** `scripts/verify-ocr.ps1`（列出引擎可用 OCR 语言、输出 `C:\Windows\OCR` 目录、生成中英测试图并端到端识别，打印文本与像素包围盒） |
+| D8 | 构建与检查脚本（Makefile / build.ps1：**Go 1.20.x 静态构建** + gofmt/vet/lint + 单测覆盖率） |
+| D9 | **环境前置检查表与镜像构建指引**（7-Zip 与 OCR 引擎的放置路径、离线包获取方式、VC++ 运行库、`--check-prereq` 卡点用法） |
+| D10 | **OCR 环境验证脚本** `scripts/verify-ocr.ps1`（现有版本验证 Windows 内置 OCR；**M1 需扩展为多引擎探测 + 端到端识别验证**，输出文本与四角像素坐标） |
 
 ---
 
@@ -862,19 +966,21 @@ testdata/                        # 测试样本与期望结果
 | A4 | 超时控制 | 超时后进程树被完整清理不残留；该文件记 `killed_on_timeout` |
 | A5 | 未知格式兜底 | 扩展名伪装文件能被文件头识别并正确触发 |
 | A6 | 批量处理 | 文件夹内 50 个文件全部处理完毕，单文件失败不影响整体，summary 计数正确 |
-| A7 | 结果输出 | JSON 含 `schema_version` 与 `prereq`，每次尝试含 method/result/duration，可通过 D7 Schema 校验 |
+| A7 | 结果输出 | JSON 含 `schema_version` 与 `prereq`（含 OCR 引擎探测结果），每次尝试含 method/result/duration，可通过 D7 Schema 校验 |
 | A8 | EDR 兼容 | 工具运行期间 EDR 能正常采集到样本行为，无冲突 |
-| A9 | 跨平台架构 | Core 层无直接平台 API 调用；适配层接口清晰可扩展 |
+| A9 | 跨平台架构 | Core 层无直接平台 API 调用；适配层接口清晰可扩展；**Win7/Win10 差异集中在适配层** |
 | A10 | 快捷方式/DLL | `.lnk` 能解析目标并触发；`.dll` 能通过 rundll32 尝试导出函数 |
-| A11 | 退出码 | 参数非法→2，配置错误→3，前置依赖缺失→4，正常完成→0 |
+| A11 | 退出码 | 参数非法→2，配置错误→3，7-Zip 缺失→4，OCR 缺失且 require_ocr→5，正常完成→0 |
 | A12 | GUI 自动化安装 | 对向导式安装器样本（Inno Setup / NSIS / InstallShield），能通过 UIA 完成"同意 → 下一步 → 安装 → 完成"点击链 |
 | A13 | 安装成功判定 | 静默与 GUI 两条路径均能产出 `install_completed` 并附证据，且**无误报**（未装成功不得标记） |
 | A14 | 免安装单文件交付 | 在**未安装 Go / 任何运行时、无网络**的干净 Windows 镜像上，仅拷贝单个 exe 即可完成全部功能；全程无安装步骤、无注册表残留 |
-| A15 | 离线合规 | 全程无外连行为；安装器联网等待场景标记 `requires_network` 并按超时结束 |
-| A16 | 7-Zip 前置依赖处理 | ① 已预置时功能正常；② **未预置时输出明确安装提示（含离线安装命令）并以退出码 4 结束，全程不尝试自行安装**；③ `--no-archive` 可跳过压缩包继续处理其余样本；④ `--check-prereq` 报告准确反映实际状态 |
-| A17 | 代码质量 | `gofmt`/`go vet`/`golangci-lint` 零 error；core 层单测覆盖率 ≥ 70%；构建产物为单文件且 `CGO_ENABLED=0` |
-| A18 | OCR 辅助定位 | 对**无 UIA 控件树的自绘安装器**，能通过本地 OCR 定位"下一步/安装"等按钮文本像素位并成功点击推进（`gui_actions` 中 `source: "ocr"`）；**OCR 引擎或语言包不可用时自动降级为 UIA + 模板且不中断流程** |
+| A15 | 离线合规 | 全程无外连行为（含 OCR 引擎，仅本地进程/环回通信）；安装器联网等待场景标记 `requires_network` 并按超时结束 |
+| A16 | 7-Zip 前置依赖处理 | ① 已预置时功能正常；② **未预置时输出明确安装提示（含离线安装命令）并以退出码 4 结束，全程不尝试自行安装**；③ `--no-archive` 可跳过压缩包继续处理其余样本；④ `--check-prereq` 报告准确 |
+| A17 | 代码质量 | `gofmt`/`go vet`/`golangci-lint` 零 error；core 层单测覆盖率 ≥ 70%；构建产物为单文件且 `CGO_ENABLED=0`；**使用 Go 1.20.x 构建** |
+| A18 | **外部 OCR 引擎接入** | ① 引擎可被正确探测（路径/版本/语言/AVX）；② 常驻复用（一次任务内初始化 1 次，多次识别无重复启动）；③ 引擎缺失/崩溃时自动降级或重启，**不中断主流程**；④ 识别结果含四角坐标与原生 score，且低于 `min_score` 的结果不参与点击 |
 | A19 | OCR 安全边界 | OCR 识别到"取消/卸载"等黑名单文本时**不产生点击动作**；OCR 点击次数受单窗口动作上限约束 |
+| A20 | **Win7 兼容性** | 在 **Windows 7 SP1 x64** 上：① exe 可直接运行（无需任何运行时）；② 截屏、DPI 换算、Job Object 进程树清理正常；③ UIA 或模板/OCR 至少一级能完成一次向导式安装；④ `--check-prereq` 报告正确 |
+| A21 | 无 AVX 环境降级 | CPU 不支持 AVX 时：① 启动自检给出明确提示；② 切换到 `rapidocr_json` 后功能正常；③ 两者皆无时降级为 UIA + 模板且不报错 |
 
 ---
 
@@ -882,9 +988,10 @@ testdata/                        # 测试样本与期望结果
 
 | 里程碑 | 内容 | 覆盖功能 |
 |--------|------|---------|
-| M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + 超时清理 + JSON 输出 + **7-Zip 自检与用户提示** + **OCR 引擎可行性验证（WinRT 调用 spike）** | F1 F2 F3 F4 F5 F9 F10 F13 F16 |
-| M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 三级识别**）+ 安装证据判定 + 文件夹遍历 + 压缩包递归 + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 |
-| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README、离线环境冒烟、lint 与覆盖率达标 | D1~D9、A8~A19 |
+| M0 环境与选型验证（新增） | ① **Go 1.20.x 工具链与依赖库可用性确认**；② **Win7 SP1 x64 运行验证**（截屏 / DPI / Job Object / UIA 能力基线）；③ **OCR 引擎接入 spike**（PaddleOCR-json 探测、stdio 通信、四角坐标解析、AVX 检测） | 4.6、7.6、D10 |
+| M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + 超时清理 + JSON 输出 + **7-Zip / OCR 引擎自检与用户提示** | F1 F2 F3 F4 F5 F9 F10 F13 F16 |
+| M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 引擎三级识别**）+ 安装证据判定 + 文件夹遍历 + 压缩包递归 + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 |
+| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README、**Win7 + Win10 双环境冒烟**、lint 与覆盖率达标 | D1~D10、A8~A21 |
 
 ---
 
@@ -897,17 +1004,22 @@ testdata/                        # 测试样本与期望结果
 | 安装程序卡在 GUI 等待输入 | 超时强制结束并记录；有 F14 时优先由 GUI 自动化推进 |
 | 压缩包嵌套过深或 zip 炸弹 | 递归深度限制（默认 3 层）+ 解压大小限制（默认 2 GB） |
 | **目标机未预置 7-Zip** | 启动自检 + **明确提示用户先安装**（含离线安装命令与绕过方式）+ 退出码 4；`--no-archive` 可跳过压缩包继续处理；镜像构建阶段用 `--check-prereq` 卡点 |
-| 静默参数抑制行为或直接失败 | 静默与无参数两种模式均作为独立尝试执行，尽量多试（F3/F13） |
+| **目标机未预置 OCR 引擎** | 启动自检 + **明确提示安装**（含绿色包放置方式）+ 自动降级为 UIA + 模板；需要强制时用 `require_ocr: true` + 退出码 5；`--no-ocr` 可显式关闭 |
+| **Go 1.21+ 不支持 Win7（必须锁 1.20.x）** | 构建环境固定 Go 1.20.x；`go.mod` 声明 `go 1.20`；引入第三方库前核查其最低 Go 版本；CI 中固定工具链版本 |
+| **Go 1.20 生态较旧，部分新库不可用** | 优先选择无依赖或低版本要求的库；必要时自行实现（如魔数表、模板匹配已计划自实现）；在 M0 阶段集中验证 |
+| **CPU 不支持 AVX 导致 PaddleOCR-json 无法运行** | 启动能力自检（AVX 检测）；提示改用 `rapidocr_json`；两者皆无则降级 UIA + 模板（A21） |
+| **Win7 环境 UIA 覆盖度低** | 明确"UIA 更早回落"策略；提高模板与 OCR 权重；Win7 实机验证模板覆盖清单（A20） |
+| **Win7 缺少新 DPI / 截屏 API** | 集中在 `winver` 包做版本分支：`GetDpiForWindow` → `GetDeviceCaps`；`PrintWindow` 标志按版本选择；`BitBlt` 兜底 |
+| **OCR 引擎依赖 VC++ 运行库（Win7 尤其）** | 列入镜像前置检查表（F16.5）；`--check-prereq` 实际启动一次引擎做能力自检，而非仅检查文件存在 |
+| **OCR 引擎初始化慢 / 每次启动开销大** | 引擎**常驻复用**（任务级生命周期）；记录 `ocr_startup_ms` 便于回归；结果缓存按截图哈希复用 |
+| **OCR 引擎进程卡死或崩溃** | 识别超时（3s）+ 健康检查 + 自动重启（上限 2 次）+ 超限本次任务内禁用；引擎进程纳入 Job Object 统一清理，避免残留 |
+| **OCR 误识别导致误点** | 原生 `score` 阈值过滤 + 完整词匹配 + 包围盒尺寸校验 + 黑名单优先级最高 + 单窗口动作上限 + 全量留痕审计（F14.6） |
+| **界面语种与 OCR 模型不匹配导致乱码/误识别** | 界面语种与引擎语言不匹配时结果仅记录、**不触发点击**（F16.3 / F14.6） |
+| **高 DPI 缩放导致 OCR/模板点击坐标偏移** | 截图坐标按窗口 DPI 换算（Win7 用 `GetDeviceCaps` 回退）；点击前校验目标坐标在窗口矩形内 |
 | UAC 安全桌面拦截自动化点击 | UIA 无法作用于安全桌面；沙箱镜像关闭 UAC 弹窗或工具随系统自启于最高权限 |
 | GUI 自动化误点（取消/卸载类按钮） | 黑名单关键词禁止点击（F14.3），**OCR 结果同样受黑名单约束**；全部键鼠动作留痕可回放审计 |
 | GUI 自动化在无桌面会话（Session 0）失效 | 明确要求前台桌面可用；批量模式默认串行，避免抢焦点 |
-| 自绘安装器无 UIA 树导致识别失败 | 图像模板兜底 + **本地 OCR 文本定位辅助** + `--dump-ui`（含 OCR 结果）采集补模板 + 模板目录外部热更新 |
-| **Go 调用 Windows 内置 OCR（WinRT/COM）实现复杂度高** | M1 立项 spike 验证可行性；封装在 `internal/ocr` 并以 `OcrEngine` 接口隔离，失败时可切换到可选 tesseract 后端或直接降级为 UIA + 模板，**不影响主链路** |
-| **OCR 语言包缺失 / 镜像裁剪掉系统 OCR 组件** | 启动自检纳入语言包探测（F16.3）；缺失时告警并自动降级、记录 `ocr_lang_missing` / `ocr_unavailable`，不中断流程 |
-| **实测环境仅有 `zh-Hans-CN`、无 `en-US`（且 Windows OCR 为单语言引擎）** | ① 需覆盖英文安装器界面时，在镜像中补装 `en-US` OCR 语言包；② 未补装则英文界面**优先靠 UIA + 图像模板**，OCR 仅作中文界面补充；③ 界面语言与可用引擎语言不匹配时，OCR 结果不参与自动点击，避免误点 |
-| **界面语种与 OCR 引擎语种不匹配导致识别乱码/误识别** | 逐语言创建引擎并记录实际生效语言；语种不匹配的识别结果降级为"仅供参考"，不触发点击（F16.3） |
-| **OCR 误识别导致误点** | 完整词匹配 + 包围盒尺寸合理性 + 黑名单优先 + 单窗口动作上限 + 全量留痕审计（F14.6） |
-| **高 DPI 缩放导致 OCR/模板点击坐标偏移** | 截图坐标按窗口 DPI 换算；点击前校验目标坐标在窗口矩形内（F14.5） |
+| 自绘安装器无 UIA 树导致识别失败 | 图像模板兜底 + **外部 OCR 文本定位** + `--dump-ui`（含 OCR 结果）采集补模板 + 模板目录外部热更新 |
 | 安装成功误判（退出码 0 但实际未装） | F15 多重证据（落盘/注册表/完成页）+ 退出后稳定期 |
 | Go 生态调用 Windows API / COM | 使用 `syscall` + 成熟中继库，禁止 CGO；对 UIA / OCR 交互做接口隔离以便 mock 测试 |
 | 工具自身被样本攻击 | 运行在沙箱内，崩溃不波及宿主机；建议工具与样本进程隔离 |
@@ -926,11 +1038,13 @@ testdata/                        # 测试样本与期望结果
 | Q4 | 结果 JSON 的交付方式？（离线环境无上传通道：本地文件 / 共享目录 / 人工拷贝） | 影响 F10 输出通道 |
 | Q5 | 是否需要保留同一文件多次任务的尝试历史（用于"触发方式优先级动态调整"）？ | 影响结果存储设计 |
 | Q6 | 安装成功是否需要更强证据（如启动安装后的程序验证可用性）？ | 影响 F15 判定精度与工作量 |
-| Q7 | OCR 引擎最终方案：**Windows 内置 OCR 作为默认是否可行**（需 M1 spike 验证 WinRT 调用）？若不可行，是否接受预置 tesseract 作为环境前置？ | 影响 7.1、F14.6 与镜像前置清单 |
-| Q8 | **实测（2026-09-30）：本机仅有 `zh-Hans-CN`、无 `en-US`。目标镜像的 OCR 语言包清单如何确定？** 中文包体积较大且需离线分发（若不确定，建议先按"仅中文 + 自动降级"验收 A18） | 影响镜像构建、F16.3 与验收 A18 |
-| Q9 | 是否需要为**英文界面安装器**补装 `en-US` OCR 语言包？（若样本以中文软件为主可暂不补，英文向导由 UIA + 图像模板覆盖） | 影响镜像体积与 OCR 覆盖率 |
+| **Q7** | **OCR 引擎最终选型**：镜像统一预置 `PaddleOCR-json`（推荐，需 AVX）还是 `RapidOCR-json`（免 AVX）？是否需要同时预置两者以覆盖不同 CPU？ | 影响 7.6、F16.3 与镜像体积 |
+| **Q8** | OCR 引擎的**版本与离线包来源**如何固定？（建议：内部归档一份发行包并记录版本号，避免随上游变更导致行为漂移） | 影响镜像构建与可复现性 |
+| **Q9** | 是否需要保留 Windows 内置 OCR 作为回退后端？（Win10+ 环境零依赖，但语言包受限、实测仅中文可用） | 影响 F14.6 工作量 |
+| **Q10** | **目标环境是否确实包含 Windows 7？** 若实际只在 Win10+ 运行，可改用 Go 1.21+（生态更新、库选择更多）并简化 4.6 的兼容处理 | 影响 7.1 工具链、4.6 与 A20 工作量 |
+| **Q11** | 自绘安装器（Electron/CEF 类）在样本中的占比？若占比高，OCR 与模板的投入应先于 UIA 深化 | 影响 M2 优先级排序 |
 
-> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、GUI 识别策略（UIA → 模板 → OCR 三级）、主目标（安装成功优先）、环境（离线）—— 见 1.2。
+> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、主目标（安装成功优先）、环境（离线）—— 见 1.2。
 
 ---
 
@@ -943,7 +1057,8 @@ testdata/                        # 测试样本与期望结果
 - 支持触发方式优先级动态调整（基于历史成功率）
 - 支持分布式批量触发（多沙箱并行）
 - GUI 自动化模板库众包扩充（按安装器家族沉淀模板）
-- **OCR 结果与模板/ UIA 的融合策略持续调优（按键位区域先验、按钮样式聚类）**
+- **OCR 引擎抽象层扩展更多后端（如多语言/multi-model 引擎、轻量移动端模型）**
+- OCR 结果与模板/UIA 的融合策略持续调优（按键位区域先验、按钮样式聚类）
 - 触发成功率看板（按安装器家族统计安装成功 / 触发成功比例）
 
 ---
