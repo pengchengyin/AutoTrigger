@@ -5,13 +5,14 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.5（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
+| 版本 | v2.5（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
 | 状态 | 待开发 |
 | 目标平台 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
 | 交付形态 | **两级模型**：① **工具本体** = 单个 `AutoTrigger.exe`，免安装、拷贝即用、无需任何语言运行时（用户使用极简）；② **交付包** = 工具本体 + **7-Zip / OCR 引擎等第三方离线安装包** + **部署说明文档** + 可选配置与模板（部署时必须整体提供）。详见 8.1 |
 | 环境前置 | ① **7-Zip** ② **OCR 引擎**（默认 PaddleOCR-json）（由镜像/运维按**部署说明文档**预装；**离线安装包随交付包提供**）。工具启动自检，缺失时提示并指向交付包内安装包，**工具自身不代为安装**；另含管理员权限、关闭 UAC、AV 排除目录等镜像准备项，**完整边界见 4.7** |
 | 下游依赖 | EDR（负责行为采集与检测） |
+| 结果输出 | 结果 JSON（原子写、字段完整、可过 Schema）+ 日志；**stdout 仅机器可读输出、日志走 stderr**，下游可直接解析（F10.1~F10.3、验收 A28） |
 
 ### 1.1 变更说明（相对 v1.0）
 
@@ -46,6 +47,7 @@
 | C27 | **补充配置加载规则（7.5.1）**：明确**四级优先级**（命令行 > `--config` 指定文件 > 同目录 `config.json` > 内嵌默认值）、**深合并语义**（字段级递归覆盖，非整体替换——原文档仅写"覆盖内嵌默认值"，语义缺失会导致实现歧义）、未知字段**忽略 + 告警**（向前兼容）、类型/越界错误以**退出码 3 失败不静默回落**；新增 `--dump-config` 导出生效配置与结果中的 `config_digest` | 工程落地必需：配置合并语义与失败行为必须开发前定死 |
 | C28 | **新增 F17 软件包结构识别与安装入口优先级排序**：压缩包/目录先做结构分析，按 P0~P5 分层（说明文件明示入口 → 安装入口命名 → 标准安装器 → 前置依赖 → 主程序 → 其余），**先 `7z l` 列清单再解压**；新增**排除清单**（卸载/修复/更新/调试类**绝不执行**）；执行策略为**阶段 1 定向优先 + 阶段 2 兜底回退**（非"只跑 install.bat 就不再尝试"） | ① 正确性：盲扫会把 `unins000.exe` 一并执行，**先跑卸载会破坏安装结果**；② 效率：真实入口通常仅 1~5 个，盲扫数百文件浪费且噪音大 |
 | C29 | **新增 F18 光盘映像专项处理**：ISO 不再按普通压缩包处理，改为 ① **先判定介质性质**（`malware_lure` 恶意投递结构 / `installer_media` / `os_install_media` / `media_disc` / `data_disc`，**操作系统安装介质与影碟默认不触发**）；② **解压为主、挂载为辅的双轨**（默认 `extract_first`，7-Zip 解析失败自动回退挂载；Win8+ 用系统 `Mount-DiskImage`，Win7 需可选第三方 WinCDEmu）；③ **`autorun.inf` 提升为 P0 入口信号**；④ **MotW 策略可配置**（默认 `native` 不主动改写）；⑤ 新增可选前置探测 F16.6 | ① 7-Zip 对 UDF/蓝光的解析有缺口，仅解压会漏样本；② ISO 内若为操作系统安装盘，执行 `setup.exe` 会**破坏测试虚拟机**；③ ISO + LNK 是典型投递手法，属 EDR 测试重点关注场景 |
+| C30 | **定案「输出通道与结果可解析性」**：修正文档中"日志写 stdout"与"禁止污染 stdout 干扰结果解析"的**自相矛盾**（原表述会使 `--dump-config > config.json` 产出非法 JSON）；改为**三通道严格分流**（stdout 仅机器可读输出 / stderr 仅人类可读日志 / 文件承载结果与日志），补充 `--output` 默认路径、`--output -`、`--log-file`；新增结果文件的**可解析性硬要求**（原子写、固定字段恒存在、失败路径也产出结构完整产物、无尾随文本）与**中断留存 journal**（F10.1~F10.3，验收 A28） | 下游流水线以结构化结果驱动，输出通道语义必须唯一确定；原表述存在实现歧义 |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
@@ -65,6 +67,7 @@
 | DC12 | **运行时依赖边界**：工具本体**零语言运行时依赖**（不需 Go / .NET / JRE / VC++）；**7-Zip 与 OCR 引擎属功能性前置依赖**，由镜像预置；镜像另需满足管理员权限、UAC 关闭、AV 排除目录、可写临时目录四项准备 | 4.7、A22 |
 | DC13 | **工具使用极简、部署一并交付**：运维只需两层动作——① 按**部署说明文档**安装交付包内的第三方离线包（7-Zip / OCR 引擎）；② 拷贝 `AutoTrigger.exe` 到运行目录。**工具本体不含任何安装逻辑**（不代为安装、不释放文件、不写注册表） | 8.1、8.3、F16 |
 | DC14 | **OCR 引擎维持现选**：`PaddleOCR-json`（默认）+ `RapidOCR-json`（免 AVX 备选），**不引入 Python / PyTorch / GPU 依赖，不引入文档解析类或 VLM 类模型**；外部候选评估结论见 7.7 | 7.1、7.6、7.7 |
+| DC15 | **输出通道严格分流**：**stdout 只承载机器可读输出**（`--dump-config` 的配置 JSON、`--output -` 的结果 JSON），**日志一律走 stderr + 日志文件**，绝不写 stdout；结果 JSON 采用**原子写**、固定字段恒存在、失败路径亦产出结构完整产物，保证下游可无条件解析（详见 F10.1~F10.3、验收 A28） | F10.1、6、7.1、3.3 |
 
 ---
 
@@ -151,12 +154,18 @@
 AutoTrigger.exe --input "C:\samples\test.exe" --timeout 120 --output "C:\logs\result.json"
 AutoTrigger.exe --input "C:\samples\folder" --recursive --timeout 120
 AutoTrigger.exe --input "C:\samples" --config "C:\conf\config.json"
-AutoTrigger.exe --dump-config > config.json   # 导出内嵌默认配置，作为配置模板
+AutoTrigger.exe --input "C:\samples" --output - > result.json   # 结果 JSON 走 stdout，可直接管道消费
+AutoTrigger.exe --input "C:\samples" --output - | jq .summary   # 下游流水线直接解析
+AutoTrigger.exe --input "C:\samples" --log-file "C:\logs\run.log" --log-level debug
+AutoTrigger.exe --dump-config > config.json   # 导出内嵌默认配置，作为配置模板（stdout 只有该 JSON）
 AutoTrigger.exe --check-prereq          # 仅做环境自检（7-Zip / OCR 引擎），不处理样本
+AutoTrigger.exe --check-prereq --json   # 自检结果以 JSON 输出到 stdout，供镜像构建流水线卡点
 AutoTrigger.exe --dump-ui --input "C:\samples\a.exe"   # 调试：导出窗口截图 + UIA 控件树 + OCR 结果，用于扩充模板
 AutoTrigger.exe --no-archive --input "C:\samples"      # 无 7-Zip 时跳过压缩包，继续处理其余样本
 AutoTrigger.exe --no-ocr --input "C:\samples"          # 无 OCR 引擎时强制仅用 UIA + 模板
 ```
+
+**输出通道约定**：`stdout` **只承载机器可读输出**（`--dump-config` 的配置 JSON、`--output -` 的结果 JSON、`--check-prereq --json` 的自检 JSON），**所有日志与提示一律走 `stderr` 与日志文件**——因此上面的管道用法可直接被下游解析。详见 **F10.1**。
 
 参数优先级（由高到低）：**命令行参数 > `--config` 指定文件 > 同目录 `config.json` > 内嵌默认值**。合并与校验规则详见 **7.5.1**。
 
@@ -351,12 +360,14 @@ type PrereqManager interface {
 - 支持 `--input` 指定单个文件或文件夹路径
 - 支持 `--recursive` 递归遍历文件夹
 - 支持 `--timeout` 指定单个文件的最大触发时长（秒），默认 120
-- 支持 `--output` 指定结果输出路径（JSON）
+- 支持 `--output <path>` 指定结果输出路径（JSON）：默认 `.\autotrigger-result.json`；`--output -` 表示输出到 stdout；父目录不存在时自动创建
+- 支持 `--log-file <path>` 指定日志文件（默认与结果文件同名 + `.log`）、`--log-level <debug|info|warn|error>` 控制日志级别
 - 支持 `--config` 指定外部配置文件路径（覆盖内嵌默认值，见 7.5）
-- 支持 `--check-prereq` 仅执行环境自检、`--dump-config` 导出生效配置、`--no-archive` 跳过压缩包处理、`--no-ocr` 跳过 OCR
+- 支持 `--check-prereq` 仅执行环境自检（`--json` 时输出机器可读自检结果）、`--dump-config` 导出生效配置、`--no-archive` 跳过压缩包处理、`--no-ocr` 跳过 OCR
 - 外部配置的加载、合并与校验规则见 **7.5.1**（深合并、未知字段忽略、类型/越界以退出码 3 失败）
-- 输入路径不存在或无权限时：记录错误、输出**空结果 JSON + 错误摘要**（保证下游始终有产物可解析）、退出码 `2`
+- 输入路径不存在或无权限时：记录错误、输出**空结果 JSON（字段完整、`results: []`、`error` 写明原因）+ 错误摘要**（保证下游始终有产物可解析）、退出码 `2`
 - 输入为空文件（0 字节）：跳过并记录 `skipped: empty_file`
+- **输出通道与结果可解析性要求见 F10.1~F10.3**（stdout 仅机器可读输出、日志走 stderr、结果文件原子写）
 
 #### F2 文件类型识别
 
@@ -464,13 +475,14 @@ type PrereqManager interface {
 
 #### F10 执行结果记录与输出
 
-输出 JSON：任务级汇总 + 文件明细数组，仅写本地文件。
+输出 JSON：任务级汇总 + 文件明细数组，仅写本地文件。**通道划分与可解析性要求见 F10.1~F10.3（P0，下游流水线依赖）**。
 
 ```json
 {
   "schema_version": "2.7",
   "task_id": "uuid",
   "config_digest": "sha256:...",
+  "error": null,
   "started_at": "2026-09-30T09:40:00+08:00",
   "finished_at": "2026-09-30T09:52:31+08:00",
   "platform": "windows",
@@ -547,9 +559,12 @@ type PrereqManager interface {
       "final_status": "install_completed",
       "notes": ""
     }
-  ]
+  ],
+  "truncated": false
 }
 ```
+
+> `error`：仅在未正常完成时给出对象（`{"code": 2, "message": "input path not found: C:\\samples"}`），正常为 `null`；`truncated`：结果被体积上限截断时为 `true`（见 F10.2 R9）。两者均为**恒存在的固定字段**（R2）。
 
 **final_status 枚举**：
 
@@ -562,6 +577,61 @@ type PrereqManager interface {
 | `skipped` | 无可用触发方式（空文件 / 文档无宿主程序 / 前置依赖缺失等） | skipped |
 
 > 说明：v2.0 起将 `killed_on_timeout` 并入触发成功口径；v2.1 新增 `install_completed`；v2.3 起 `gui_actions` 记录识别来源 `source`；**v2.4 起记录 OCR 原生 `ocr_score` 与识别耗时，并把 `prereq` 扩展为完整的引擎探测结果**；**v2.5 起 `prereq` 增加挂载后端探测结果，`layout_analysis` 增加 F18 的光盘映像字段（`media_kind` / `iso_strategy_used` / `mount_drive` / `dismount_status` / `motw_policy`）**。
+
+**F10.1 输出通道划分（三通道严格分流）**
+
+工具的输出**只有三条通道，职责互不重叠**：
+
+| 通道 | 承载内容 | 说明 |
+|------|---------|------|
+| **stdout** | **仅机器可读输出**：① `--dump-config` 的配置 JSON；② `--output -` 时的结果 JSON；③ `--check-prereq --json` 的自检结果 JSON。**其余情况 stdout 为空** | 可直接管道给下游程序（`jq` / 流水线解析），**保证解析零干扰** |
+| **stderr** | **仅人类可读日志**（时间戳、级别、阶段、进度、提示）。默认级别 `info`，由 `--log-level` / `output.log_level` 控制 | 进度与统计摘要**只出现在这里**，绝不写 stdout |
+| **文件** | ① 结果 JSON（`--output` 指定，**默认 `.\autotrigger-result.json`**）；② 日志文件（`--log-file`，默认与结果文件同名 + `.log`） | 结果文件路径与日志文件路径均在 stderr 与日志中打印绝对路径，便于排障 |
+
+> ⚠️ **实现红线**：**任何日志、进度条、统计摘要都不得写入 stdout**。这条是"结果可解析"的前提——历史上正是"日志写 stdout"与"禁止污染 stdout"两条表述并存，导致 `AutoTrigger.exe --dump-config > config.json` 会产出非法 JSON。验收 A28 第 ① 条专卡此项。
+
+**结果输出路径的取值规则**：
+
+| 取值 | 行为 |
+|------|------|
+| `--output <绝对/相对路径>` | 写入指定文件（父目录不存在时**自动创建**） |
+| `--output -` | 结果 JSON 写入 **stdout**（此时 stdout 只有这一个 JSON 文档），供管道直接消费 |
+| 未指定 | 默认写入**当前工作目录** `.\autotrigger-result.json`；**默认路径不得落在输入目录内**，避免下一轮遍历把结果文件当成输入样本 |
+| 结果文件名冲突 | 默认名已存在时**直接覆盖**（同一工作目录的重复运行视为同一任务位置）；需要并存时由调用方用 `--output` 指定 |
+
+**F10.2 结果 JSON 可解析性硬要求（P0）**
+
+| 编号 | 要求 | 原因 |
+|------|------|------|
+| R1 | **UTF-8 无 BOM**，输出**单个完整 JSON 文档**（非 JSONL / 非拼接） | BOM 会让部分解析器首字符报错 |
+| R2 | **固定字段恒存在**，无值一律用 `null`，**不用"缺字段"表达无值** | 下游与 Schema 校验无需判空字段缺失 |
+| R3 | 数字为 JSON number（不写成字符串）；时间为 **RFC3339 带时区**；路径按 JSON 规则转义反斜杠 | 避免"看起来像 JSON 实际要二次清洗" |
+| R4 | **无尾随文本**：文件末尾不得追加统计摘要、耗时、提示语 | 尾随内容会使严格解析器失败 |
+| R5 | **原子写**：先写 `<path>.tmp` → flush + fsync → `os.Rename` 覆盖目标文件 | 被超时强杀/崩溃时不会留下半截 JSON |
+| R6 | **失败路径同样产出结构完整的结果 JSON**：输入非法（退出码 2）、配置错误（3）、前置缺失（4/5）均输出**字段完整、`results` 可为空数组**的结果，并在 `error` 字段写明原因 | 保证下游"永远有可解析产物"，不因失败分支拿到 0 字节文件 |
+| R7 | `finished_at` 为 `null` 表示**任务未正常结束**（被强杀或崩溃） | 与 F10.3 的 journal 配合判断中断 |
+| R8 | 输出格式由 `output.pretty` 控制，**默认 `false`（紧凑单行）**；`--pretty` 可切换为缩进格式（仅供人工阅读，两者语义完全等价） | 紧凑格式体积小、便于整体读取 |
+| R9 | 结果文件体积上限 `output.max_file_size_mb`（默认 64）：超限时**截断 `attempts` 明细**（保留 `final_status` 与汇总）并置 `truncated: true` | 千级文件 + `gui_actions` 明细会显著膨胀；截断不改结构、不破坏解析 |
+| R10 | 必须可通过 **D7 的结果 JSON Schema** 校验，且能被 `json.Unmarshal` 一次性解析成功 | 可解析性的最终判据 |
+
+**F10.3 中断留存 journal（可选，保证长任务不丢数据）**
+
+批量任务可能运行数小时（数千文件 × 单文件超时）。若在末尾崩溃，仅靠"结束时一次性写结果"会**丢掉全部已完成记录**。因此：
+
+- `output.journal`（默认 `true`）：在结果文件旁写 **`<结果文件名>.journal.ndjson`**，每完成一个文件**追加一行 NDJSON**（该文件的完整结果对象），逐行 flush
+- journal **只作中断诊断与数据找回**，**不是主结果**：主结果仍是 F10.2 的单一 JSON 文档
+- 任务正常结束且结果 JSON 原子写成功后：`output.keep_journal_on_success`（默认 `false`）→ **删除 journal**（符合 6 节"无残留"要求）；置 `true` 则保留供审计
+- 任务异常中断（被强杀/崩溃）时：结果 JSON 可能不存在或 `finished_at: null`，此时 journal 保留，**下游可解析 NDJSON 找回已完成文件的结果**
+- `output.journal: false` 时完全不写 journal（纯单文件产物，适合结果文件必然完整的小批量场景）
+
+> 下游推荐的判定顺序：① 读结果 JSON（存在且可解析）→ 以它为准；② 若结果缺失或 `finished_at: null` → 回退读 `.journal.ndjson`，并按其中 `task_id` 与 `schema_version` 校验归属。
+
+**结果文件的 Schema 兼容策略**：
+
+- `schema_version` 为**语义化字符串**（当前 `"2.7"`）；**只做加法**（新增字段）不视为破坏性变更
+- **破坏性变更**（删除字段、改字段含义、改枚举取值）才升主版本号，并在第 1 节变更记录中说明迁移方式
+- **下游必须容忍未知字段**（忽略而非报错），与本工具对配置文件的兼容策略一致（7.5.1 ③）
+- **退出码与结果 JSON 是两条独立通道**：退出码只表示"工具自身"的状态（6.1），单文件结果**只在 JSON 里**；下游判定样本结果时**以 JSON 为准**，不要用退出码推断（批量场景下退出码 0 不等于全部装成功）
 
 #### F11 文件夹批量遍历
 
@@ -824,6 +894,7 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 
 - 单独执行环境自检并输出人类可读报告（供镜像构建/部署前验证），不含样本处理
 - 报告内容：系统版本与 SP、CPU AVX、7-Zip 路径与版本、OCR 引擎类型/路径/版本/语言/初始化耗时
+- **`--json` 时改为把结构化自检结果输出到 stdout**（单 JSON 文档，字段与结果 JSON 的 `prereq` 一致 + `ok: true/false` + `issues: []`），便于镜像构建流水线做**机器可判定的卡点**；报告本身仍走 stderr（F10.1）
 - 全部满足 → 退出码 0；7-Zip 缺失 → 退出码 4；OCR 引擎缺失且 `require_ocr: true` → 退出码 5
 
 **F16.5 前置依赖清单（部署检查表）**
@@ -1026,9 +1097,9 @@ MotW 直接影响 SmartScreen：带 MotW 的未签名安装器可能被"Windows 
 | 稳定性 | 单文件失败不影响整体流程；全局看门狗防挂死（F9）；无协程泄漏；OCR / 模板任一失败均可降级；OCR 引擎崩溃可自动重启 |
 | 兼容性 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**；架构预留 Linux / macOS |
 | 权限 | 以管理员权限运行（静默安装需要）；启动时自检权限，无管理员权限则告警并继续；沙箱镜像建议关闭 UAC 弹窗以允许 GUI 自动化 |
-| 日志 | 除 JSON 结果外，输出可读日志到 stdout 与文件（时间戳、级别、文件名、阶段）；日志与 JSON 结果分流，不混写 stdout |
+| 日志 | **通道严格分流**：日志与提示一律写 **`stderr` + 日志文件**（时间戳、级别、文件名、阶段），**绝不写 `stdout`**；`stdout` 只承载机器可读输出（`--dump-config` 配置 JSON、`--output -` 结果 JSON、`--check-prereq --json` 自检 JSON），保证下游可直接解析（F10.1） |
 | 可配置 | 超时、并发度、递归深度、解压大小上限、尝试间隔与次数、参数表、按钮关键词表、**OCR 引擎与路径/传输方式/置信度阈值**、模板目录、**光盘映像策略（解压/挂载轨、OS 介质与影碟是否允许触发、MotW 策略、挂载与卸载重试）**均可配置 |
-| 无残留 | 退出前清理临时目录、**卸载本次挂载的光盘映像**（F18.3）、**回收 OCR 引擎子进程**；不修改系统默认文件关联；**不写入注册表、不产生安装残留** |
+| 无残留 | 退出前清理临时目录、**卸载本次挂载的光盘映像**（F18.3）、**回收 OCR 引擎子进程**、**清理原子写遗留的 `.tmp` 文件**与 journal（`output.keep_journal_on_success: false` 时，见 F10.3）；不修改系统默认文件关联；**不写入注册表、不产生安装残留** |
 | 可移植 | 核心层不依赖 Windows API；平台相关逻辑全部走适配层；**Win7 / Win10 差异（DPI、UIA、截屏）全部封装在适配层** |
 | 可维护 | 见 7.3 工程规范：接口由使用方定义、依赖注入、`gofmt`/`go vet`/`golangci-lint` 零 error、core 层单测覆盖率 ≥ 70% |
 | 离线 | 全程不访问网络（OCR 走本地进程 / 环回 TCP）；前置缺失时只提示、不下载、不安装。**部署所需的第三方物料全部随交付包离线提供**（8.2 / 8.3 B 组） |
@@ -1065,7 +1136,7 @@ MotW 直接影响 SmartScreen：带 MotW 的未签名安装器可能被"Windows 
 | **OCR 辅助** | **外部开源 OCR 引擎进程（默认 PaddleOCR-json）**：绿色免安装、离线；通过 **stdio 或环回 TCP** 通信；返回**文本 + 四角像素坐标 + 原生 score**；Windows 内置 OCR 仅作可选回退（`ocr.engine=windows`，默认关闭）；**禁止 CGO、禁止链接原生 OCR SDK** |
 | 截屏 | GDI `BitBlt` / `PrintWindow`（按系统版本选择 `PW_RENDERFULLCONTENT` 等标志） |
 | DPI 处理 | Win10 1607+ 用 `GetDpiForWindow`；**Win7/8.1 回退 `GetDeviceCaps(LOGPIXELSX)` + `SetProcessDPIAware`** |
-| 结果输出 | JSON（主结果）+ 文本日志（辅助），仅写本地文件 |
+| 结果输出 | JSON（主结果，**原子写**，字段完整恒存在，可过 D7 Schema）+ 文本日志（辅助），仅写本地文件；**stdout 仅机器可读输出、日志走 stderr**（F10.1~F10.3） |
 | 配置与资源 | 默认值、参数表、关键词表、图像模板 `go:embed` 内嵌；支持外部同名文件覆盖 |
 | 静态检查 | `gofmt` / `go vet` / `golangci-lint`（errcheck、govet、staticcheck、revive、gocritic） |
 
@@ -1266,7 +1337,15 @@ testdata/                        # 测试样本与期望结果
     "watch_dirs": ["C:\\Program Files", "C:\\Program Files (x86)"]
   },
   "dll_export_probe_count": 3,
-  "log_level": "info"
+  "output": {
+    "path": "",
+    "pretty": false,
+    "journal": true,
+    "keep_journal_on_success": false,
+    "log_file": "",
+    "log_level": "info",
+    "max_file_size_mb": 64
+  }
 }
 ```
 
@@ -1283,6 +1362,10 @@ testdata/                        # 测试样本与期望结果
 > - `iso.keep_extracted_on_success: true` 会保留解压目录（此时不计入"无残留"，README 须说明）
 > - `package_layout.mode` 可选 `smart`（默认，F17 定向优先 + 兜底回退）/ `brute`（关闭 F17，退化为全量平扫）；`package_layout.enabled: false` 等价于 `mode: brute`
 > - **F17.3 的排除清单（卸载/修复/更新/调试类）不受配置影响，两种模式下均强制生效**，不可关闭
+> - `output.path` 为空时使用默认路径 `.\autotrigger-result.json`（**不得落在输入目录内**）；`--output` 可覆盖，取 `-` 表示写 stdout
+> - `output.log_file` 为空时使用 `<结果文件名>.log`；`output.log_level` 可选 `debug` / `info`（默认）/ `warn` / `error`，可用 `--log-level` 覆盖
+> - `output.journal` 控制是否写 `<结果文件名>.journal.ndjson`（逐文件追加，供中断找回）；`keep_journal_on_success` 决定正常结束后是否保留（默认 `false`，即删除，符合第 6 节"无残留"）
+> - `output.pretty` 仅影响缩进（语义等价），默认 `false`（紧凑单行）；`max_file_size_mb` 超限时截断 `attempts` 明细并置 `truncated: true`
 
 #### 7.5.1 配置加载、覆盖与校验规则
 
@@ -1290,7 +1373,7 @@ testdata/                        # 测试样本与期望结果
 
 | 层级 | 来源 | 说明 |
 |------|------|------|
-| 1 | **命令行参数** | `--timeout` / `--output` / `--recursive` / `--no-archive` / `--no-ocr` 等，仅覆盖其对应的字段 |
+| 1 | **命令行参数** | `--timeout` / `--output` / `--log-file` / `--log-level` / `--recursive` / `--pretty` / `--no-archive` / `--no-ocr` 等，仅覆盖其对应的字段 |
 | 2 | **`--config <path>` 指定的文件** | 显式指定时**取代**同目录 `config.json`（二者不叠加） |
 | 3 | **同目录 `config.json`** | 未指定 `--config` 时自动查找 exe 同目录；不存在则跳过本级 |
 | 4 | **内嵌默认值** | 编译期 `go:embed` 固化，保证零配置可直接运行 |
@@ -1462,13 +1545,13 @@ AutoTrigger-<版本>-win64\
 | 编号 | 交付物 |
 |------|--------|
 | **D14** | **部署说明文档 `DEPLOY.md`（新增，P0）**：照做式步骤——① 前置检查（系统版本 / 权限 / AV 排除）；② 安装 7-Zip（命令行示例）；③ 部署 OCR 引擎（解压路径 + `config.json` 指向）；④ 安装 VC++ 运行库（如需）；⑤ `--check-prereq` 校验；⑥ 拷贝 exe 到运行目录；⑦ 常见问题（AV 拦截、AVX 缺失）；**⑧（可选）Win7 挂载轨：部署 WinCDEmu 便携版并设置 `iso.mount_tool_path`**；**⑨ 光盘映像相关配置说明（`iso.*` 各字段与 MotW 策略）**。**要求：运维只读此文档即可独立完成部署** |
-| D5 | 使用说明文档（README：**工具本体免安装使用方式**、CLI 参数、退出码表、`--check-prereq` / `--dump-ui` / `--no-archive` / `--no-ocr` 用法、结果 JSON 说明） |
+| D5 | 使用说明文档（README：**工具本体免安装使用方式**、CLI 参数（含 `--output` / `--output -` / `--log-file` / `--log-level` / `--pretty`）、**输出通道说明（F10.1）**、退出码表、`--check-prereq`（含 `--json`）/ `--dump-ui` / `--no-archive` / `--no-ocr` 用法、结果 JSON 说明） |
 | D9 | 环境前置检查表与镜像构建指引（依赖清单、离线包放置路径、管理员权限 / UAC / AV 排除目录 / 可写临时目录、`--check-prereq` 卡点用法；对应 4.7 与 8.2） |
 | D2 | 外部覆盖配置模板 `config.example.json`（**可选**；含全部字段与内嵌默认值，**可由 `AutoTrigger.exe --dump-config` 生成**；字段含义与取值范围由 D14 说明，外部配置**只需写要修改的字段**，见 7.5.1） |
 | D3 | 可外部编辑的参数/关键词表（`silent_params.windows.json`、`buttons.zh-CN.json`、**`install_entries.json`（F17.2 安装入口命名模式）**、**`exclude_entries.json`（F17.3 排除清单模式）**、**`media_kinds.json`（F18.1 光盘映像介质性质判定规则）**）与图像模板目录（含 F14.2 初始模板集，均为可选覆盖） |
 | D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3）+ **Win7/Win10 差异说明（对应 4.6）** |
 | D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / **自绘界面 OCR 定位** / **光盘映像（含 `malware_lure` 与 `os_install_media` 两类）** / 需联网 / 装不成功 / 前置缺失 七类；**并在 Win7 环境复测**） |
-| D7 | 结果 JSON Schema 文件（供下游流水线校验） |
+| D7 | 结果 JSON Schema 文件（供下游流水线校验；须覆盖 `error` / `truncated` / `finished_at: null` 等失败与中断形态，见 F10.2 R6/R7；A28 ④⑧ 以其为判据） |
 | D8 | 构建与检查脚本（Makefile / build.ps1：**Go 1.20.x 静态构建** + gofmt/vet/lint + 单测覆盖率 + **导入表核验**） |
 | D10 | **OCR 环境验证脚本** `scripts/verify-ocr.ps1`（现有版本验证 Windows 内置 OCR；**M1 需扩展为多引擎探测 + 端到端识别验证**，输出文本与四角像素坐标） |
 
@@ -1505,6 +1588,7 @@ AutoTrigger-<版本>-win64\
 | A25 | **软件包结构识别与入口优先（F17）** | ① 对含 `install.bat` + `setup.exe` + `unins000.exe` + 数十个 DLL 的测试包：**`unins000.exe` 全程未被执行**（结果中记 `excluded_blacklist`）；② 定向阶段按 P0~P4 顺序执行，取得 `install_completed` 后其余文件记 `skipped_after_success`，**不再全量扫描**；③ 阶段 1 全部失败时**回退执行 P5 及其余可执行文件**（验证 `fallback_to_brute: true`）；④ 压缩包场景**先 `7z l` 列清单**，解压前即输出入口分层；⑤ `setup_x64.exe` 与 `setup_x86.exe` 并存时优先匹配当前系统架构；⑥ P0 的 readme 提示指向不存在的文件时**不产生任何执行动作**；⑦ `mode: brute` 下行为与传统全量遍历一致，但**黑名单仍强制生效** |
 | A26 | **光盘映像介质判定与安全拦截（F18.1 / F18.5）** | ① 含 `sources\install.wim` 的 Windows 安装 ISO：**判定为 `os_install_media` 且全程不执行任何文件**，结果记 `skipped: os_media`（`allow_os_media: false` 时）；② 含 `BDMV\STREAM\*.m2ts` 的影碟 ISO 记 `skipped: media_disc`；③ 仅含一个 `.lnk` + 载荷的 ISO 判定为 `malware_lure` 且**优先执行该 `.lnk`**；④ 含 `autorun.inf`（`open=setup.exe`）的 ISO：`setup.exe` 被列为 **P0** 并按先于其他入口执行；⑤ 乱码文件名（GBK/Joliet）场景下 `setup.exe` 仍能被识别为 P1/P2，**不因乱码整体跳过**；⑥ 所有判定结果出现在 `layout_analysis.media_kind` |
 | A27 | **光盘映像双轨与挂载清理（F18.2 / F18.3）** | ① 常规 ISO 在 `extract_first` 下走解压轨，`iso_strategy_used: "extract"`；② 构造一个 7-Zip 无法解析的映像（或用损坏/非标准 UDF 样本）：**自动回退挂载轨**，`iso_strategy_used: "extract→mount"`，且**后续仍能正常触发入口**；③ 挂载轨安装期间**保持挂载**，`install_completed` 判定与 `settle_sec` 稳定期结束后才卸载，`dismount_status: "ok"`；④ **异常终止（强杀）后重新启动工具，遗留挂载被自动清理**（或无法确认归属时只告警不误卸）；⑤ `mount_only` 且挂载后端缺失时：告警 + 记录 `mount_failed`，**不新增退出码**，其余样本继续处理；⑥ Win7 上默认走解压轨可完整跑通（不依赖挂载后端）；⑦ `iso.keep_extracted_on_success: false` 时解压目录被清理，`true` 时目录保留且路径写入结果 |
+| A28 | **输出可解析性（F10.1~F10.3）** | ① `--dump-config > f.json` 与 `--output - > f.json` 产出的文件**均能被严格 JSON 解析器一次解析成功**（stdout 无任何日志/进度/提示混入），`--output - \| jq` 可直接工作；② 结果文件为 **UTF-8 无 BOM、单个完整文档、无尾随文本**，固定字段（`schema_version` / `task_id` / `error` / `results` / `truncated` 等）**恒存在**，无值字段为 `null`；③ 输出到 `--output` 指定路径与 `--output -` 的**内容语义完全一致**；④ 输入不存在（退出码 2）/ 配置错误（3）/ 7-Zip 缺失（4）三条失败路径**同样产出结构完整的结果 JSON**（`results: []` + `error.code` 与 `error.message`），且可过 D7 Schema；⑤ 未指定 `--output` 时结果落在**当前工作目录** `.\autotrigger-result.json`，且**不落在输入目录内**；⑥ 任务被强杀（模拟）时目标路径**不存在半截 JSON**（原子写生效），且 `.journal.ndjson` 保留、可逐行解析并含已完成文件结果；⑦ 正常结束后 journal 被删除（`keep_journal_on_success: false`），无 `.tmp` 残留；⑧ 超过 `max_file_size_mb` 的结果置 `truncated: true` 且**仍可解析、可通过 Schema 校验**；⑨ `--check-prereq --json` 输出可被机器解析（供镜像构建流水线卡点） |
 
 ---
 
@@ -1513,9 +1597,9 @@ AutoTrigger-<版本>-win64\
 | 里程碑 | 内容 | 覆盖功能 |
 |--------|------|---------|
 | M0 环境与选型验证（新增） | ① **Go 1.20.x 工具链与依赖库可用性确认**；② **Win7 SP1 x64 运行验证**（截屏 / DPI / Job Object / UIA 能力基线）；③ **OCR 引擎接入 spike**（PaddleOCR-json 探测、stdio 通信、四角坐标解析、AVX 检测） | 4.6、7.6、D10 |
-| M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + 超时清理 + JSON 输出 + **7-Zip / OCR 引擎自检与用户提示** | F1 F2 F3 F4 F5 F9 F10 F13 F16 |
+| M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + 超时清理 + **输出通道与结果可解析性（stdout/stderr/文件分流、原子写、F10.1~F10.3）** + **7-Zip / OCR 引擎自检与用户提示** | F1 F2 F3 F4 F5 F9 F10 F13 F16 |
 | M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 引擎三级识别**）+ 安装证据判定 + 文件夹遍历 + 压缩包递归 + **F17 结构识别与入口优先排序** + **F18 光盘映像专项（介质判定 + 解压/挂载双轨）** + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 F17 F18 |
-| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README 与 **DEPLOY.md 部署文档**、**交付包打包含 third_party 离线物料**、**Win7 + Win10 双环境冒烟**、**导入表与依赖边界核验（A22）**、**交付包完整性验证（A23）**、**配置加载与覆盖验证（A24）**、lint 与覆盖率达标 | D1~D15、A8~A27 |
+| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README 与 **DEPLOY.md 部署文档**、**交付包打包含 third_party 离线物料**、**Win7 + Win10 双环境冒烟**、**导入表与依赖边界核验（A22）**、**交付包完整性验证（A23）**、**配置加载与覆盖验证（A24）**、**输出可解析性验证（A28）**、lint 与覆盖率达标 | D1~D15、A8~A28 |
 
 ---
 
@@ -1555,6 +1639,8 @@ AutoTrigger-<版本>-win64\
 | **高 DPI 缩放导致 OCR/模板点击坐标偏移** | 截图坐标按窗口 DPI 换算（Win7 用 `GetDeviceCaps` 回退）；点击前校验目标坐标在窗口矩形内 |
 | UAC 安全桌面拦截自动化点击 | UIA 无法作用于安全桌面；沙箱镜像关闭 UAC 弹窗或工具随系统自启于最高权限 |
 | GUI 自动化误点（取消/卸载类按钮） | 黑名单关键词禁止点击（F14.3），**OCR 结果同样受黑名单约束**；全部键鼠动作留痕可回放审计 |
+| **日志/进度混入 stdout，导致下游解析结果失败** | **三通道严格分流**（F10.1）：stdout 只承载机器可读输出，日志一律走 stderr + 日志文件；禁用 `fmt.Println` 写 stdout（7.3）；验收 A28 ① 用 `--output - \| jq` 与 `--dump-config > f.json` 双用例卡死 |
+| **任务被强杀/崩溃导致结果文件损坏或全量丢失** | 结果文件**原子写**（`.tmp` → rename，无半截 JSON）；逐文件追加 `journal.ndjson` 供中断找回（F10.3）；`finished_at: null` 作为"未正常结束"的判据；失败路径亦产出结构完整产物（F10.2 R6） |
 | GUI 自动化在无桌面会话（Session 0）失效 | 明确要求前台桌面可用；批量模式默认串行，避免抢焦点 |
 | 自绘安装器无 UIA 树导致识别失败 | 图像模板兜底 + **外部 OCR 文本定位** + `--dump-ui`（含 OCR 结果）采集补模板 + 模板目录外部热更新 |
 | 安装成功误判（退出码 0 但实际未装） | F15 多重证据（落盘/注册表/完成页）+ 退出后稳定期 |
@@ -1572,7 +1658,7 @@ AutoTrigger-<版本>-win64\
 |------|------|------|
 | Q2 | `.dll` 触发用 rundll32 探测导出函数的数量与选取策略（按导出表顺序 / 关键字优先 / 随机）？ | 影响 F3 与 EDR 采集效果 |
 | Q3 | 批量场景下单文件结束后是否需要"冷却间隔"（如 5 秒），让 EDR 完成行为上报落盘？ | 影响 F11 与 EDR 对接效果 |
-| Q4 | 结果 JSON 的交付方式？（离线环境无上传通道：本地文件 / 共享目录 / 人工拷贝） | 影响 F10 输出通道 |
+| Q4 | 结果 JSON 的**交付方式**？（离线环境无上传通道：本地文件 / 共享目录 / 人工拷贝。**输出通道语义已定案**见 DC15 / F10.1，此问仅剩"结果文件如何出沙箱"） | 影响 F10 输出落点与 DEPLOY.md |
 | Q5 | 是否需要保留同一文件多次任务的尝试历史（用于"触发方式优先级动态调整"）？ | 影响结果存储设计 |
 | Q6 | 安装成功是否需要更强证据（如启动安装后的程序验证可用性）？ | 影响 F15 判定精度与工作量 |
 | **Q7** | **OCR 引擎最终选型**：镜像统一预置 `PaddleOCR-json`（推荐，需 AVX）还是 `RapidOCR-json`（免 AVX）？是否需要同时预置两者以覆盖不同 CPU？ | 影响 7.6、F16.3 与镜像体积 |
@@ -1584,6 +1670,7 @@ AutoTrigger-<版本>-win64\
 | **Q13** | **光盘映像的默认处理轨**是否确认为解压优先（`extract_first`）？**挂载轨（轨 B）本期就做，还是先留接口、只做解压轨**？ | 影响 F18.2 的 M2 工作量与 A27 验收范围 |
 | **Q14** | **MotW 策略默认值**（`native` / `preserve` / `clear`）由谁定？即：EDR 测试是否**希望 SmartScreen 拦截链也参与**（`preserve`）还是排除其干扰（`clear`）？ | 影响 F18.4 默认值与测试口径（安全团队决策项） |
 | **Q15** | ① 样本集中是否有**操作系统安装 ISO**（需明确是否允许触发）？② 是否存在 7-Zip 无法解析、必须靠挂载的映像（决定 Win7 是否需要随包 WinCDEmu）？ | 影响 F18.1 默认拦截策略、D15 交付物与镜像部署说明 |
+| **Q16** | 下游流水线**何时消费结果**：任务全部结束后整体读取结果 JSON，还是需要**过程中流式读取**（决定是否额外提供 `--ndjson` 逐条输出模式）？另：结果文件默认落在**当前工作目录**是否可接受，还是需固定为共享目录？ | 影响 F10 输出模式与调用方约定 |
 
 > 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、**光盘映像处理（专项流程 F18：介质性质判定 + 解压/挂载双轨 + 解压轨优先）**、主目标（安装成功优先）、环境（离线）—— 见 1.2。
 
