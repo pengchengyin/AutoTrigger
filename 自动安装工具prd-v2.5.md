@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.5（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
+| 版本 | v2.5（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
 | 状态 | 待开发 |
 | 目标平台 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
@@ -45,6 +45,7 @@
 | C26 | **新增 7.1.1 语言选型论证（为什么 Go 而非 Python）**：决定性因素是**交付形态**（Python 无真静态编译路径，PyInstaller 单文件运行时释放到 `%TEMP%\_MEIxxxx`、有残留、体积大、启动慢，与 DC1 及"无残留"验收冲突）+ **反病毒友好性**（打包器产物是 AV 误报重灾区，而本工具本身已属高风险）+ **Win7 下 Python 只能锁已 EOL 的 3.8**（Go 为 2023-02 的 1.20.x）。Python 的 OCR/GUI 生态优势已被"OCR 外置进程 + GUI 走原生 Win32/UIA API"两项决策消解 | 评审追溯：语言选择为高频质疑点，留档依据避免重复论证 |
 | C27 | **补充配置加载规则（7.5.1）**：明确**四级优先级**（命令行 > `--config` 指定文件 > 同目录 `config.json` > 内嵌默认值）、**深合并语义**（字段级递归覆盖，非整体替换——原文档仅写"覆盖内嵌默认值"，语义缺失会导致实现歧义）、未知字段**忽略 + 告警**（向前兼容）、类型/越界错误以**退出码 3 失败不静默回落**；新增 `--dump-config` 导出生效配置与结果中的 `config_digest` | 工程落地必需：配置合并语义与失败行为必须开发前定死 |
 | C28 | **新增 F17 软件包结构识别与安装入口优先级排序**：压缩包/目录先做结构分析，按 P0~P5 分层（说明文件明示入口 → 安装入口命名 → 标准安装器 → 前置依赖 → 主程序 → 其余），**先 `7z l` 列清单再解压**；新增**排除清单**（卸载/修复/更新/调试类**绝不执行**）；执行策略为**阶段 1 定向优先 + 阶段 2 兜底回退**（非"只跑 install.bat 就不再尝试"） | ① 正确性：盲扫会把 `unins000.exe` 一并执行，**先跑卸载会破坏安装结果**；② 效率：真实入口通常仅 1~5 个，盲扫数百文件浪费且噪音大 |
+| C29 | **新增 F18 光盘映像专项处理**：ISO 不再按普通压缩包处理，改为 ① **先判定介质性质**（`malware_lure` 恶意投递结构 / `installer_media` / `os_install_media` / `media_disc` / `data_disc`，**操作系统安装介质与影碟默认不触发**）；② **解压为主、挂载为辅的双轨**（默认 `extract_first`，7-Zip 解析失败自动回退挂载；Win8+ 用系统 `Mount-DiskImage`，Win7 需可选第三方 WinCDEmu）；③ **`autorun.inf` 提升为 P0 入口信号**；④ **MotW 策略可配置**（默认 `native` 不主动改写）；⑤ 新增可选前置探测 F16.6 | ① 7-Zip 对 UDF/蓝光的解析有缺口，仅解压会漏样本；② ISO 内若为操作系统安装盘，执行 `setup.exe` 会**破坏测试虚拟机**；③ ISO + LNK 是典型投递手法，属 EDR 测试重点关注场景 |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
@@ -106,6 +107,8 @@
 - **不自研、不训练 OCR 模型**（识别能力统一由外部开源 OCR 引擎提供）
 - **工具自身不代为安装环境前置依赖**（7-Zip、OCR 引擎）：只检测、只提示；**但交付包内提供这些依赖的离线安装包与部署说明文档**，由运维按文档手工安装（F16、8.1）
 - **不引入 CGO、不链接任何原生 OCR SDK**（保持静态单文件；OCR 一律走进程外调用）
+- **不提供绕过 Windows 安全机制（SmartScreen / MotW 等）的实现**：光盘映像的 MotW 处理仅做**如实记录与可配置的传播行为**（`native` / `preserve` / `clear`，F18.4），"是否让 SmartScreen 参与"由安全团队的测试口径决定，工具不代为决策
+- **不触发操作系统安装介质**：含 `sources\install.wim` 等特征的映像默认跳过（F18.1），避免把测试虚拟机装成操作系统
 - 不追踪样本运行后释放的后续文件与链式行为（只负责"第一跳"，其余由 EDR 捕获）
 - 不保证所有样本都能装成功（反沙箱、需联网激活、依赖缺失等由环境侧解决）
 - 本期不实现 Linux / macOS，仅预留架构扩展点
@@ -132,7 +135,10 @@
 | 低配/无 AVX 环境 | CPU 不支持 AVX 时无法运行 PaddleOCR-json，改用 RapidOCR-json 引擎（配置切换） |
 | 单文件触发 | 传入一个 `.exe`，多种方式依次尝试并记录每次结果 |
 | 文件夹批量触发 | 传入一个目录，工具遍历所有文件，逐个识别并触发 |
-| 压缩包递归触发 | 传入 `.zip` / `.iso`，工具用 7-Zip 解压后递归触发内部所有可执行文件 |
+| 压缩包递归触发 | 传入 `.zip` / `.7z` / `.rar`，工具用 7-Zip 解压后按 F17 分层递归触发内部可执行文件 |
+| **光盘映像触发** | 传入 `.iso`：先判定介质性质 → 解压轨（默认）或挂载轨 → 按 F17 优先级执行；`autorun.inf` 声明与 `.lnk` 目标按 P0 优先 |
+| **恶意投递型 ISO** | 映像内仅一个 `.lnk` + 载荷（典型投递结构）：判定为 `malware_lure` 并最高优先执行，供 EDR 采集链式行为 |
+| 操作系统安装盘 | 传入 Windows / Linux 安装 ISO：判定为 `os_install_media` 并**默认跳过**，避免在测试机上误装操作系统 |
 | 文档类触发 | 传入 `.docx` / `.pdf`，工具调用关联程序打开，触发宏/漏洞利用链 |
 | 未知格式兜底 | 传入扩展名未知或文件头与扩展名不符的文件，工具仍尝试执行 |
 | 前置缺失 | 目标机未装 7-Zip / OCR 引擎：工具检测后提示用户先安装，不尝试自行安装 |
@@ -274,6 +280,7 @@ type PrereqManager interface {
 | DPI API | Win7 无 `GetDpiForWindow`（Win10 1607+）、无 `SetProcessDpiAwarenessContext`（Win10 1703+） | 运行时按系统版本分支：优先新 API，回退 `GetDeviceCaps(LOGPIXELSX)` 取 DPI + `SetProcessDPIAware`（Vista+ 可用） |
 | 截屏 | `PrintWindow` 在 Vista+ 可用；`PW_RENDERFULLCONTENT` 标志为 Win8.1+ | 按版本选择标志；失败时回退 `BitBlt` |
 | 进程树终止 | Job Object 自 Vista 起可用 | 无需回退 |
+| **光盘映像挂载** | **`Mount-DiskImage` / `Dismount-DiskImage` 为 Win8 / Server 2012+ 的 Storage 模块**，Win7 没有 | Win7 默认走**解压轨**（`iso.strategy: extract_first`）；若需挂载轨则依赖可选第三方 WinCDEmu 便携版（F16.6） |
 | 运行库 | OCR 引擎（PaddleOCR-json / Umi-OCR）可能依赖 **VC++ 2015-2022 运行库** | 列入镜像前置检查表（F16.5）；若缺失需镜像预置 |
 | 哈希 | SHA-256 需 Win7 SP1 及以上 | 平台基线明确为 **SP1**；启动时校验系统版本，低于 SP1 输出告警 |
 | 实测要求 | Win7 与 Win10 的 UIA / 截屏 / DPI 行为差异较大 | **必须准备 Win7 x64 实测环境**，验收 A20 在 Win7 上执行 |
@@ -289,6 +296,7 @@ type PrereqManager interface {
 | **B. 功能性前置** | **7-Zip** | 处理压缩包样本时必需 | 压缩包无法解压 | 检测 + 提示 + 退出码 4；`--no-archive` 可绕过（F16.1/F16.2） |
 | **B. 功能性前置** | **OCR 引擎**（默认 PaddleOCR-json） | 建议必需（自绘界面依赖） | 降级为 UIA + 模板，识别率下降 | 检测 + 提示 + 自动降级；`require_ocr: true` 时退出码 5（F16.3） |
 | **B. 功能性前置** | **VC++ 2015-2022 运行库** | 取决于所选 OCR 引擎 | OCR 引擎进程无法启动 | 能力自检失败即视为 OCR 不可用并降级（F16.5） |
+| **B. 功能性前置（可选）** | **光盘映像挂载后端**（Win8+ 系统自带；Win7 需第三方 WinCDEmu） | 仅当使用 `iso.strategy: mount_*` 时需要 | 挂载轨不可用，自动收敛为解压轨 | 检测 + 提示 + 自动收敛（F16.6）；**不新增退出码** |
 | **C. 镜像准备项** | **管理员权限** | 必需 | 静默安装、MSI、注册表证据采集失败 | 启动自检权限，告警并继续（第 6 节） |
 | **C. 镜像准备项** | **关闭 UAC 安全桌面** | GUI 自动化场景必需 | 提权弹窗无法自动化，安装链中断 | 检测到提权窗口记 `uac_blocked`（F14.5） |
 | **C. 镜像准备项** | **AV / EDR 排除目录** | 强烈建议 | 未签名静态单文件易被拦截或直接删除，工具无法运行 | 工具无法自解；由 README 与镜像检查表要求（F16.5） |
@@ -332,6 +340,7 @@ type PrereqManager interface {
 | F15 | 安装结果验证与证据采集 | P0 | 适配层 | M2 |
 | F16 | 前置依赖自检与用户提示（7-Zip / OCR 引擎） | P0 | 适配层 | M1 |
 | F17 | **软件包结构识别与安装入口优先级排序** | P0 | 无关 | M2 |
+| F18 | **光盘映像专项处理（ISO/IMG）：介质性质判定 + 解压/挂载双轨** | P0 | 适配层 | M2 |
 
 ---
 
@@ -360,7 +369,8 @@ type PrereqManager interface {
 | PE 可执行 | .exe .dll .scr .com | `MZ` |
 | MSI 安装包 | .msi .msp | OLE Compound File |
 | 脚本 | .bat .cmd .ps1 .vbs .js .wsf | 文本特征 + 解释器关键字 |
-| 压缩包 | .zip .rar .7z .tar .gz .iso | 各格式魔数 |
+| 压缩包 | .zip .rar .7z .tar .gz | 各格式魔数 |
+| **光盘映像** | .iso .img .nrg .mds .cue | ISO9660 / UDF（`CD001` 等）；**走 F18 专项流程**，不按普通压缩包处理 |
 | 文档 | .doc .docx .xls .xlsx .pdf .rtf .ppt .pptx | OLE / ZIP / `%PDF` |
 | 快捷方式 | .lnk | `4C 00 00 00` |
 | 未知 | 其他 | 兜底 |
@@ -425,6 +435,7 @@ type PrereqManager interface {
 8. 取得 `install_completed` 后按 **F17.4 提前结束该包**，其余文件记 `skipped_after_success`
 9. 退出前清理临时目录（清理失败仅告警）
 10. `--no-archive` 或 7-Zip 缺失时跳过压缩包处理，相关文件记 `skipped: prereq_missing`（见 F16）
+11. **光盘映像（`.iso` / `.img` 等）不走本流程**——其只读介质语义、`autorun.inf` 入口、"操作系统安装介质"风险与 UDF 解析缺陷需专项处理，见 **F18**
 
 #### F7 文档类触发
 
@@ -457,7 +468,7 @@ type PrereqManager interface {
 
 ```json
 {
-  "schema_version": "2.6",
+  "schema_version": "2.7",
   "task_id": "uuid",
   "config_digest": "sha256:...",
   "started_at": "2026-09-30T09:40:00+08:00",
@@ -466,8 +477,10 @@ type PrereqManager interface {
   "platform_meta": { "os_version": "6.1.7601", "dpi_awareness": "system", "cpu_avx": true },
   "prereq": {
     "archive_backend": "C:\\Program Files\\7-Zip\\7z.exe",
-    "sevenzip_version": "23.01",
+    "sevenzip_version": "25.01",
     "archive_backend_status": "ok",
+    "mount_backend": "system",
+    "mount_backend_status": "ok",
     "ocr_engine": "paddleocr_json",
     "ocr_engine_path": "C:\\tools\\PaddleOCR-json\\PaddleOCR-json.exe",
     "ocr_engine_status": "ok",
@@ -483,7 +496,12 @@ type PrereqManager interface {
     "skipped": 1
   },
   "layout_analysis": {
-    "input_kind": "archive",
+    "input_kind": "iso",
+    "media_kind": "installer_media",
+    "iso_strategy_used": "extract",
+    "mount_drive": null,
+    "dismount_status": "not_applicable",
+    "motw_policy": "native",
     "entries": [
       { "path": "install.bat", "priority": "P1", "reason": "entry_p1_named" },
       { "path": "setup.exe", "priority": "P2", "reason": "entry_p2_installer" }
@@ -543,7 +561,7 @@ type PrereqManager interface {
 | `failed` | 所有方式均无法启动进程 | failed |
 | `skipped` | 无可用触发方式（空文件 / 文档无宿主程序 / 前置依赖缺失等） | skipped |
 
-> 说明：v2.0 起将 `killed_on_timeout` 并入触发成功口径；v2.1 新增 `install_completed`；v2.3 起 `gui_actions` 记录识别来源 `source`；**v2.4 起记录 OCR 原生 `ocr_score` 与识别耗时，并把 `prereq` 扩展为完整的引擎探测结果**。
+> 说明：v2.0 起将 `killed_on_timeout` 并入触发成功口径；v2.1 新增 `install_completed`；v2.3 起 `gui_actions` 记录识别来源 `source`；**v2.4 起记录 OCR 原生 `ocr_score` 与识别耗时，并把 `prereq` 扩展为完整的引擎探测结果**；**v2.5 起 `prereq` 增加挂载后端探测结果，`layout_analysis` 增加 F18 的光盘映像字段（`media_kind` / `iso_strategy_used` / `mount_drive` / `dismount_status` / `motw_policy`）**。
 
 #### F11 文件夹批量遍历
 
@@ -741,6 +759,8 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 
 - **探测顺序**：配置指定路径（`archive.sevenzip_path`，非 `auto` 时优先）→ 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 `Wow6432Node`）→ `PATH` 查找 → 常见默认路径（`C:\Program Files\7-Zip\7z.exe`、`C:\Program Files (x86)\7-Zip\7z.exe`）
 - 命中后记录路径与版本到结果 JSON 的 `prereq` 字段
+- **版本要求：≥ `archive.min_version`（默认 `24.09`）**。理由：① ISO/UDF 解析缺陷（蓝光 `FileType=249` 等）在较新版本才修；② 更早版本存在嵌套归档 MotW 处理缺陷（CVE-2025-0411，24.09 修复）。低于该版本 → **告警但继续运行**（不阻断），并在 `prereq.archive_backend_status` 记 `version_too_old`
+- 7-Zip 官方**仍支持 Windows 7**（含 26.x 版本），Win7 环境无需降级选版本
 
 **F16.2 7-Zip 缺失时的行为**
 
@@ -818,6 +838,16 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 | AV / EDR 排除目录 | 强烈建议（镜像准备项，**工具无法自检**） | 未签名单文件可能被拦截或删除，工具无法运行 | 写入 D9 镜像构建指引与 README（4.7 C 类） |
 | 管理员权限 / 关闭 UAC | 必需（镜像准备项） | 静默安装失败、GUI 自动化被提权弹窗中断 | 工具启动自检权限并告警；UAC 由镜像侧关闭（F14.5） |
 | （可选）tesseract / Umi-OCR | 可选 | 对应后端不可用 | F16.3 |
+| **7-Zip 版本** | **≥ 24.09**（`archive.min_version`） | ISO/UDF 解析缺陷、嵌套归档 MotW 缺陷（CVE-2025-0411）未修 | F16.1；低于要求时**告警但继续**，记 `version_too_old` |
+| （可选）光盘映像挂载后端 | 可选（仅 `iso.strategy: mount_*` 需要） | 挂载轨不可用，自动收敛为解压轨 | F16.6；Win8+ 系统自带，Win7 需第三方 |
+
+**F16.6 光盘映像挂载后端探测（可选前置，仅挂载轨需要）**
+
+- **Win8 / Server 2012+**：系统自带 `Mount-DiskImage` / `Dismount-DiskImage`（Storage 模块，需 PowerShell 可用），**无需任何额外安装**；ISO 挂载通常不需提权（失败时可提权重试）
+- **Win7**：无原生 ISO 挂载能力 → 探测**第三方便携版**（`WinCDEmu` 便携版 `vmnt.exe` / `batchmnt.exe`；LGPL、免安装、无需重启、XP~Win11 通用）
+- **探测顺序**：`iso.mount_tool_path`（非 `auto` 时优先）→ `PATH` → 常见目录（如 `C:\tools\WinCDEmu\`）
+- **缺失时不报错**（挂载轨属可选能力）：记 `prereq.mount_backend_status: missing`，`iso.strategy` 自动按 `extract_only` 行为运行并告警
+- **不新增退出码**——挂载后端缺失不进 6.1 退出码表；仅在 `iso.strategy` 被显式设为 `mount_*` 且后端缺失时，记 `mount_failed` 并在任务汇总告警
 
 > 该"检测 + 提示 + 不代装"策略同样适用于后期新增的任何前置依赖。**完整的依赖边界（含语言运行时要不要、镜像准备项有哪些）见 4.7**；表中 7-Zip / OCR 引擎 / VC++ 运行库的**离线安装包由交付包提供**（8.3 B 组），安装步骤见 **DEPLOY.md（D14）**。
 
@@ -830,7 +860,7 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 
 软件包的目录结构本身携带了强信号（作者用什么文件作为安装入口、哪些是配套工具），应当**先读结构再决定触发表**，而不是平等对待每个文件。
 
-**适用输入**：① 压缩包（F6 解压前后）② 用户直接提供的目录（F11 遍历前）。**单文件输入不适用**本模块——无结构可分析，直接走 F2 类型识别。
+**适用输入**：① 压缩包（F6 解压前后）② 用户直接提供的目录（F11 遍历前）③ **光盘映像（F18 的两条轨均可产出清单）**。**单文件输入不适用**本模块——无结构可分析，直接走 F2 类型识别。
 
 **F17.1 结构预扫描**
 
@@ -838,6 +868,7 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
   - 解压前即完成入口识别与总量估算
   - 预判解压后总大小是否超限（配合 F6 的 2 GB 上限），超限则直接记 `extract_size_exceeded` 且**不落盘**
 - **目录**：直接扫描目录树（深度上限可配置）
+- **光盘映像**：轨 A 同样用 `7z l` 列清单（不落盘）；轨 B 直接扫描挂载盘（见 F18.2 / F18.5）
 - 产出内部结构模型：文件路径、大小、扩展名、文件头类型、相对包根的层级深度
 
 **F17.2 入口识别与优先级分层**
@@ -846,7 +877,7 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 
 | 优先 | 类型 | 判据 | 示例 |
 |------|------|------|------|
-| **P0** | 说明文件明示入口 | `readme` / `安装说明` / `使用说明` 文本中出现"运行/双击/执行 `<文件名>`"模式，**且该文件确实存在** | `安装说明.txt` → "双击 install.bat 开始安装" |
+| **P0** | 说明文件明示入口 / **`autorun.inf` 声明** | `readme` / `安装说明` / `使用说明` 文本中出现"运行/双击/执行 `<文件名>`"模式，**且该文件确实存在**；或 `autorun.inf` 的 `open=` / `shellexecute=` 指向的文件存在且未被黑名单排除（见 F18.5） | `安装说明.txt` → "双击 install.bat 开始安装"；`autorun.inf` → `open=setup.exe` |
 | **P1** | 安装入口命名 | 文件名（去扩展名、转小写）含 `install` / `setup` / `boot` / `安装` / `部署` / `一键` | `install.bat`、`setup.exe`、`一键安装.exe` |
 | **P2** | 标准安装器（文件头） | 文件头识别为 MSI / NSIS / Inno Setup / InstallShield / WiX Burn | `setup.exe`（NSIS 特征） |
 | **P3** | 前置依赖包 | 名称含 `vcredist` / `dotnet` / `directx` / `prereq` / `依赖` / `环境` | `vcredist_x64.exe` |
@@ -897,6 +928,94 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 - **每个文件**新增 `selection_reason`：`entry_p0_manifest` / `entry_p1_named` / `entry_p2_installer` / `entry_p3_prereq` / `entry_p4_main` / `fallback_p5` / `excluded_blacklist` / `skipped_after_success`
 - **任务级**新增 `layout_analysis`：识别出的入口清单（含分层与理由）、被排除清单、是否进入兜底阶段、最终收敛点（在哪个入口成功）
 
+#### F18 光盘映像专项处理（ISO / IMG）
+
+**解决的问题**：光盘映像是**一类特殊输入**，与普通压缩包有四个本质差异，**不能简单套用 F6**：
+
+1. **介质语义不同**——光盘是**只读介质**，且带 `autorun.inf` 这一"作者声明的入口"；挂载后 `GetDriveType()` 会返回 `DRIVE_CDROM`，个别安装器会据此分支
+2. **解析能力有缺口**——7-Zip 对 ISO/UDF 的支持**并非全覆盖**：部分 UDF 2.5 映像（目录项 CRC 长度字段写法非标准）、蓝光影碟（`BDMV\STREAM\*.m2ts` 的 ICB `FileType=249`）会直接报 `cannot open file as archive`。**只走解压轨会漏样本**
+3. **存在"不该触发"的介质**——操作系统安装盘（含 `sources\install.wim`）执行 `setup.exe` 会**开始安装操作系统**，直接破坏测试虚拟机。这不是"装不成"，而是"把机器搞坏"
+4. **MotW 传播行为随系统版本变化**——Win11 22H2 起挂载 ISO 会把 Mark-of-the-Web 传播到内部文件（历史上 ISO 挂载是经典的 MotW 绕过手法），直接影响 SmartScreen 是否拦截安装器、进而影响能否装成功
+
+**F18.1 介质性质判定（先行分类，决定后续处理）**
+
+进入触发前先按**内容特征**判定介质性质（规则表外部可扩充：`media_kinds.json`）：
+
+| 性质 | 判定特征 | 处理 |
+|------|---------|------|
+| `malware_lure`（恶意投递结构，**重点场景**） | 根目录仅 1~3 个文件，含 `.lnk` / `.js` / `.vbs` / `.hta` / `.wsf`，或"与映像同名的快捷方式 + 隐藏载荷"组合 | **最高优先执行**（`.lnk` 解析目标后重走 F2/F3）；ISO+LNK 是近年最典型的投递手法，也是 EDR 测试最关心的场景 |
+| `installer_media` | 含 `setup.exe` / `install.exe` / `*.msi`，或 `autorun.inf` 指向入口 | 正常处理：按 F17 分层执行 |
+| `os_install_media`（**默认不触发**） | 含 `sources\install.wim` / `install.esd` / `boot\bcd` / `sources\setup.exe` | **默认跳过**，记 `skipped: os_media`；需 `iso.allow_os_media: true` 才触发。**理由：执行它会开始安装操作系统、破坏测试机，且与"触发样本行为"的目标无关** |
+| `media_disc`（影碟） | 含 `BDMV\` / `VIDEO_TS\` / `*.m2ts` / `*.vob` | 默认跳过，记 `skipped: media_disc`（7-Zip 对蓝光有已知解析缺陷）；`iso.allow_media_disc: true` 可放开 |
+| `data_disc` | 其他 | 走通用 F17 流程 |
+
+判定结果记入 `layout_analysis.media_kind` 供下游审计。
+
+> 判定**只依据清单内容与文件特征，不依据映像文件名**——ISO 的文件名往往无意义（如 `abc.iso` x2）。
+
+**F18.2 两条执行轨：解压为主（默认），挂载为辅**
+
+| | **轨 A 解压**（`extract_*`，默认） | **轨 B 挂载**（`mount_*`） |
+|---|---|---|
+| 做法 | `7z l` 列清单（不落盘）→ F17 分析 → 解压到**短路径临时目录** → 按优先级执行 | `Mount-DiskImage` 挂载取盘符 → 扫描挂载盘做 F17 分析 → **直接从盘符执行**入口 |
+| 优点 | 无驱动依赖、**Win7 可用**、介质**可写**（个别安装器需往介质写日志/许可文件）、无盘符与卸载残留、与 F6/F17 流程完全一致；**7-Zip 默认不传播 MotW** | **恢复真实光盘介质语义**：拿到真实盘符与 `DRIVE_CDROM` 类型、`autorun.inf` 与原始只读介质关系完整、安装期间源介质始终可用 |
+| 缺点 | 丢失介质语义；若解压目录被清理，依赖"源介质"的 MSI 按需安装/修复会失效 | 需 Win8+ 原生支持（Win7 需第三方驱动）、占用盘符、**必须可靠卸载**、只读介质下个别安装器反而失败 |
+| 环境要求 | 仅需 7-Zip | Win8 / Server 2012+ 用系统 `Mount-DiskImage`（**ISO 挂载通常不需提权**，失败时提权重试）；Win7 需可选第三方（WinCDEmu 便携版，见 F16.6） |
+
+**默认 `iso.strategy: extract_first`** —— 兼顾 Win7 + "尽量装成功"（无 MotW 传播、介质可写、无残留）。`mount_first` 供需要真实介质语义的样本集选用；`extract_only` / `mount_only` 可强制单轨。
+
+**自动切换**：轨 A 在 `7z l` 或解压阶段报"无法打开"（UDF 兼容缺陷 / 加密映像 / 多重会话）时，**自动回退轨 B**（若挂载后端可用），结果中记 `iso_strategy_used: "extract→mount"`；两轨皆失败记 `iso_unhandled: unsupported_image`，不阻塞后续样本。
+
+**F18.3 挂载轨的生命周期与清理（轨 B 的可靠性重点）**
+
+1. **挂载**：`Mount-DiskImage -ImagePath <本地绝对路径>` —— **不支持 UNC 路径**，网络位置需先拷贝到本地再挂载
+2. **取盘符**：`Mount-DiskImage -PassThru | Get-Volume` 取 `DriveLetter`，**不假设盘符**
+3. **安装期间保持挂载**：`keep_mounted_until_verified: true`（默认）——直到 F15 判定完成（含 `settle_sec` 稳定期）才卸载。**禁止在安装器仍在运行时卸载**，否则安装中断
+4. **卸载**：`Dismount-DiskImage -ImagePath <同一路径>`（比按盘符 / 设备路径更稳）。失败时依次：结束占用挂载盘文件的进程 → 短延时约 1s → 重试（`dismount_retry` 默认 3 次）→ 仍失败记 `dismount_failed`，并在任务收尾统一兜底
+5. **异常退出兜底**：工具启动时执行一次**遗留挂载清理**（`Get-DiskImage | Where Attached`），**仅卸载能与本次任务标识对应的映像**；无法确认归属的只记录告警，不强行卸载（避免动到其他任务的挂载）
+6. **挂载失败**（盘符冲突、映像已在挂载、稀疏映像、USB 读卡器占用等）→ 记 `mount_failed` 并回落轨 A
+
+**F18.4 MotW（Mark-of-the-Web）处理策略**
+
+MotW 直接影响 SmartScreen：带 MotW 的未签名安装器可能被"Windows 已保护你的电脑"拦截，**该拦截会中断安装**。
+
+| 策略 | 行为 | 适用 |
+|------|------|------|
+| `native`（**默认**） | **不主动改写**，保持各路径原生行为：解压轨下 7-Zip 默认不传播 MotW；挂载轨在 Win11 22H2+ 会传播 MotW | 尊重环境真实行为，不人为干预 |
+| `preserve` | 把映像自身的 `Zone.Identifier` **显式传播**到内部文件 | 需要还原"从网络下载后挂载"的真实场景（含 SmartScreen 拦截链） |
+| `clear` | 清除内部文件的 `Zone.Identifier` | 需要排除 SmartScreen 干扰、聚焦样本自身行为时 |
+
+- 实际生效值记入 `layout_analysis.motw_policy`，用于解释"这次为什么没装成/为什么被拦"
+- **明确边界（同步写入 2.4 非目标）**：本工具**不提供绕过 Windows 安全机制的实现**；上述策略只是**如实记录与可配置的传播行为**。"是否需要 SmartScreen 参与"属测试口径问题，由安全团队决定（见 Q14）
+
+**F18.5 与 F17 的衔接（三处补充）**
+
+1. **`autorun.inf` 提升为 P0 级入口信号**——读取 `[AutoRun]` 段的 `open=` / `shellexecute=` / `icon=`，指向文件存在且未被黑名单排除时按 P0 处理（这正是"作者声明入口"，比 readme 更权威）。**只读取，不依赖系统自动运行**（现代 Windows 默认不执行光盘 autorun）
+2. **清单来源按轨区分**——轨 A 用 `7z l` 输出；轨 B 直接扫描挂载盘；两者交给 F17 同一套分层逻辑
+3. **编码容错**——老光盘常用 Joliet/GBK 且可能出现乱码文件名。F17 的关键字匹配（`安装说明`、`setup` 等）需**做编码容错与宽松匹配**，避免因乱码漏识别；不确定时按 P1 命名规则与 P5 兜底，**不直接跳过**
+
+**F18.6 工程细节**
+
+| 事项 | 要求 |
+|------|------|
+| **短路径临时目录** | 解压根目录默认使用短路径（如 `C:\AT\t\<taskID>\`，可由 `archive.temp_root` 指定）——映像内常含深层长路径，避免 `MAX_PATH` 相关失败 |
+| 解压目录保留策略 | `iso.keep_extracted_on_success: false`（默认，退出前清理）。设为 `true` 时**保留解压目录**并在结果中记录路径，用于"安装器按需从源读取"或人工复核；**此时不计入"无残留"，README 须说明** |
+| 映像内文件哈希 | 对**被执行**的映像内文件同样记录 SHA-256（与普通样本一致，便于下游比对） |
+| 深度与体积限制 | 复用 F6 的递归深度（默认 3 层）与解压体积上限（默认 2 GB）；轨 A **在解压前用 `7z l` 预判总量**，超限不落盘 |
+| 嵌套 | ISO 内含压缩包 / 压缩包内含 ISO 走 F12 链式调用，统一受深度上限约束 |
+
+**F18.7 结果记录**
+
+`layout_analysis` 新增字段：
+
+| 字段 | 说明 |
+|------|------|
+| `media_kind` | `malware_lure` / `installer_media` / `os_install_media` / `media_disc` / `data_disc` |
+| `iso_strategy_used` | 实际生效的轨：`extract` / `mount` / `extract→mount`（回退） |
+| `mount_drive` | 挂载盘符（仅轨 B） |
+| `dismount_status` | `ok` / `failed` / `not_applicable` |
+| `motw_policy` | 实际生效的 MotW 策略 |
+
 ---
 
 ## 6. 非功能需求
@@ -908,8 +1027,8 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 | 兼容性 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**；架构预留 Linux / macOS |
 | 权限 | 以管理员权限运行（静默安装需要）；启动时自检权限，无管理员权限则告警并继续；沙箱镜像建议关闭 UAC 弹窗以允许 GUI 自动化 |
 | 日志 | 除 JSON 结果外，输出可读日志到 stdout 与文件（时间戳、级别、文件名、阶段）；日志与 JSON 结果分流，不混写 stdout |
-| 可配置 | 超时、并发度、递归深度、解压大小上限、尝试间隔与次数、参数表、按钮关键词表、**OCR 引擎与路径/传输方式/置信度阈值**、模板目录均可配置 |
-| 无残留 | 退出前清理临时目录、**回收 OCR 引擎子进程**；不修改系统默认文件关联；**不写入注册表、不产生安装残留** |
+| 可配置 | 超时、并发度、递归深度、解压大小上限、尝试间隔与次数、参数表、按钮关键词表、**OCR 引擎与路径/传输方式/置信度阈值**、模板目录、**光盘映像策略（解压/挂载轨、OS 介质与影碟是否允许触发、MotW 策略、挂载与卸载重试）**均可配置 |
+| 无残留 | 退出前清理临时目录、**卸载本次挂载的光盘映像**（F18.3）、**回收 OCR 引擎子进程**；不修改系统默认文件关联；**不写入注册表、不产生安装残留** |
 | 可移植 | 核心层不依赖 Windows API；平台相关逻辑全部走适配层；**Win7 / Win10 差异（DPI、UIA、截屏）全部封装在适配层** |
 | 可维护 | 见 7.3 工程规范：接口由使用方定义、依赖注入、`gofmt`/`go vet`/`golangci-lint` 零 error、core 层单测覆盖率 ≥ 70% |
 | 离线 | 全程不访问网络（OCR 走本地进程 / 环回 TCP）；前置缺失时只提示、不下载、不安装。**部署所需的第三方物料全部随交付包离线提供**（8.2 / 8.3 B 组） |
@@ -1073,6 +1192,8 @@ testdata/                        # 测试样本与期望结果
 3. **探测顺序**：配置指定路径 → 注册表 `HKLM\SOFTWARE\7-Zip\Path`（含 Wow6432Node）→ `PATH` → 常见默认路径
 4. **缺失处理**：输出 F16.2 规定的用户提示 → 含压缩包样本时以退出码 `4` 结束；可用 `--no-archive` 跳过压缩包继续处理其余样本
 5. **部署建议**：镜像构建阶段预置 7-Zip 并在构建流程末尾执行 `AutoTrigger.exe --check-prereq` 作为卡点校验
+6. **版本要求**：**≥ `archive.min_version`（默认 24.09）**，低于该版本告警但继续（见 F16.1）
+7. **ISO / UDF 的已知能力边界**：7-Zip 支持 ISO9660 / UDF 的**解包**，但对部分非标准 UDF 2.5 映像与蓝光影碟（`FileType=249`）会报"无法打开"——**这属于解析缺陷，不是配置问题**。因此光盘映像按 **F18 双轨**处理：解压失败时自动回退到系统挂载
 
 ### 7.5 config.json 结构（全部字段有内嵌默认值，可选覆盖）
 
@@ -1086,7 +1207,22 @@ testdata/                        # 测试样本与期望结果
     "max_depth": 3,
     "max_extract_size_bytes": 2147483648,
     "sevenzip_path": "auto",
-    "require_sevenzip": true
+    "require_sevenzip": true,
+    "min_version": "24.09",
+    "temp_root": ""
+  },
+  "iso": {
+    "strategy": "extract_first",
+    "allow_os_media": false,
+    "allow_media_disc": false,
+    "autorun_as_p0": true,
+    "media_kinds_file": "media_kinds.json",
+    "mount_tool_path": "auto",
+    "mount_timeout_ms": 15000,
+    "dismount_retry": 3,
+    "keep_mounted_until_verified": true,
+    "keep_extracted_on_success": false,
+    "motw_policy": "native"
   },
   "package_layout": {
     "enabled": true,
@@ -1140,6 +1276,11 @@ testdata/                        # 测试样本与期望结果
 > - `ocr.transport` 可选 `stdio`（默认）/ `tcp` / `http`（仅 Umi-OCR）
 > - `ocr.require_ocr: false` 表示 OCR 缺失时**降级而非失败**；设为 `true` 则缺失时以退出码 5 结束
 > - `ocr.min_score` 为**引擎原生置信度阈值**，低于该值的识别结果不参与点击
+> - `archive.temp_root` 为空时自动选择**短路径**（ISO 解压必须使用短路径，见 F18.6）；`archive.min_version` 为 7-Zip 最低版本要求（见 F16.1）
+> - `iso.strategy` 可选 `extract_first`（默认）/ `mount_first` / `extract_only` / `mount_only`；轨 A 解析失败时自动回退轨 B（F18.2）
+> - `iso.allow_os_media` / `iso.allow_media_disc` 默认 `false`：**操作系统安装介质与影碟默认不触发**（F18.1），避免误装操作系统、破坏测试机
+> - `iso.motw_policy` 可选 `native`（默认，不主动改写）/ `preserve` / `clear`（F18.4）
+> - `iso.keep_extracted_on_success: true` 会保留解压目录（此时不计入"无残留"，README 须说明）
 > - `package_layout.mode` 可选 `smart`（默认，F17 定向优先 + 兜底回退）/ `brute`（关闭 F17，退化为全量平扫）；`package_layout.enabled: false` 等价于 `mode: brute`
 > - **F17.3 的排除清单（卸载/修复/更新/调试类）不受配置影响，两种模式下均强制生效**，不可关闭
 
@@ -1289,7 +1430,8 @@ AutoTrigger-<版本>-win64\
 │   ├─ 7zip\      7z<版本>-x64.msi
 │   ├─ ocr\       PaddleOCR-json_v<版本>.7z   （默认引擎，需 AVX）
 │   │              RapidOCR-json_v<版本>.7z   （无 AVX CPU 的备选，接口一致）
-│   └─ vcredist\  VC_redist.x64.exe           （Win7 场景可能需要）
+│   ├─ vcredist\  VC_redist.x64.exe           （Win7 场景可能需要）
+│   └─ mount\     WinCDEmu 便携版             （可选：仅 Win7 需要挂载轨时使用）
 ├─ scripts\
 │   ├─ verify-ocr.ps1                 # OCR 环境探测与端到端验证
 │   └─ check-prereq.cmd               # 一键自检（包装 `AutoTrigger.exe --check-prereq`）
@@ -1310,21 +1452,22 @@ AutoTrigger-<版本>-win64\
 
 | 编号 | 交付物 | 说明 |
 |------|--------|------|
-| D11 | **7-Zip 离线安装包**（`7z<版本>-x64.msi` / `.exe`） | 解压后端，**必需**（除非 `--no-archive`）；附版本号与 SHA-256 记录 |
+| D11 | **7-Zip 离线安装包**（`7z<版本>-x64.msi` / `.exe`） | 解压后端，**必需**（除非 `--no-archive`）；**版本须 ≥ 24.09**（ISO/UDF 解析与 MotW 修复，见 F16.1）；附版本号与 SHA-256 记录 |
 | D12 | **OCR 引擎离线包**：`PaddleOCR-json`（默认）+ `RapidOCR-json`（无 AVX 备选） | 绿色解压即用；建议内部归档固定版本，避免上游变更导致识别行为漂移 |
 | D13 | **VC++ 2015-2022 运行库离线安装包**（`VC_redist.x64.exe`，可选） | Win7 场景 OCR 引擎可能需要；按目标镜像实际情况决定是否随包 |
+| **D15** | **（可选）光盘映像挂载工具离线包**：WinCDEmu 便携版（LGPL） | **仅 Win7 需要挂载轨时随包**；Win8+ 使用系统自带 `Mount-DiskImage`，无需此项（F16.6） |
 
 **C 组：文档、配置与脚本**
 
 | 编号 | 交付物 |
 |------|--------|
-| **D14** | **部署说明文档 `DEPLOY.md`（新增，P0）**：照做式步骤——① 前置检查（系统版本 / 权限 / AV 排除）；② 安装 7-Zip（命令行示例）；③ 部署 OCR 引擎（解压路径 + `config.json` 指向）；④ 安装 VC++ 运行库（如需）；⑤ `--check-prereq` 校验；⑥ 拷贝 exe 到运行目录；⑦ 常见问题（AV 拦截、AVX 缺失）。**要求：运维只读此文档即可独立完成部署** |
+| **D14** | **部署说明文档 `DEPLOY.md`（新增，P0）**：照做式步骤——① 前置检查（系统版本 / 权限 / AV 排除）；② 安装 7-Zip（命令行示例）；③ 部署 OCR 引擎（解压路径 + `config.json` 指向）；④ 安装 VC++ 运行库（如需）；⑤ `--check-prereq` 校验；⑥ 拷贝 exe 到运行目录；⑦ 常见问题（AV 拦截、AVX 缺失）；**⑧（可选）Win7 挂载轨：部署 WinCDEmu 便携版并设置 `iso.mount_tool_path`**；**⑨ 光盘映像相关配置说明（`iso.*` 各字段与 MotW 策略）**。**要求：运维只读此文档即可独立完成部署** |
 | D5 | 使用说明文档（README：**工具本体免安装使用方式**、CLI 参数、退出码表、`--check-prereq` / `--dump-ui` / `--no-archive` / `--no-ocr` 用法、结果 JSON 说明） |
 | D9 | 环境前置检查表与镜像构建指引（依赖清单、离线包放置路径、管理员权限 / UAC / AV 排除目录 / 可写临时目录、`--check-prereq` 卡点用法；对应 4.7 与 8.2） |
 | D2 | 外部覆盖配置模板 `config.example.json`（**可选**；含全部字段与内嵌默认值，**可由 `AutoTrigger.exe --dump-config` 生成**；字段含义与取值范围由 D14 说明，外部配置**只需写要修改的字段**，见 7.5.1） |
-| D3 | 可外部编辑的参数/关键词表（`silent_params.windows.json`、`buttons.zh-CN.json`、**`install_entries.json`（F17.2 安装入口命名模式）**、**`exclude_entries.json`（F17.3 排除清单模式）**）与图像模板目录（含 F14.2 初始模板集，均为可选覆盖） |
+| D3 | 可外部编辑的参数/关键词表（`silent_params.windows.json`、`buttons.zh-CN.json`、**`install_entries.json`（F17.2 安装入口命名模式）**、**`exclude_entries.json`（F17.3 排除清单模式）**、**`media_kinds.json`（F18.1 光盘映像介质性质判定规则）**）与图像模板目录（含 F14.2 初始模板集，均为可选覆盖） |
 | D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3）+ **Win7/Win10 差异说明（对应 4.6）** |
-| D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / **自绘界面 OCR 定位** / 需联网 / 装不成功 / 前置缺失 六类；**并在 Win7 环境复测**） |
+| D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / **自绘界面 OCR 定位** / **光盘映像（含 `malware_lure` 与 `os_install_media` 两类）** / 需联网 / 装不成功 / 前置缺失 七类；**并在 Win7 环境复测**） |
 | D7 | 结果 JSON Schema 文件（供下游流水线校验） |
 | D8 | 构建与检查脚本（Makefile / build.ps1：**Go 1.20.x 静态构建** + gofmt/vet/lint + 单测覆盖率 + **导入表核验**） |
 | D10 | **OCR 环境验证脚本** `scripts/verify-ocr.ps1`（现有版本验证 Windows 内置 OCR；**M1 需扩展为多引擎探测 + 端到端识别验证**，输出文本与四角像素坐标） |
@@ -1360,6 +1503,8 @@ AutoTrigger-<版本>-win64\
 | A23 | **交付包完整性与部署文档可用性** | ① 交付包解压后含 8.2 规定的全部目录与文件（exe、`third_party\` 内 7-Zip 与 OCR 包、`DEPLOY.md`、`README.md`、`scripts\`）；② **在一台干净虚拟机（无 Go、无 7-Zip、无 OCR、无网络）上，运维仅按 `DEPLOY.md` 操作即可完成全部前置安装**；③ 完成后 `--check-prereq` 返回退出码 0；④ 随即可用 exe 完成一次安装触发；⑤ 全流程**不需要联网获取任何物料** |
 | A24 | **配置加载与覆盖（7.5.1）** | ① 外部配置只写 `{"timeout_sec": 300}` 时，**其余字段仍为内嵌默认值**（验证深合并，非整体替换）；② 嵌套只写 `{"ocr":{"min_score":0.8}}` 时 `ocr` 下其他字段不受影响；③ 命令行 `--timeout 60` 覆盖配置文件中的 300；④ `--config` 与同目录 `config.json` 同时存在时，前者生效且**不叠加**；⑤ 文件不存在 / JSON 语法错误 / 类型不符 / 取值越界均以**退出码 3** 失败并指明字段路径，**不静默回落默认值**；⑥ 未知字段被忽略且产生告警日志；⑦ `--dump-config` 输出的配置重新加载后行为一致；⑧ 结果 JSON 中 `config_digest` 随配置变化而改变 |
 | A25 | **软件包结构识别与入口优先（F17）** | ① 对含 `install.bat` + `setup.exe` + `unins000.exe` + 数十个 DLL 的测试包：**`unins000.exe` 全程未被执行**（结果中记 `excluded_blacklist`）；② 定向阶段按 P0~P4 顺序执行，取得 `install_completed` 后其余文件记 `skipped_after_success`，**不再全量扫描**；③ 阶段 1 全部失败时**回退执行 P5 及其余可执行文件**（验证 `fallback_to_brute: true`）；④ 压缩包场景**先 `7z l` 列清单**，解压前即输出入口分层；⑤ `setup_x64.exe` 与 `setup_x86.exe` 并存时优先匹配当前系统架构；⑥ P0 的 readme 提示指向不存在的文件时**不产生任何执行动作**；⑦ `mode: brute` 下行为与传统全量遍历一致，但**黑名单仍强制生效** |
+| A26 | **光盘映像介质判定与安全拦截（F18.1 / F18.5）** | ① 含 `sources\install.wim` 的 Windows 安装 ISO：**判定为 `os_install_media` 且全程不执行任何文件**，结果记 `skipped: os_media`（`allow_os_media: false` 时）；② 含 `BDMV\STREAM\*.m2ts` 的影碟 ISO 记 `skipped: media_disc`；③ 仅含一个 `.lnk` + 载荷的 ISO 判定为 `malware_lure` 且**优先执行该 `.lnk`**；④ 含 `autorun.inf`（`open=setup.exe`）的 ISO：`setup.exe` 被列为 **P0** 并按先于其他入口执行；⑤ 乱码文件名（GBK/Joliet）场景下 `setup.exe` 仍能被识别为 P1/P2，**不因乱码整体跳过**；⑥ 所有判定结果出现在 `layout_analysis.media_kind` |
+| A27 | **光盘映像双轨与挂载清理（F18.2 / F18.3）** | ① 常规 ISO 在 `extract_first` 下走解压轨，`iso_strategy_used: "extract"`；② 构造一个 7-Zip 无法解析的映像（或用损坏/非标准 UDF 样本）：**自动回退挂载轨**，`iso_strategy_used: "extract→mount"`，且**后续仍能正常触发入口**；③ 挂载轨安装期间**保持挂载**，`install_completed` 判定与 `settle_sec` 稳定期结束后才卸载，`dismount_status: "ok"`；④ **异常终止（强杀）后重新启动工具，遗留挂载被自动清理**（或无法确认归属时只告警不误卸）；⑤ `mount_only` 且挂载后端缺失时：告警 + 记录 `mount_failed`，**不新增退出码**，其余样本继续处理；⑥ Win7 上默认走解压轨可完整跑通（不依赖挂载后端）；⑦ `iso.keep_extracted_on_success: false` 时解压目录被清理，`true` 时目录保留且路径写入结果 |
 
 ---
 
@@ -1369,8 +1514,8 @@ AutoTrigger-<版本>-win64\
 |--------|------|---------|
 | M0 环境与选型验证（新增） | ① **Go 1.20.x 工具链与依赖库可用性确认**；② **Win7 SP1 x64 运行验证**（截屏 / DPI / Job Object / UIA 能力基线）；③ **OCR 引擎接入 spike**（PaddleOCR-json 探测、stdio 通信、四角坐标解析、AVX 检测） | 4.6、7.6、D10 |
 | M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + 超时清理 + JSON 输出 + **7-Zip / OCR 引擎自检与用户提示** | F1 F2 F3 F4 F5 F9 F10 F13 F16 |
-| M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 引擎三级识别**）+ 安装证据判定 + 文件夹遍历 + 压缩包递归 + **F17 结构识别与入口优先排序** + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 F17 |
-| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README 与 **DEPLOY.md 部署文档**、**交付包打包含 third_party 离线物料**、**Win7 + Win10 双环境冒烟**、**导入表与依赖边界核验（A22）**、**交付包完整性验证（A23）**、**配置加载与覆盖验证（A24）**、lint 与覆盖率达标 | D1~D14、A8~A24 |
+| M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 引擎三级识别**）+ 安装证据判定 + 文件夹遍历 + 压缩包递归 + **F17 结构识别与入口优先排序** + **F18 光盘映像专项（介质判定 + 解压/挂载双轨）** + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 F17 F18 |
+| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README 与 **DEPLOY.md 部署文档**、**交付包打包含 third_party 离线物料**、**Win7 + Win10 双环境冒烟**、**导入表与依赖边界核验（A22）**、**交付包完整性验证（A23）**、**配置加载与覆盖验证（A24）**、lint 与覆盖率达标 | D1~D15、A8~A27 |
 
 ---
 
@@ -1385,6 +1530,14 @@ AutoTrigger-<版本>-win64\
 | **盲扫执行到卸载程序，破坏已建立的安装结果** | F17.3 排除清单**强制生效、不可配置关闭**（卸载/修复/更新检查/调试类绝不执行）；被排除项记 `excluded_blacklist` 保留审计；验收 A25 ① 专卡此项 |
 | **包结构不规范导致入口漏识别**（如 `i.bat`、`a.exe`、无 readme） | F17 只调整**优先级**、不缩小**覆盖面**：阶段 2 兜底回退到全量遍历（`fallback_to_brute` 默认 `true`）；入口命名模式表 `install_entries.json` 支持外部扩充 |
 | 压缩包解压前预判失误（清单与实际不符） | `7z l` 结果仅作排序与预估；实际解压后仍重跑结构扫描，以磁盘实际内容为准 |
+| **7-Zip 无法解析部分 ISO**（非标准 UDF 2.5 目录项 CRC、蓝光 `FileType=249`、加密/多重会话映像） | 不把它当"解压失败"处理：**自动回退挂载轨**（F18.2）；两轨皆失败记 `iso_unhandled: unsupported_image`；镜像建议使用 **≥ 24.09** 的 7-Zip（F16.1） |
+| **误触发操作系统安装盘，把测试机装成系统** | F18.1 判定 `os_install_media`（`sources\install.wim` / `install.esd` 等）**默认跳过**，需显式 `allow_os_media: true` 才触发；判定结果入 `layout_analysis.media_kind` 可审计（A26 ①） |
+| **挂载轨残留**（异常退出未卸载、盘符被占用、文件被占用导致卸载失败） | ① 安装期间保持挂载、判定完成后才卸载（`keep_mounted_until_verified`）；② 卸载前结束占用进程 + 短延时重试（默认 3 次）；③ 工具启动时清理**可确认归属**的遗留挂载，无法确认的只告警不误卸；④ 挂载与卸载全部纳入 Job Object 与全局看门狗（F18.3） |
+| **挂载轨不可用**（Win7 无原生 API、盘符冲突、稀疏映像、映像已在挂载） | 默认策略本就是解压轨（`extract_first`），Win7 无此依赖；挂载失败记 `mount_failed` 并回落解压轨；**不新增退出码**（F16.6） |
+| **MotW 传播差异导致 SmartScreen 拦截安装器**（Win11 22H2+ 挂载 ISO 会传播 MotW） | `iso.motw_policy` 可配置并在结果中记录实际生效值，便于解释失败原因；**工具不提供绕过实现**，是否让 SmartScreen 参与由安全团队定（F18.4 / Q14） |
+| **解压目录被清理后，按需从源安装的 MSI 修复/卸载失效** | `iso.keep_extracted_on_success: true` 可保留解压目录并在结果中记录路径（此时不计入"无残留"，README 说明）；默认 `false` 适用于只做"触发"的场景 |
+| **映像内长路径导致解压或执行失败（`MAX_PATH`）** | 解压根目录固定使用**短路径**（`archive.temp_root`，如 `C:\AT\t\<taskID>\`）（F18.6） |
+| **老光盘文件名乱码导致入口漏识别**（Joliet/GBK 编码） | F18.5 要求关键字匹配做**编码容错与宽松匹配**；不确定时按 P1 命名规则与 P5 兜底，不直接跳过（A26 ⑤） |
 | **目标机未预置 7-Zip** | 启动自检 + **明确提示用户先安装**（含**交付包内离线安装包路径** + 静默安装命令 + 绕过方式）+ 退出码 4；`--no-archive` 可跳过压缩包继续处理；镜像构建阶段用 `--check-prereq` 卡点 |
 | **目标机未预置 OCR 引擎** | 启动自检 + **明确提示安装**（指向交付包内 OCR 引擎包与解压方式）+ 自动降级为 UIA + 模板；需要强制时用 `require_ocr: true` + 退出码 5；`--no-ocr` 可显式关闭 |
 | **交付包物料缺失或版本不匹配**（离线环境无处补） | 交付包目录结构固化（8.2）+ 打包校验（A23）；`third_party\` 内容记录版本号与 SHA-256；`DEPLOY.md` 内列出全部物料清单与校验方式 |
@@ -1428,8 +1581,11 @@ AutoTrigger-<版本>-win64\
 | **Q10** | **目标环境是否确实包含 Windows 7？** 若实际只在 Win10+ 运行，可改用 Go 1.21+（生态更新、库选择更多）并简化 4.6 的兼容处理 | 影响 7.1 工具链、4.6 与 A20 工作量 |
 | **Q11** | 自绘安装器（Electron/CEF 类）在样本中的占比？若占比高，OCR 与模板的投入应先于 UIA 深化 | 影响 M2 优先级排序 |
 | **Q12** | 目标虚拟机能否**为工具目录配置 AV/EDR 排除项**？（若不能，需考虑代码签名或改用其他分发方式） | 影响分发可行性与镜像构建流程（4.7 C 类） |
+| **Q13** | **光盘映像的默认处理轨**是否确认为解压优先（`extract_first`）？**挂载轨（轨 B）本期就做，还是先留接口、只做解压轨**？ | 影响 F18.2 的 M2 工作量与 A27 验收范围 |
+| **Q14** | **MotW 策略默认值**（`native` / `preserve` / `clear`）由谁定？即：EDR 测试是否**希望 SmartScreen 拦截链也参与**（`preserve`）还是排除其干扰（`clear`）？ | 影响 F18.4 默认值与测试口径（安全团队决策项） |
+| **Q15** | ① 样本集中是否有**操作系统安装 ISO**（需明确是否允许触发）？② 是否存在 7-Zip 无法解析、必须靠挂载的映像（决定 Win7 是否需要随包 WinCDEmu）？ | 影响 F18.1 默认拦截策略、D15 交付物与镜像部署说明 |
 
-> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、主目标（安装成功优先）、环境（离线）—— 见 1.2。
+> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、**光盘映像处理（专项流程 F18：介质性质判定 + 解压/挂载双轨 + 解压轨优先）**、主目标（安装成功优先）、环境（离线）—— 见 1.2。
 
 ---
 
@@ -1446,6 +1602,9 @@ AutoTrigger-<版本>-win64\
 - **观察小参数 VLM OCR（HunyuanOCR 1B / DeepSeek-OCR 等）经 GGUF/llama.cpp 量化后在纯 CPU 的可用性**：若延迟能压到亚秒级且支持 Win7，可作为 `ocr.engine` 的新后端接入，用单模型替代"UIA + 模板 + OCR"组合（见 7.7 评估记录）
 - OCR 结果与模板/UIA 的融合策略持续调优（按键位区域先验、按钮样式聚类）
 - 触发成功率看板（按安装器家族统计安装成功 / 触发成功比例）
+- **扩展光盘映像挂载能力**：VHD / VHDX / IMG / DMG 等虚拟磁盘类样本（挂载后同样按 F17 结构分析触发；VHD 挂载需管理员权限，与 ISO 不同）
+- **物理光驱介质支持**：直接从物理 DVD 驱动器（`DRIVE_CDROM`）读取并触发，覆盖"必须真光盘"的样本
+- **MotW / SmartScreen 拦截链的行为采集**：把"被 SmartScreen 拦截"本身作为一类可观测结果纳入统计（需与安全团队确认口径）
 
 ---
 
