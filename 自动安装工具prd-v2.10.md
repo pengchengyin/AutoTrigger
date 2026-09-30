@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.9（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · **判定口径「宽松 / 宁可多报」（F15.7、DC19）** · **单实例串行调用 + 单文件 600s 上限（DC20）** · **跨平台扩展设计（4.8：Linux/macOS 接入指引）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
+| 版本 | v2.10（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · **判定口径「宽松 / 宁可多报」（F15.7、DC19）** · **单实例串行调用 + 单文件 600s 上限（DC20）** · **跨平台扩展设计（4.8：Linux/macOS 接入指引）** · **OCR 自检脚本升级为多引擎端到端验证（C39：F16.3 / D10）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
 | 状态 | 待开发 |
 | 目标平台 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
@@ -58,6 +58,7 @@
 | C36 | **定案「单实例串行调用 + 单文件 600s 上限」**：第三方为**单实例串行**调用场景，故维持单实例锁默认（`lock.enabled: true`、`lock.wait_sec: 0` 即不等待、第二实例直接退出码 6），**由调用方自行串行排队**，工具侧不做队列；同时确认**单文件硬上限 `timeout_sec: 600` 合适**，维持默认；`task_timeout_sec` 保留 `0`（任务级不限），长批量任务的总体超时由**调用方外部兜底** | 需求决策：第三方集成方式与超时上限由调用方给出（Q19/Q20 答复） |
 | C37 | **文档版本号与文件名对齐为 v2.8**：内容版本此前已升至 v2.8，但文件名仍沿用 `v2.5`，现统一为《自动安装工具prd-v2.8.md》；此后**每轮改动同步递增文档版本号并重命名文件**，避免文件名与内容版本不一致造成误用 | 文档管理：版本一致性 |
 | C38 | **新增 4.8 跨平台扩展设计（Linux / macOS 接入指引）**：把第 4 节"分层 + 接口"的设计落成**可执行的扩展路径**——① 明确"支持新平台 = 新增一个 adapter 包 + 平台配置，**核心逻辑零改动**"；② 给出 port→各平台实现对照表；③ **F15 证据来源的平台映射**（Linux 用包管理器数据库、macOS 用 `pkgutil`/receipts，而 `internal/verify` 的分级与仲裁**一行不改**）；④ 指出 GUI 自动化在 **Wayland 禁止合成输入**与 **macOS 辅助功能授权**下的根本限制；⑤ 交付/分发的平台差异（每平台一个单文件，但交付包内容不同）；⑥ P1~P3 落地节奏与风险；并新增 **A9 ③ 跨平台编译卡点**（`GOOS=linux/darwin` 下 `go build ./...` 必须通过） | 用户问"后续如何支持 Linux/macOS"，需给出可落地的扩展路径并把设计前提固化 |
+| C39 | **重写 `scripts/verify-ocr.ps1`：由「Windows 内置 OCR 自检」改为「多引擎探测 + 能力自检 + 端到端识别验证」**：原脚本（v2.3）只验证 `Windows.Media.Ocr`，而内置 OCR 已在 v2.4 降为**默认关闭的可选回退后端**，故原内容与现行选型脱节，仅留作概念验证。重写后按 **F16.3 / F16.4** 口径覆盖 `paddleocr_json`（默认）/ `rapidocr_json` / `umi_ocr`（走 HTTP 接口）/ `tesseract`；`-Engine auto` 时按序发现（显式路径 → `config.json` 的 `ocr.engine_path` → PATH → 常见路径），**实际启动一次**做能力自检，并生成中英混排测试图（下一步/安装/取消/Next/Install/I Agree…）做**端到端识别**，输出文本 + 中心像素坐标 + score；支持 `-Json` 将结构化结果输出到 stdout（人类可读报告走 stderr，对齐 **F10.1**），退出码 **0 / 5** 与 `--check-prereq` 对齐；同时探测 CPU AVX 以便在 `paddleocr_json` 不可用时提示切换 `rapidocr_json`。**实现约束：含中文的 `.ps1` 必须以 UTF-8 with BOM 保存**——PowerShell 5.1 对**无 BOM** 的 UTF-8 脚本按 ANSI 解码，会导致中文串与引号错乱、脚本直接解析失败（本机实测：同一文件无 BOM 时报 54 处虚假语法错误，加 BOM 后 0 错误） | 把 D10 交付物由"过时的内置 OCR 验证"升级为与现行引擎选型一致的**部署前/镜像构建卡点工具**（用户问"这个脚本是不是不需要了"） |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
@@ -1209,7 +1210,7 @@ F14.4 是 GUI 自动化视角下的"看到完成页"（对应 A2 级证据）；
 ```
 
 - **部署建议**：OCR 引擎与 7-Zip 一并纳入镜像前置检查表（F16.5）；`--check-prereq` 输出引擎类型、路径、版本、语言与 AVX 支持情况
-- **参考工具**：`scripts/verify-ocr.ps1`（v2.3 用于验证 Windows 内置 OCR；**M1 阶段需扩展为多引擎探测与端到端验证**）
+- **参考工具**：`scripts\verify-ocr.ps1`（**多引擎探测 + 能力自检 + 端到端识别验证**，对应 F16.3 / F16.4；随交付包 `scripts\` 一并提供，见 8.2 / D10。用法：`powershell -NoProfile -ExecutionPolicy Bypass -File .\verify-ocr.ps1`；加 `-Json` 时结构化结果输出到 stdout、报告走 stderr，可直接作为**镜像构建流水线的 OCR 卡点**；退出码 0 = 至少一个引擎可用，5 = 无可用引擎。**注意**：含中文的 `.ps1` 必须存为 **UTF-8 with BOM**，否则 PS 5.1 按 ANSI 解码会导致脚本无法解析）
 
 **F16.4 `--check-prereq`**
 
@@ -1964,7 +1965,7 @@ AutoTrigger-<版本>-win64\
 │   ├─ vcredist\  VC_redist.x64.exe           （Win7 场景可能需要）
 │   └─ mount\     WinCDEmu 便携版             （可选：仅 Win7 需要挂载轨时使用）
 ├─ scripts\
-│   ├─ verify-ocr.ps1                 # OCR 环境探测与端到端验证
+│   ├─ verify-ocr.ps1                 # OCR 多引擎探测 + 端到端识别验证（F16.3；-Json 可做卡点）
 │   └─ check-prereq.cmd               # 一键自检（包装 `AutoTrigger.exe --check-prereq`）
 └─ docs\                              # 架构说明、测试样本说明、结果 Schema
 ```
@@ -2001,7 +2002,7 @@ AutoTrigger-<版本>-win64\
 | D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / **自绘界面 OCR 定位** / **光盘映像（含 `malware_lure` 与 `os_install_media` 两类）** / 需联网 / 装不成功 / 前置缺失 七类；**并在 Win7 环境复测**） |
 | D7 | 结果 JSON Schema 文件（供下游流水线校验；须覆盖 `error` / `truncated` / `finished_at: null` 等失败与中断形态，见 F10.2 R6/R7；A28 ④⑧ 以其为判据） |
 | D8 | 构建与检查脚本（Makefile / build.ps1：**Go 1.20.x 静态构建** + gofmt/vet/lint + 单测覆盖率 + **导入表核验**） |
-| D10 | **OCR 环境验证脚本** `scripts/verify-ocr.ps1`（现有版本验证 Windows 内置 OCR；**M1 需扩展为多引擎探测 + 端到端识别验证**，输出文本与四角像素坐标） |
+| D10 | **OCR 环境验证脚本** `scripts\verify-ocr.ps1`（**多引擎探测（`paddleocr_json` / `rapidocr_json` / `umi_ocr` / `tesseract`）+ 实际启动能力自检 + 端到端识别验证**，输出文本与中心像素坐标及 score；支持 `-EnginePath` / `-Engine` / `-ConfigPath` / `-TestImage` / `-TimeoutSec` / `-Json`，退出码 0 / 5 对齐 F16.3 与 `--check-prereq`；Windows 内置 OCR 自检保留为 `-Engine windows` 可选项。**须以 UTF-8 with BOM 保存**，否则 PS 5.1 无法正确解析中文） |
 | **D16** | **第三方集成契约包**（F19）：`CONTRACT.md`（CLI 稳定面、退出码语义、Schema 兼容策略、能力协商说明）、**契约测试套件**（golden 结果 JSON + Schema 校验脚本）、**集成示例**（cmd / PowerShell，覆盖单文件、批量、结果判定、超时设置、失败分支）、`--capabilities` 输出样例 |
 
 ---
