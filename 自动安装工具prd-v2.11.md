@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |------|------|
 | 文档名称 | Windows 任意文件自动安装/触发工具 PRD |
-| 版本 | v2.10（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · **判定口径「宽松 / 宁可多报」（F15.7、DC19）** · **单实例串行调用 + 单文件 600s 上限（DC20）** · **跨平台扩展设计（4.8：Linux/macOS 接入指引）** · **OCR 自检脚本升级为多引擎端到端验证（C39：F16.3 / D10）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
+| 版本 | v2.11（安装成功优先 · GUI 自动化 · **外部开源 OCR 引擎** · **光盘映像（ISO）专项处理** · **输出可解析（F10.1~F10.3）** · **安装成功判定分级（F15）+ 活动感知超时（F9）+ 第三方集成契约（F19）** · **判定口径「宽松 / 宁可多报」（F15.7、DC19）** · **单实例串行调用 + 单文件 600s 上限（DC20）** · **跨平台扩展设计（4.8：Linux/macOS 接入指引）** · **OCR 自检脚本升级为多引擎端到端验证（C39：F16.3 / D10）** · **模板与规则内置为资源包、零配置开箱即用（C40：F14.2 / F14.7）** · 离线 · Go · **Win7 SP1+ 兼容** · **工具本体单文件 + 完整交付包**） |
 | 状态 | 待开发 |
 | 目标平台 | **Windows 7 SP1 x64 / 8.1 / 10 / 11 / Server 2008 R2+**（架构预留跨平台扩展） |
 | 运行环境 | 离线沙箱环境（工具不负责隔离，不负责检测） |
@@ -58,7 +58,8 @@
 | C36 | **定案「单实例串行调用 + 单文件 600s 上限」**：第三方为**单实例串行**调用场景，故维持单实例锁默认（`lock.enabled: true`、`lock.wait_sec: 0` 即不等待、第二实例直接退出码 6），**由调用方自行串行排队**，工具侧不做队列；同时确认**单文件硬上限 `timeout_sec: 600` 合适**，维持默认；`task_timeout_sec` 保留 `0`（任务级不限），长批量任务的总体超时由**调用方外部兜底** | 需求决策：第三方集成方式与超时上限由调用方给出（Q19/Q20 答复） |
 | C37 | **文档版本号与文件名对齐为 v2.8**：内容版本此前已升至 v2.8，但文件名仍沿用 `v2.5`，现统一为《自动安装工具prd-v2.8.md》；此后**每轮改动同步递增文档版本号并重命名文件**，避免文件名与内容版本不一致造成误用 | 文档管理：版本一致性 |
 | C38 | **新增 4.8 跨平台扩展设计（Linux / macOS 接入指引）**：把第 4 节"分层 + 接口"的设计落成**可执行的扩展路径**——① 明确"支持新平台 = 新增一个 adapter 包 + 平台配置，**核心逻辑零改动**"；② 给出 port→各平台实现对照表；③ **F15 证据来源的平台映射**（Linux 用包管理器数据库、macOS 用 `pkgutil`/receipts，而 `internal/verify` 的分级与仲裁**一行不改**）；④ 指出 GUI 自动化在 **Wayland 禁止合成输入**与 **macOS 辅助功能授权**下的根本限制；⑤ 交付/分发的平台差异（每平台一个单文件，但交付包内容不同）；⑥ P1~P3 落地节奏与风险；并新增 **A9 ③ 跨平台编译卡点**（`GOOS=linux/darwin` 下 `go build ./...` 必须通过） | 用户问"后续如何支持 Linux/macOS"，需给出可落地的扩展路径并把设计前提固化 |
-| C39 | **重写 `scripts/verify-ocr.ps1`：由「Windows 内置 OCR 自检」改为「多引擎探测 + 能力自检 + 端到端识别验证」**：原脚本（v2.3）只验证 `Windows.Media.Ocr`，而内置 OCR 已在 v2.4 降为**默认关闭的可选回退后端**，故原内容与现行选型脱节，仅留作概念验证。重写后按 **F16.3 / F16.4** 口径覆盖 `paddleocr_json`（默认）/ `rapidocr_json` / `umi_ocr`（走 HTTP 接口）/ `tesseract`；`-Engine auto` 时按序发现（显式路径 → `config.json` 的 `ocr.engine_path` → PATH → 常见路径），**实际启动一次**做能力自检，并生成中英混排测试图（下一步/安装/取消/Next/Install/I Agree…）做**端到端识别**，输出文本 + 中心像素坐标 + score；支持 `-Json` 将结构化结果输出到 stdout（人类可读报告走 stderr，对齐 **F10.1**），退出码 **0 / 5** 与 `--check-prereq` 对齐；同时探测 CPU AVX 以便在 `paddleocr_json` 不可用时提示切换 `rapidocr_json`。**实现约束：含中文的 `.ps1` 必须以 UTF-8 with BOM 保存**——PowerShell 5.1 对**无 BOM** 的 UTF-8 脚本按 ANSI 解码，会导致中文串与引号错乱、脚本直接解析失败（本机实测：同一文件无 BOM 时报 54 处虚假语法错误，加 BOM 后 0 错误） | 把 D10 交付物由"过时的内置 OCR 验证"升级为与现行引擎选型一致的**部署前/镜像构建卡点工具**（用户问"这个脚本是不是不需要了"） |
+| C39 | **重写 `scripts/verify-ocr.ps1`**：由「Windows 内置 OCR 自检」改为「多引擎探测 + 能力自检 + 端到端识别验证」**：原脚本（v2.3）只验证 `Windows.Media.Ocr`，而内置 OCR 已在 v2.4 降为**默认关闭的可选回退后端**，故原内容与现行选型脱节，仅留作概念验证。重写后按 **F16.3 / F16.4** 口径覆盖 `paddleocr_json`（默认）/ `rapidocr_json` / `umi_ocr`（走 HTTP 接口）/ `tesseract`；`-Engine auto` 时按序发现（显式路径 → `config.json` 的 `ocr.engine_path` → PATH → 常见路径），**实际启动一次**做能力自检，并生成中英混排测试图（下一步/安装/取消/Next/Install/I Agree…）做**端到端识别**，输出文本 + 中心像素坐标 + score；支持 `-Json` 将结构化结果输出到 stdout（人类可读报告走 stderr，对齐 **F10.1**），退出码 **0 / 5** 与 `--check-prereq` 对齐；同时探测 CPU AVX 以便在 `paddleocr_json` 不可用时提示切换 `rapidocr_json`。**实现约束：含中文的 `.ps1` 必须以 UTF-8 with BOM 保存**——PowerShell 5.1 对**无 BOM** 的 UTF-8 脚本按 ANSI 解码，会导致中文串与引号错乱、脚本直接解析失败（本机实测：同一文件无 BOM 时报 54 处虚假语法错误，加 BOM 后 0 错误） | 把 D10 交付物由"过时的内置 OCR 验证"升级为与现行引擎选型一致的**部署前/镜像构建卡点工具**（用户问"这个脚本是不是不需要了"） |
+| C40 | **把「模板与规则」升级为「内置资源包（Builtin Resource Pack）」，实现零配置开箱即用**：原 F14.2 只给"初始模板集建议 8~12 张"的示意，用户拿到工具后实际**无模板可用**，必须自行截图制作 → 改为**随 exe 内嵌**的完整资源包。① **模板覆盖矩阵**：三梯队安装器家族 + 通用控件，**母版 ≥ 50 张**；② **变体维度**：DPI（100/125/150/200%）× 主题（浅色/深色/**Win7 经典**）× 语言（zh-CN/en-US），**展开后变体 ≥ 180 张**，全部内嵌、按窗口 DPI/主题**按需加载**；③ **构建期生成 + 自校验**：`tools/template-gen` 批量生成变体与索引，`--self-test templates` 逐张回匹配源截图，**任一张失败即构建失败**（专拦死模板），并纳入 D8 与 CI 卡点；④ **新增 F14.7 内置资源包**：除模板外，关键词表（中英）、静默参数表、入口/排除模式、介质判定规则、GUI 规则、魔数表**一并内嵌**，并给出**"内置为底、外部为增量"的合并/覆盖规则**（`template_pack: merged`（默认）/ `builtin`（排障）/ `external`（严格复现），外部按 ID 覆盖内置、可只写差异项）；⑤ **资源包版本**：`resource_pack_version` 与工具版本解耦，出现在 `--version` / `--capabilities --json` / 结果 JSON，便于现场判断"模板是否更新"；⑥ **新增 CLI**：`--dump-resources <dir>`（导出内置资源作修改起点）、`--no-builtin-templates`、`--self-test templates`；⑦ **体积边界**：内嵌资源 ≤ 10 MB（模板 ≤ 8 MB + 规则表 ≤ 2 MB），exe 仍 ≤ 30 MB；⑧ 新增验收 **A32**（零配置可点完 Inno/NSIS/MSI 向导、多变体命中、模板自校验、合并语义、导出往返、资源版本可见）与风险对策行 | 用户要求"安装工具相关的模板最好内置一些常用的，让用户能直接用" |
 
 ### 1.2 已决策事项（评审确认，不再作为待确认项）
 
@@ -455,6 +456,7 @@ F15 的 **S/A/B 分级、基线快照、反证据、冲突仲裁属于"方法"�
 - 支持 `--config` 指定外部配置文件路径（覆盖内嵌默认值，见 7.5）
 - 支持 `--check-prereq` 仅执行环境自检（`--json` 时输出机器可读自检结果）、`--dump-config` 导出生效配置、`--no-archive` 跳过压缩包处理、`--no-ocr` 跳过 OCR
 - 支持 **`--capabilities --json`** 输出机器可读能力清单（供第三方做版本/能力协商，见 F19.3）、**`--version`** 输出版本与 `schema_version`、**`--lock` / `--no-lock`** 控制单实例锁（见 F19.4）
+- 支持内置资源包相关开关：**`--dump-resources <dir>`**（把内置模板与规则表导出到磁盘，作为本地修改起点）、**`--no-builtin-templates`**（停用内置图像模板，仅用 UIA + OCR，等价 `builtin_templates: false`）、**`--self-test templates`**（校验模板集完整性，见 F14.2 / F14.7）
 - **未知命令行参数以退出码 2 失败并提示参数名**（命令行是精确接口，不得静默忽略——与配置文件的"未知字段忽略"刻意不同，见 F19.1）
 - 外部配置的加载、合并与校验规则见 **7.5.1**（深合并、未知字段忽略、类型/越界以退出码 3 失败）
 - 输入路径不存在或无权限时：记录错误、输出**空结果 JSON（字段完整、`results: []`、`error` 写明原因）+ 错误摘要**（保证下游始终有产物可解析）、退出码 `2`
@@ -881,21 +883,46 @@ F15 的 **S/A/B 分级、基线快照、反证据、冲突仲裁属于"方法"�
 4. **Win7 权重调整**：平台基线含 Win7 时，UIA 覆盖度较低，**模板与 OCR 的权重相对提高**（实现上体现为 UIA 更早回落、模板匹配范围放宽）
 5. 全部级别均不可用（无 UIA 树、无模板、OCR 未启用或引擎缺失）→ 记录 `gui_identify_failed`，按超时处理
 
-**图像模板初始覆盖清单（建议）**
+**内置模板集（v2.11 扩充：由"8~12 张示意"改为"开箱即用的模板包"）**
 
-| 梯队 | 安装器家族 | 覆盖策略 |
-|------|-----------|---------|
-| 第一梯队（必做） | Inno Setup、NSIS、InstallShield、Windows Installer 标准 UI（MSI）、WiX Burn | Win10 上 UIA 基本可覆盖；**Win7 上须实际验证**，模板各存 2~3 张关键按钮 |
-| 第二梯队（建议做） | Advanced Installer、InstallAware、Setup Factory、Wise Installation Studio、Smart Install Maker | 老式向导自绘比例高，需模板支撑 |
-| 第三梯队（按需） | Electron/CEF 自绘安装器（多家国产软件）、游戏启动器型安装器 | 基本无 UIA 树，**以模板 + OCR 协同识别为主** |
+工具**自带**一套覆盖主流安装器常用控件的图像模板，随二进制 `go:embed` **内嵌**，**用户零配置即可使用**；外部 `templates\` 只用于补充与覆盖（合并规则见 F14.7）。
 
-**初始模板集建议为 8~12 张**：三大主流向导的「下一步 / 安装 / 完成 / 我接受（协议）」按钮各 1~2 张，加上第二梯队 2~3 个代表性安装器的关键按钮。模板按"安装器家族 + 界面语言"命名，避免重复。
+**覆盖矩阵（母版 = 安装器家族 × 关键控件）**
+
+| 梯队 | 安装器家族 | 母版张数 | 覆盖控件 |
+|------|-----------|---------|---------|
+| 第一梯队（必做） | Inno Setup、NSIS、InstallShield、Windows Installer 标准 UI（MSI）、WiX Burn | ≥ 24 | 下一步 / 我接受（协议）/ 安装 / 完成 / 是 / 确定 |
+| 第二梯队（建议做） | Advanced Installer、InstallAware、Setup Factory、Wise Installation Studio、Smart Install Maker | ≥ 12 | 下一步 / 安装 / 完成 |
+| 第三梯队（按需） | Electron/CEF 自绘安装器（多家国产软件）、游戏启动器型安装器 | ≥ 8 | 安装 / 下一步 / 完成（这类**以 OCR + 关键词为主、模板为辅**） |
+| 通用控件（跨家族） | — | ≥ 6 | 复选框（勾选/未勾选）、路径输入框、浏览按钮、下拉框 |
+
+**变体维度（关键：没有变体，内置模板在实际环境基本命中不了）**
+
+同一按钮在不同环境下的像素外观不同，故每张母版在**构建期**展开为多变体：
+
+| 维度 | 取值 | 说明 |
+|------|------|------|
+| **DPI 缩放** | 100% / 125% / 150% / 200% | 与 F14.5 的 DPI 换算配套；运行时按窗口 DPI **只加载匹配档位** |
+| **主题** | 浅色 / 深色 / **Win7 经典** | Win7 默认主题与 Win10 差异明显，**Win7 档位必做** |
+| **界面语言** | zh-CN / en-US | 中英按钮宽度与字形不同，须分别建模板 |
+
+→ 目标：**母版 ≥ 50 张，展开后变体 ≥ 180 张**，全部内嵌。
+
+**命名规范**：`<family>__<action>__<lang>__<dpi>__<theme>.png`（例：`inno__install__zh-CN__150__light.png`），随包生成 `templates.index.json` 索引，运行时按 DPI/主题/语言**按需加载**而非全量载入。
+
+**生成与校验（构建期，纳入 CI 卡点）**
+
+- `tools/template-gen`：从母版**批量生成**各变体并写出索引；**变体一律不手工维护**（否则必然与母版不同步）
+- **模板自校验**：每张模板必须能在**其源截图**上匹配成功（`AutoTrigger.exe --self-test templates`），任一张失败即**构建失败**——专门拦"塞进去了却永远匹配不上"的死模板
+- 体积预算：模板资源 **≤ 8 MB**（统一灰度化 + 裁剪到控件外接矩形 + PNG 量化），与 7.2 的 exe ≤ 30 MB 目标一致
 
 **模板库迭代机制**
 
 - 工具提供 `--dump-ui` 调试模式：输出窗口截图 + UIA 控件树 JSON + **OCR 识别结果（含四角坐标与 score）**，供人工标注后补充模板
-- 模板目录支持外部覆盖（`gui_automation.template_dir`），便于现场热更新，无需重新发版
+- `--dump-resources <dir>`：把内置资源**导出到磁盘**作为修改起点，改完放回 `templates\` 即生效，**无需重新发版**
+- 模板目录支持外部覆盖（`gui_automation.template_dir`），支持**增量补充**与**按 ID 覆盖内置项**（F14.7）
 - 一次识别失败不视为永久失败，下次任务仍会重试匹配
+- 识别失败时可按 `gui_automation.dump_failed_shots`（默认 `false`）保留现场截图，便于事后补模板
 
 **F14.3 控件语义判定（关键词表内嵌，中英双语起步）**
 
@@ -1005,6 +1032,46 @@ v2.3 曾采用 Windows 内置 OCR，实测（2026-09-30）发现：
 - 引擎进程卡死或崩溃 → 按 `restart_on_failure` 自动重启（上限可配），超限则本次任务内禁用 OCR
 - 单次识别超时（`recognize_timeout_ms`，默认 3000ms）→ 放弃本次识别，不阻塞 GUI 流程
 - 同一窗口 OCR 触发动作次数计入 `max_actions_per_window`，防止误识别导致重复点击
+
+**F14.7 内置资源包（Builtin Resource Pack，开箱即用）**
+
+**设计意图**：让**用工具的人什么都不用配**——不提供模板、不写关键词表、甚至不装 OCR，也能对常见安装器自动完成"我接受 → 下一步 → 安装 → 完成"。外部资源只是**增量补充**，不是使用前提。
+
+**内嵌资源清单（全部 `go:embed`，随单文件分发）**
+
+| 资源 | 内嵌位置 | 作用 | 可否外部覆盖 |
+|------|---------|------|------------|
+| **图像模板** | `assets/builtin/templates/**` + `templates.index.json` | 二级识别（F14.2） | ✅ `templates\` |
+| **按钮/关键词表** | `assets/builtin/keywords/buttons.zh-CN.json`、`buttons.en-US.json` | 语义判定白/黑名单（F14.3） | ✅ |
+| **静默参数表** | `assets/builtin/params/silent_params.windows.json` | 多轮静默参数尝试（F4） | ✅ |
+| **安装入口/排除模式** | `install_entries.json`、`exclude_entries.json` | F17 入口优先与黑名单 | ✅ |
+| **介质判定规则** | `media_kinds.json` | F18.1 ISO 介质性质判定 | ✅ |
+| **点击优先级与文本归一化规则** | `assets/builtin/gui_rules.json` | 同级按钮排序、归一化（F14.3） | ✅ |
+| **文件类型魔数表** | `assets/builtin/magic.json` | F1 类型识别 | ✅ |
+
+**合并与覆盖规则（"内置为底、外部为增量"）**
+
+| 规则 | 说明 |
+|------|------|
+| 默认 `template_pack: "merged"` | **内置基线 + 外部增量**，合并后生效 |
+| 覆盖粒度 | 外部资源**按 ID/文件名**覆盖同名内置条目，新 ID 追加；外部文件**只写差异项**即可，不必全量拷贝 |
+| `"builtin"` | **忽略全部外部资源**，只用内置——排障用（判断"是不是外部资源导致的识别异常"） |
+| `"external"` | **只用外部资源**，严格复现现场配置（用于回归比对） |
+| `builtin_templates: false` | 整体停用内置模板（等价 `--no-builtin-templates`），退化为 UIA + OCR，**不报错、不失败** |
+| 可观测 | 合并结果、各条目来源（内置/外部/被覆盖）可经 `--dump-config` 与 `--capabilities --json` 查看 |
+
+**资源包版本（与工具版本解耦）**
+
+- 内嵌常量 `resource_pack_version`（如 `"1.0"`），**模板/规则发生实质变更时递增**
+- 出现在 `--version`、`--capabilities --json` 与结果 JSON 的 `meta.resource_pack_version`
+- 用途：现场只拿到一个 exe 时，能判断"同一版本 exe 是否用了不同的资源包"，快速排除"模板没更新"这类问题
+
+**合规与体积边界**
+
+- 内嵌模板为**项目自研截图**，只截取按钮/小图标区域，**不内嵌安装器本体、安装包、第三方模型或 OCR 引擎**（与 7.2 "无内嵌第三方物料"一致）
+- 内嵌资源总量预算 **≤ 10 MB**（图像模板 ≤ 8 MB + 关键词/参数/规则表 ≤ 2 MB），整体 exe 仍满足 7.2 的 ≤ 30 MB
+
+> **"开箱即用"的可验证标准**：删掉 `config.json` 与 `templates\`，目录下只有单个 exe，对 Inno / NSIS / MSI 三类向导样本即可自动点完"我接受 → 下一步 → 安装 → 完成"（验收 **A32**）。
 
 #### F15 安装结果验证与证据采集
 
@@ -1440,6 +1507,7 @@ MotW 直接影响 SmartScreen：带 MotW 的未签名安装器可能被"Windows 
 {
   "tool_version": "1.0.0",
   "schema_version": "2.8",
+  "resource_pack_version": "1.0",
   "platform": "windows",
   "os_version": "6.1.7601",
   "supported_final_status": ["install_completed", "install_unverified", "install_partial", "already_installed", "triggered", "killed_on_timeout", "failed", "skipped"],
@@ -1451,8 +1519,10 @@ MotW 直接影响 SmartScreen：带 MotW 的未签名安装器可能被"Windows 
     "mount_backend": true,
     "ocr": true,
     "gui_automation": true,
+    "builtin_resources": true,
     "launch_check": false
   },
+  "resources": { "template_pack": "merged", "builtin_template_variants": 180, "external_template_entries": 0 },
   "limits": { "max_attempts_per_file": 8, "timeout_sec": 600, "idle_timeout_sec": 60, "task_timeout_sec": 0 }
 }
 ```
@@ -1480,7 +1550,7 @@ MotW 直接影响 SmartScreen：带 MotW 的未签名安装器可能被"Windows 
 
 - **集成示例**：cmd / PowerShell 示例，覆盖①单文件安装 ②目录批量 ③读取结果判定 ④超时设置 ⑤失败分支处理；附 `jq` / `ConvertFrom-Json` 解析片段
 - **契约测试套件**：一组 golden 结果 JSON + Schema，第三方在集成前运行，验证自己的解析逻辑对新版本仍成立
-- **`--self-test`（可选）**：用内置最小样本验证自身链路（不依赖外部物料），便于第三方部署后自检
+- **`--self-test [templates]`（可选）**：用内置最小样本验证自身链路（不依赖外部物料），便于第三方部署后自检；带 `templates` 参数时**逐张校验内置模板能否匹配其源截图**（F14.2 的构建期卡点，任一张失败即视为资源包损坏）
 
 **F19.7 建议的调用方式**
 
@@ -1632,8 +1702,8 @@ Go 的强类型、接口隐式实现、标准化工具链内建（`gofmt`/`go ve
 | 无内嵌第三方物料 | `AutoTrigger.exe` **自身不内嵌**安装包、脚本、动态库、OCR 模型（避免体积膨胀与授权问题）；第三方物料以**独立文件**形式放在交付包的 `third_party\` 下，由部署环节安装 |
 | 可独立冒烟 | 单独拷出 exe 即可启动、跑通不依赖第三方的能力（如 PE 触发、DPI/截屏），便于快速验证与排障 |
 | 无网络依赖 | 校验与版本信息不得联网查询；OCR 走本地进程 / 环回 TCP |
-| 体积控制 | 目标 ≤ 30 MB（模板与关键词表资源压缩内嵌） |
-| 可选同目录文件（均非必需） | `config.json`（外部配置覆盖）、`templates/`（额外图像模板）；缺失时使用内嵌默认值 |
+| 体积控制 | 目标 ≤ 30 MB（其中**内置资源包 ≤ 10 MB**：图像模板 ≤ 8 MB + 关键词/参数/规则表 ≤ 2 MB，均压缩内嵌，见 F14.7） |
+| 可选同目录文件（均非必需） | `config.json`（外部配置覆盖）、`templates/`（**外部增量模板，可只写差异项**）；缺失时使用内嵌默认值与**内置资源包**，**零配置即可用** |
 | Win7 构建验证 | 产物须在 **Win7 SP1 x64** 实机/虚拟机冒烟（对应验收 A20） |
 | 验证 | 在**未安装 Go 及任何运行时、无网络**的干净镜像上，仅拷贝单个 exe 即可完成全部功能（对应验收 A14） |
 
@@ -1653,10 +1723,11 @@ internal/activity/               # **进展信号采集（F9.2）**：CPU 时间
 internal/prereq/                 # 7-Zip / OCR 引擎探测、能力自检与用户提示（不执行安装）
 internal/ocr/                    # OCR 引擎适配：进程生命周期、stdio/TCP/HTTP 通信、结果解析、崩溃重启
 internal/gui/                    # GUI 识别编排：UIA/模板/OCR 三级仲裁、键鼠注入
-internal/resources/              # go:embed 内嵌资源（魔数表/参数表/关键词表/模板）
+internal/resources/              # go:embed 内嵌资源包（F14.7）：assets/builtin/{magic,params,keywords,gui_rules,media_kinds,templates}/**
 internal/config/                 # 配置加载与合并（默认值 < 文件 < 命令行）
 internal/logging/                # 日志接口与实现
 pkg/schema/                      # 对外稳定的结果 JSON 类型（供下游复用）
+tools/template-gen/              # 构建期工具：模板多变体生成 + 索引 + 自校验（F14.2，CI 卡点）
 testdata/                        # 测试样本与期望结果
 ```
 
@@ -1741,7 +1812,13 @@ testdata/                        # 测试样本与期望结果
     "click_jitter_px": 3,
     "max_actions_per_window": 10,
     "keyword_file": "buttons.zh-CN.json",
-    "template_dir": "templates"
+    "template_pack": "merged",
+    "template_dir": "templates",
+    "template_dpi_mode": "auto",
+    "template_theme": "auto",
+    "template_min_similarity": 0.86,
+    "builtin_templates": true,
+    "dump_failed_shots": false
   },
   "ocr": {
     "enabled": true,
@@ -1811,6 +1888,7 @@ testdata/                        # 测试样本与期望结果
 > - `output.log_file` 为空时使用 `<结果文件名>.log`；`output.log_level` 可选 `debug` / `info`（默认）/ `warn` / `error`，可用 `--log-level` 覆盖
 > - `output.journal` 控制是否写 `<结果文件名>.journal.ndjson`（逐文件追加，供中断找回）；`keep_journal_on_success` 决定正常结束后是否保留（默认 `false`，即删除，符合第 6 节"无残留"）
 > - `output.pretty` 仅影响缩进（语义等价），默认 `false`（紧凑单行）；`max_file_size_mb` 超限时截断 `attempts` 明细并置 `truncated: true`
+> - **内置资源包（F14.2 / F14.7）**：模板与关键词表、静默参数表、入口/排除模式、介质规则**全部内嵌**，**零配置即可用**；`template_pack` 可选 `merged`（默认，内置 + 外部增量）/ `builtin`（忽略外部，排障用）/ `external`（只用外部，严格复现）；`template_dir` 指向外部增量目录（可**只写差异项**，按 ID 覆盖内置）；`builtin_templates: false` 等价 `--no-builtin-templates`（仅用 UIA + OCR）；`template_dpi_mode` / `template_theme` 为 `auto`（默认，按当前窗口 DPI 与主题选档）/ 也可显式锁定（如 `"150"` / `"light"`）用于复现问题；`template_min_similarity` 为模板匹配相似度下限；`dump_failed_shots` 失败时保留现场截图（默认 `false`）
 > - **超时（F9）**：`timeout_sec` 为**单文件硬上限**（默认 600，`0` = 不限）；`startup_timeout_sec` 为进程无任何动作的容忍时长；**`idle_timeout_sec` 才是真正的把关**——连续无进展信号超过该值即判定卡死；`task_timeout_sec` 为任务级上限（`0` = 不限）；`activity_*_epsilon_*` 为进展信号的判定阈值，用于避免把极小波动误判为进展
 > - **安装验证（F15）**：`judgment_profile` 为**判定口径**，`loose`（默认，宁可多报，优先减少假阴性）/ `strict`（从严，宁缺毋滥），见 DC19 与 F15.7；`settle_sec` / `quiet_polls` / `settle_max_sec` 共同定义"静默期收敛"（退出后等待稳定，而非固定 sleep）；`watch_dirs` 支持 `%VAR%` 展开，**默认即含 `%ProgramData%` / `%LOCALAPPDATA%` / `%APPDATA%` 五处**（避免 per-user 与数据型安装漏判），`watch_exclude` 用于排除临时/缓存目录避免假阳性；`snapshot_depth` 控制文件系统快照深度（不枚举全部文件，控性能）；`write_baseline` 决定基线明细是否写入结果（默认 `false`，只写 digest + 计数）；`min_new_files` / `shrink_tolerance` 为落盘判定的灵敏度；`require_artifact` 校验卸载项指向的主程序**存在且为有效 PE**；`launch_check` 为**重量校验**（真正启动一次），默认关闭，**v2.7 定案暂不开启**
 > - **单实例锁（F19.4）**：`lock.enabled` 默认 `true`，`lock.wait_sec: 0` 表示不等待、直接以退出码 6 返回；**并发实例会互相污染安装证据 diff，除非确认无状态交叉，否则不建议关闭**
@@ -1997,11 +2075,11 @@ AutoTrigger-<版本>-win64\
 | D5 | 使用说明文档（README：**工具本体免安装使用方式**、CLI 参数（含 `--output` / `--output -` / `--log-file` / `--log-level` / `--pretty`）、**输出通道说明（F10.1）**、退出码表、`--check-prereq`（含 `--json`）/ `--dump-ui` / `--no-archive` / `--no-ocr` 用法、结果 JSON 说明） |
 | D9 | 环境前置检查表与镜像构建指引（依赖清单、离线包放置路径、管理员权限 / UAC / AV 排除目录 / 可写临时目录、`--check-prereq` 卡点用法；对应 4.7 与 8.2） |
 | D2 | 外部覆盖配置模板 `config.example.json`（**可选**；含全部字段与内嵌默认值，**可由 `AutoTrigger.exe --dump-config` 生成**；字段含义与取值范围由 D14 说明，外部配置**只需写要修改的字段**，见 7.5.1） |
-| D3 | 可外部编辑的参数/关键词表（`silent_params.windows.json`、`buttons.zh-CN.json`、**`install_entries.json`（F17.2 安装入口命名模式）**、**`exclude_entries.json`（F17.3 排除清单模式）**、**`media_kinds.json`（F18.1 光盘映像介质性质判定规则）**）与图像模板目录（含 F14.2 初始模板集，均为可选覆盖） |
+| D3 | **内置资源包**（F14.7：`assets/builtin/` 下的图像模板集与索引、`buttons.zh-CN.json` / `buttons.en-US.json`、`silent_params.windows.json`、**`install_entries.json`（F17.2 安装入口命名模式）**、**`exclude_entries.json`（F17.3 排除清单模式）**、**`media_kinds.json`（F18.1 光盘映像介质性质判定规则）**、`gui_rules.json`、`magic.json`——**随 exe 内嵌、零配置即用**）**+ 可外部编辑的同名覆盖/增量副本**（可选；`--dump-resources` 可导出内置资源作为修改起点，**只需写差异项**） |
 | D4 | 平台抽象层接口定义文档（对应 4.3）+ 架构说明（对应 7.3）+ **Win7/Win10 差异说明（对应 4.6）** + **跨平台扩展指引（对应 4.8）** |
 | D6 | 测试样本集与预期结果对照表（重点覆盖：静默成功 / 向导成功 / **自绘界面 OCR 定位** / **光盘映像（含 `malware_lure` 与 `os_install_media` 两类）** / 需联网 / 装不成功 / 前置缺失 七类；**并在 Win7 环境复测**） |
 | D7 | 结果 JSON Schema 文件（供下游流水线校验；须覆盖 `error` / `truncated` / `finished_at: null` 等失败与中断形态，见 F10.2 R6/R7；A28 ④⑧ 以其为判据） |
-| D8 | 构建与检查脚本（Makefile / build.ps1：**Go 1.20.x 静态构建** + gofmt/vet/lint + 单测覆盖率 + **导入表核验**） |
+| D8 | 构建与检查脚本（Makefile / build.ps1：**Go 1.20.x 静态构建** + gofmt/vet/lint + 单测覆盖率 + **导入表核验** + **模板多变体生成与自校验（`tools/template-gen` + `--self-test templates`，见 F14.2，任一张模板失败即构建失败）**） |
 | D10 | **OCR 环境验证脚本** `scripts\verify-ocr.ps1`（**多引擎探测（`paddleocr_json` / `rapidocr_json` / `umi_ocr` / `tesseract`）+ 实际启动能力自检 + 端到端识别验证**，输出文本与中心像素坐标及 score；支持 `-EnginePath` / `-Engine` / `-ConfigPath` / `-TestImage` / `-TimeoutSec` / `-Json`，退出码 0 / 5 对齐 F16.3 与 `--check-prereq`；Windows 内置 OCR 自检保留为 `-Engine windows` 可选项。**须以 UTF-8 with BOM 保存**，否则 PS 5.1 无法正确解析中文） |
 | **D16** | **第三方集成契约包**（F19）：`CONTRACT.md`（CLI 稳定面、退出码语义、Schema 兼容策略、能力协商说明）、**契约测试套件**（golden 结果 JSON + Schema 校验脚本）、**集成示例**（cmd / PowerShell，覆盖单文件、批量、结果判定、超时设置、失败分支）、`--capabilities` 输出样例 |
 
@@ -2042,6 +2120,7 @@ AutoTrigger-<版本>-win64\
 | A29 | **安装成功判定的可靠性（F15）** | ① **假成功识别**：构造一个"只解压落盘到 `%TEMP%`、退出码 0、无卸载项"的 bootstrapper 样本 → **不得判 `install_completed`**（至多 `install_unverified`）；② **S 级证据成立**：标准 MSI/Inno 安装成功 → `install_completed` + `install_confidence: high` + `install_evidence` 内含 S 级条目；③ **基线生效**：`watch_dirs` 预先放置同名目录时，**不得**把已有文件误判为"新增落盘"；④ **HKCU 覆盖**：per-user 安装（仅写 `HKCU\...\Uninstall`）→ **能判定 `install_completed`**；⑤ **反证据优先**：安装器退出码 0 但 GUI 出现失败页/日志含回滚 → 判 `install_partial` 且 `evidence_conflicts` 非空，**不得**判成功；⑥ **MsiInstaller 事件**：MSI 安装后基线水位线之后出现 11707 → 记入 S4；随后执行卸载（11724）→ 判 `install_partial`/`failed`；⑦ **同一文件多次尝试共用基线**：第 1 次尝试已落盘部分文件、第 2 次成功时，**仍能正确判定**（不因基线被刷新而漏判）；⑧ 结果中 `install_confidence` **恒存在**（非安装判定为 `null`）；⑨ **宽松口径生效（默认）**：对"拿到 ≥1 条 A 级且存在可归因副作用（落盘/注册表变化）"的样本 → 判 `install_completed`（不同于 `strict` 下的 `install_unverified`），且结果中 `judgment_profile: "loose"`；⑩ **底线保护**：构造"退出码 0 但无任何落盘/注册表副作用"的样本 → **仍判 `install_unverified`**，不得因宽松口径而判 `install_completed` |
 | A30 | **活动感知超时与超时后判定（F9）** | ① **长安装不被误杀**：构造持续写入文件的慢安装器（总时长 > `idle_timeout_sec` 且 < `timeout_sec`）→ **不触发静默期超时**，正常完成；② **卡死被识别**：构造启动后无任何动作的进程 → 在 `startup_timeout_sec`（±20%）内判定 `failed: no_activity`；构造运行中突然静止的进程 → 在 `idle_timeout_sec`（±20%）内判定卡死并进入终止流程；③ **终止顺序**：终止过程依次为优雅（`WM_CLOSE`）→ 温和 → Job Object 强杀，`termination_mode` 如实记录；④ **超时后仍采集证据**：安装已完成主体、仅卡在"完成"页而被超时终结的样本 → **仍判 `install_completed`**（notes 注明超时终结）；⑤ `timeout_sec: 0` 时单文件不限时；⑥ `task_timeout_sec` 生效：超时后停止派发新文件、未处理项记 `skipped: task_timeout`、结果 JSON 正常写出；⑦ 心跳按 `progress_interval_sec` 出现在 **stderr**，`stdout` 无任何心跳内容；⑧ `Ctrl+C` 中断 → 退出码 130、结果 JSON 完整（含 `error.code: 130`）、journal 保留 |
 | A31 | **第三方集成契约（F19）** | ① 传入**未知命令行参数** → 以退出码 2 失败并提示参数名（**不得静默忽略**）；② `--capabilities --json` 输出可被解析，且其 `supported_final_status` 与实际可返回的枚举值**完全一致**；③ `--version` 与 `--capabilities` 中的 `schema_version` 一致；④ **单实例锁**：并发启动两个实例 → 第二个以**退出码 6** 返回（或按 `lock_wait_sec` 等待），且**不产生交叉污染的安装证据**；⑤ **重复调用同一已安装软件** → 得 `already_installed`（或凭 A3/S1 得 `install_completed`），**不得**报成 `triggered`/装不上；⑥ **Schema 兼容**：用上一版本的 golden 结果 JSON 跑当前 Schema 校验**必须通过**（只做加法）；⑦ `summary.by_status` 各项之和**恒等于 `total`**；⑧ 契约测试套件与集成示例随交付提供，且示例脚本可直接跑通 |
+| A32 | **内置资源包与开箱即用（F14.2 / F14.7）** | ① **零配置**：目录下**只有单个 exe**（无 `config.json`、无 `templates\`）时，对 Inno / NSIS / MSI 三类向导样本能自动完成"我接受 → 下一步 → 安装 → 完成"，`gui_actions` 有对应点击记录；② **多变体命中**：在 **100% 与 150% DPI** 下分别复测（浅色/深色或 Win7 经典主题至少其一），**DPI 档位全部命中**；③ **模板自校验**：`--self-test templates` 对每张内置模板在其源截图上**全部匹配成功**（任一张失败即构建失败）；④ **合并语义**：`template_pack: "builtin"` 忽略外部资源、`"external"` 只用外部、`"merged"`（默认）时外部同名条目**按 ID 覆盖内置**（用一张改色模板验证覆盖已生效）；⑤ `builtin_templates: false`（等价 `--no-builtin-templates`）时不再使用内置模板，**不报错、不失败**，正常降级为 UIA + OCR；⑥ **导出往返**：`--dump-resources <dir>` 导出的资源**原样放回后行为与内置一致**（round-trip）；⑦ `resource_pack_version` **恒存在**于 `--version`、`--capabilities --json`（含 `resources.template_pack` 与模板条目数）与结果 JSON；⑧ 内嵌资源总量 **≤ 10 MB**，exe 体积仍 **≤ 30 MB**（7.2） |
 
 ---
 
@@ -2051,8 +2130,8 @@ AutoTrigger-<版本>-win64\
 |--------|------|---------|
 | M0 环境与选型验证（新增） | ① **Go 1.20.x 工具链与依赖库可用性确认**；② **Win7 SP1 x64 运行验证**（截屏 / DPI / Job Object / UIA 能力基线）；③ **OCR 引擎接入 spike**（PaddleOCR-json 探测、stdio 通信、四角坐标解析、AVX 检测） | 4.6、7.6、D10 |
 | M1 核心链路与前置 | CLI + 配置加载 + 类型识别 + PE/MSI/脚本触发 + 多轮参数尝试 + **活动感知超时与四段式超时（F9.1~F9.6）** + **输出通道与结果可解析性（stdout/stderr/文件分流、原子写、F10.1~F10.3）** + **7-Zip / OCR 引擎自检与用户提示** + **对外契约冻结（F19.1~F19.4：CLI 稳定面、Schema 契约、`--capabilities`、单实例锁）** | F1 F2 F3 F4 F5 F9 F10 F13 F16 F19 |
-| M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 引擎三级识别**）+ **安装证据分级与基线快照（F15.1~F15.6）** + 反证据与冲突处理 + 安装后校验 + 已安装检测 + 文件夹遍历 + 压缩包递归 + **F17 结构识别与入口优先排序** + **F18 光盘映像专项（介质判定 + 解压/挂载双轨）** + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 F17 F18 |
-| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README 与 **DEPLOY.md 部署文档**、**交付包打包含 third_party 离线物料**、**Win7 + Win10 双环境冒烟**、**导入表与依赖边界核验（A22）**、**交付包完整性验证（A23）**、**配置加载与覆盖验证（A24）**、**输出可解析性验证（A28）**、**判定可靠性与超时策略验证（A29/A30）**、**契约测试套件与集成示例（D16、A31）**、lint 与覆盖率达标 | D1~D16、A8~A31 |
+| M2 安装成功能力 | GUI 弹窗自动化（UIA + 模板 + **OCR 引擎三级识别**）+ **内置资源包与模板多变体生成/自校验（F14.2 / F14.7，`tools/template-gen`）** + **安装证据分级与基线快照（F15.1~F15.6）** + 反证据与冲突处理 + 安装后校验 + 已安装检测 + 文件夹遍历 + 压缩包递归 + **F17 结构识别与入口优先排序** + **F18 光盘映像专项（介质判定 + 解压/挂载双轨）** + 文档/未知兜底 | F6 F7 F8 F11 F12 F14 F15 F17 F18 |
+| M3 打磨与交付 | 单文件静态构建、退出码完善、日志打磨、Schema 校验、测试样本集、README 与 **DEPLOY.md 部署文档**、**交付包打包含 third_party 离线物料**、**Win7 + Win10 双环境冒烟**、**导入表与依赖边界核验（A22）**、**交付包完整性验证（A23）**、**配置加载与覆盖验证（A24）**、**输出可解析性验证（A28）**、**判定可靠性与超时策略验证（A29/A30）**、**内置资源包开箱即用与模板自校验验证（A32）**、**契约测试套件与集成示例（D16、A31）**、lint 与覆盖率达标 | D1~D16、A8~A32 |
 
 ---
 
@@ -2072,6 +2151,7 @@ AutoTrigger-<版本>-win64\
 | **挂载轨残留**（异常退出未卸载、盘符被占用、文件被占用导致卸载失败） | ① 安装期间保持挂载、判定完成后才卸载（`keep_mounted_until_verified`）；② 卸载前结束占用进程 + 短延时重试（默认 3 次）；③ 工具启动时清理**可确认归属**的遗留挂载，无法确认的只告警不误卸；④ 挂载与卸载全部纳入 Job Object 与全局看门狗（F18.3） |
 | **挂载轨不可用**（Win7 无原生 API、盘符冲突、稀疏映像、映像已在挂载） | 默认策略本就是解压轨（`extract_first`），Win7 无此依赖；挂载失败记 `mount_failed` 并回落解压轨；**不新增退出码**（F16.6） |
 | **MotW 传播差异导致 SmartScreen 拦截安装器**（Win11 22H2+ 挂载 ISO 会传播 MotW） | `iso.motw_policy` 可配置并在结果中记录实际生效值，便于解释失败原因；**工具不提供绕过实现**，是否让 SmartScreen 参与由安全团队定（F18.4 / Q14） |
+| **内置模板因 DPI / 主题 / 字体差异命中率低** | 构建期由 `tools/template-gen` 生成多变体（DPI 100~200%、浅色/深色/Win7 经典、中英界面）并**强制自校验**（A32 ③，死模板直接拦在构建期）；即使模板未命中，流程仍靠**关键词 + OCR 三级降级**推进；现场可用 `--dump-ui` + `--dump-resources` 快速补模板（无需发版） |
 | **解压目录被清理后，按需从源安装的 MSI 修复/卸载失效** | `iso.keep_extracted_on_success: true` 可保留解压目录并在结果中记录路径（此时不计入"无残留"，README 说明）；默认 `false` 适用于只做"触发"的场景 |
 | **映像内长路径导致解压或执行失败（`MAX_PATH`）** | 解压根目录固定使用**短路径**（`archive.temp_root`，如 `C:\AT\t\<taskID>\`）（F18.6） |
 | **老光盘文件名乱码导致入口漏识别**（Joliet/GBK 编码） | F18.5 要求关键字匹配做**编码容错与宽松匹配**；不确定时按 P1 命名规则与 P5 兜底，不直接跳过（A26 ⑤） |
@@ -2139,7 +2219,7 @@ AutoTrigger-<版本>-win64\
 | ~~Q19~~ | ✅ **已定案（调用方答复）**：第三方为**单实例串行**调用，**维持单实例锁默认**（`lock.enabled: true`、`lock.wait_sec: 0`，第二实例退出码 6），**由调用方自行串行排队**，工具侧不做队列。落点见 DC20、F19.4 | 已落 F19.4 / 7.5 |
 | ~~Q20~~ | ✅ **已定案**：**单文件硬上限 `timeout_sec: 600` 合适，维持默认**；`task_timeout_sec` 保留 `0`（不限），**长批量任务的总体超时由调用方外部兜底**。落点见 DC20、F9.1、7.5 | 已落 F9 / 7.5 |
 
-> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、**光盘映像处理（专项流程 F18：介质性质判定 + 解压/挂载双轨 + 解压轨优先）**、**安装成功判定（F15：证据分级 S/A/B + 基线 diff + 反证据，附 `install_confidence`；**判定口径定案为宽松 / 宁可多报——`judgment_profile: loose` 默认，`launch_check` 暂不开启**）**、**监控范围（`watch_dirs` 默认五处含用户/数据目录，`watch_exclude` 排除临时缓存）**、**超时策略（F9：活动感知 + 四段式，`idle_timeout_sec` 为主把关）**、**输出与集成契约（F10.1~F10.3 + F19：三通道分流、只做加法、单实例锁、第三方以结果 JSON 为准）**、**集成调用形态（单实例串行 + 单文件 600s 上限，DC20）**、主目标（安装成功优先）、环境（离线）—— 见 1.2。
+> 已决策项（不再讨论）：交付形态（免安装单文件）、语言（Go）、解压后端（外部 7-Zip，不降级、不代装）、7-Zip 缺失处理（检测 + 提示）、**OCR 引擎（外部开源引擎，默认 PaddleOCR-json，进程外调用，不代装）**、**平台基线（Win7 SP1 x64 及以上，Go 1.20.x）**、GUI 识别策略（UIA → 模板 → OCR 三级）、**光盘映像处理（专项流程 F18：介质性质判定 + 解压/挂载双轨 + 解压轨优先）**、**安装成功判定（F15：证据分级 S/A/B + 基线 diff + 反证据，附 `install_confidence`；判定口径定案为宽松 / 宁可多报——`judgment_profile: loose` 默认，`launch_check` 暂不开启）**、**模板与规则内置（F14.2 / F14.7：图像模板 + 关键词表 + 静默参数表 + 入口/排除模式 + 介质判定规则**全部内嵌、零配置开箱即用**，外部 `templates\` 仅作增量覆盖）**、**监控范围（`watch_dirs` 默认五处含用户/数据目录，`watch_exclude` 排除临时缓存）**、**超时策略（F9：活动感知 + 四段式，`idle_timeout_sec` 为主把关）**、**输出与集成契约（F10.1~F10.3 + F19：三通道分流、只做加法、单实例锁、第三方以结果 JSON 为准）**、**集成调用形态（单实例串行 + 单文件 600s 上限，DC20）**、主目标（安装成功优先）、环境（离线）—— 见 1.2。
 
 ---
 
@@ -2151,7 +2231,8 @@ AutoTrigger-<版本>-win64\
 - 支持与 EDR API 联动，触发后自动拉取行为报告（需环境提供通道）
 - 支持触发方式优先级动态调整（基于历史成功率）
 - 支持分布式批量触发（多沙箱并行）
-- GUI 自动化模板库众包扩充（按安装器家族沉淀模板）
+- GUI 自动化模板库众包扩充（按安装器家族沉淀模板；**本期已内置基线资源包 F14.7，本项指在此基础上持续增补并回填到内置基线**）
+- **资源包更新通道**：在离线前提下把新模板/规则回灌到内置资源包（本项目重新构建发版，或现场用 `templates\` 增量覆盖），使 `resource_pack_version` 可平滑演进
 - **OCR 引擎抽象层扩展更多后端（如多语言/multi-model 引擎、轻量移动端模型）**
 - **观察小参数 VLM OCR（HunyuanOCR 1B / DeepSeek-OCR 等）经 GGUF/llama.cpp 量化后在纯 CPU 的可用性**：若延迟能压到亚秒级且支持 Win7，可作为 `ocr.engine` 的新后端接入，用单模型替代"UIA + 模板 + OCR"组合（见 7.7 评估记录）
 - OCR 结果与模板/UIA 的融合策略持续调优（按键位区域先验、按钮样式聚类）
