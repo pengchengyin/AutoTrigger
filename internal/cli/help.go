@@ -12,11 +12,16 @@ import (
 //   - 未提供任何参数：输出到 stderr，退出码 2，且不产出结果 JSON 与日志文件
 //     （避免在用户当前目录留下无意义的产物；与「参数非法仍产出结果 JSON」的
 //     F10.2 R6 刻意区分：那是指已开始处理后的失败）
+//
+// 注意（PRD F20）：**二进制**在满足「无参数 + 独占的新控制台」（即从资源管理器
+// 双击）时会先交给图形界面；在已有终端里执行、重定向输出或非 Windows 平台，
+// 都会落到这里的"用法提示 + 退出码 2"。分发/集成时以 --help 与显式参数为准。
 const helpText = `用法:
   AutoTrigger --input <路径> [选项]
   AutoTrigger --check-prereq [--json]
   AutoTrigger --dump-ui --input <样本> [--out <目录>]
   AutoTrigger --dump-resources <目录> | --self-test templates | --version | --capabilities
+  AutoTrigger --gui                             打开图形界面（双击本程序等效）
 
 基本:
   --input <路径>            待触发/安装的样本文件或目录（除检查类命令外必填）
@@ -52,6 +57,7 @@ const helpText = `用法:
 
 帮助:
   -h, --help                显示本帮助并退出
+  --gui                     单独使用，打开图形界面（需 Windows；等效于双击本程序）
 
 退出码:
   0 正常完成         1 工具运行期异常     2 参数或路径非法
@@ -65,6 +71,7 @@ const helpText = `用法:
   AutoTrigger --check-prereq --json
   AutoTrigger --input setup.exe --dump-ui --out dump\case1
   AutoTrigger --input setup.exe --no-archive --no-ocr --output -
+  AutoTrigger --gui
 
 文档: README.md · docs\图像模板制作说明.md · DEPLOY.md
 `

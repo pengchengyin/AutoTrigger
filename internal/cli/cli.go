@@ -63,6 +63,7 @@ type Options struct {
 	DumpResources      string
 	NoBuiltinTemplates bool
 	SelfTest           string
+	GUI                bool
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Dependencies) (code int) {
@@ -106,6 +107,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 	fs.StringVar(&opts.DumpResources, "dump-resources", "", "export builtin rules and templates")
 	fs.BoolVar(&opts.NoBuiltinTemplates, "no-builtin-templates", false, "disable builtin image templates")
 	fs.StringVar(&opts.SelfTest, "self-test", "", "templates: validate source screenshots")
+	fs.BoolVar(&opts.GUI, "gui", false, "open the graphical interface (Windows only)")
 	cfg := config.Defaults()
 	exe, _ := os.Executable()
 	exeDir := filepath.Dir(exe)
@@ -153,6 +155,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 	}
 	if fs.NArg() != 0 {
 		return finish(2, fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " ")))
+	}
+	if opts.GUI {
+		// 图形界面由启动器（launchUI）负责打开。能走到这里只有两种可能：
+		// 与其它参数混用，或当前平台不提供界面（4.8 / F20）。给出一句话说明，
+		// 而不是静默忽略 —— 静默忽略会让调用方以为界面已打开。
+		return finish(2, fmt.Errorf("--gui must be used alone (equivalent to double-clicking AutoTrigger.exe), and the graphical interface is Windows-only"))
 	}
 	var warnings []string
 	var err error
