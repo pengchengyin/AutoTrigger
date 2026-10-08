@@ -1,0 +1,1 @@
+[{"id":"install_names","pattern":"install|setup|boot|安装|部署|一键","action":"P1"},{"id":"prereq_names","pattern":"vcredist|vc_redist|dotnet|directx|prereq|依赖|环境","action":"P3"},{"id":"main_names","pattern":"launch|main|启动","action":"P4"}]

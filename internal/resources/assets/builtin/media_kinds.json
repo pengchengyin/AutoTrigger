@@ -1,0 +1,1 @@
+[{"id":"os_media","pattern":"(^|/)(sources/(install\\.(wim|esd)|setup\\.exe)|boot/bcd)$","kind":"os_install_media"},{"id":"video","pattern":"(^|/)(bdmv|video_ts)(/|$)|\\.(m2ts|vob)$","kind":"media_disc"},{"id":"installer","pattern":"(^|/)(setup\\.exe|install\\.exe|autorun\\.inf)$|\\.msi$","kind":"installer_media"}]

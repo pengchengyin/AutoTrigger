@@ -1,0 +1,14 @@
+{
+  "timeout_sec": 600, "startup_timeout_sec": 30, "idle_timeout_sec": 60,
+  "task_timeout_sec": 0, "progress_interval_sec": 30,
+  "activity_cpu_epsilon_ms": 200, "activity_io_epsilon_bytes": 65536,
+  "concurrency": 1, "attempt_interval_sec": 2, "max_attempts_per_file": 8,
+  "archive": {"max_depth":3,"max_extract_size_bytes":2147483648,"sevenzip_path":"auto","require_sevenzip":true,"min_version":"24.09","temp_root":""},
+  "iso": {"strategy":"extract_first","allow_os_media":false,"allow_media_disc":false,"autorun_as_p0":true,"media_kinds_file":"media_kinds.json","mount_tool_path":"auto","mount_timeout_ms":15000,"dismount_retry":3,"keep_mounted_until_verified":true,"keep_extracted_on_success":false,"motw_policy":"native"},
+  "package_layout":{"enabled":true,"mode":"smart","entry_patterns_file":"install_entries.json","exclude_patterns_file":"exclude_entries.json","prefer_shallowest":true,"prefer_arch_match":true,"readme_hints":true,"max_entries_phase1":10,"fallback_to_brute":true},
+  "gui_automation":{"enabled":true,"poll_interval_ms":500,"click_jitter_px":3,"max_actions_per_window":10,"keyword_file":"buttons.zh-CN.json","template_pack":"merged","template_dir":"templates","template_dpi_mode":"auto","template_theme":"auto","template_min_similarity":0.86,"builtin_templates":true,"dump_failed_shots":false},
+  "ocr":{"enabled":true,"engine":"paddleocr_json","engine_path":"auto","transport":"stdio","tcp_port":0,"startup_timeout_ms":10000,"recognize_timeout_ms":3000,"keep_alive":true,"restart_on_failure":true,"max_restarts":2,"require_ocr":false,"min_score":0.6,"roi_padding_px":12,"min_text_height_px":10,"max_text_height_px":80,"cache_by_screenshot_hash":true},
+  "install_verify":{"judgment_profile":"loose","settle_sec":3,"quiet_polls":3,"settle_max_sec":30,"watch_dirs":["C:\\Program Files","C:\\Program Files (x86)","%ProgramData%","%LOCALAPPDATA%","%APPDATA%"],"watch_exclude":["%TEMP%","%LOCALAPPDATA%\\Temp","%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache","%LOCALAPPDATA%\\CrashDumps"],"snapshot_depth":2,"snapshot_max_entries":20000,"write_baseline":false,"min_new_files":1,"shrink_tolerance":0,"require_artifact":true,"launch_check":false,"launch_check_sec":10},
+  "lock":{"enabled":true,"wait_sec":0},"dll_export_probe_count":3,
+  "output":{"path":"","pretty":false,"journal":true,"keep_journal_on_success":false,"log_file":"","log_level":"info","max_file_size_mb":64}
+}

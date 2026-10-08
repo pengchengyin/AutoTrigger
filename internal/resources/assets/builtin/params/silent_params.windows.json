@@ -1,0 +1,9 @@
+[
+ {"id":"inno","args":["/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES"]},
+ {"id":"nsis","args":["/S"]},
+ {"id":"installshield","args":["/s","/v/qn"]},
+ {"id":"wixburn","args":["/quiet","/norestart"]},
+ {"id":"generic_silent","args":["/silent"]},
+ {"id":"generic_long_silent","args":["--silent"]},
+ {"id":"generic_quiet","args":["--quiet"]}
+]

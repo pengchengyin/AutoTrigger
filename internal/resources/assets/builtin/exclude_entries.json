@@ -1,0 +1,1 @@
+[{"id":"uninstall","pattern":"uninstall|unins0|卸载|反安装|remove"},{"id":"repair","pattern":"repair|修复|modify"},{"id":"debug","pattern":"crashpad|crashreporter|werfault|debug"},{"id":"update","pattern":"update|updater|checkupdate|升级"},{"id":"help","pattern":"\\.(chm|hlp|pdf)$"}]

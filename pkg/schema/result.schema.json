@@ -1,0 +1,646 @@
+{
+  "$id": "urn:autotrigger:result:2.8",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "config_digest": {
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "finished_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "layout_analysis": {
+      "additionalProperties": true,
+      "properties": {
+        "converged_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dismount_status": {
+          "type": "string"
+        },
+        "entries": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "matched": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "priority",
+              "reason",
+              "matched"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "excluded": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "matched": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "priority": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "priority",
+              "reason",
+              "matched"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "fallback_used": {
+          "type": "boolean"
+        },
+        "input_kind": {
+          "type": "string"
+        },
+        "iso_strategy_used": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "media_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "motw_policy": {
+          "type": "string"
+        },
+        "mount_drive": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skipped_after_success": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_kind",
+        "media_kind",
+        "iso_strategy_used",
+        "mount_drive",
+        "dismount_status",
+        "motw_policy",
+        "entries",
+        "excluded",
+        "fallback_used",
+        "converged_at",
+        "skipped_after_success"
+      ],
+      "type": "object"
+    },
+    "meta": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "platform": {
+      "type": "string"
+    },
+    "platform_meta": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "prereq": {
+      "additionalProperties": true,
+      "properties": {
+        "archive_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "archive_backend_status": {
+          "type": "string"
+        },
+        "issues": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mount_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mount_backend_status": {
+          "type": "string"
+        },
+        "ocr_engine": {
+          "type": "string"
+        },
+        "ocr_engine_languages": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ocr_engine_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ocr_engine_status": {
+          "type": "string"
+        },
+        "ocr_engine_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ocr_startup_ms": {
+          "type": "integer"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "sevenzip_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "archive_backend",
+        "sevenzip_version",
+        "archive_backend_status",
+        "mount_backend",
+        "mount_backend_status",
+        "ocr_engine",
+        "ocr_engine_path",
+        "ocr_engine_status",
+        "ocr_engine_version",
+        "ocr_engine_languages",
+        "ocr_startup_ms",
+        "ok",
+        "issues"
+      ],
+      "type": "object"
+    },
+    "results": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "attempts": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "artifact_check": {
+                  "type": "string"
+                },
+                "artifact_runnable": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "command": {
+                  "type": "string"
+                },
+                "duration_sec": {
+                  "type": "number"
+                },
+                "error": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "exit_code": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "gui_actions": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "action": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "control_text": {
+                        "type": "string"
+                      },
+                      "ocr_score": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "recognize_ms": {
+                        "anyOf": [
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "window": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "window",
+                      "control_text",
+                      "source",
+                      "action",
+                      "ocr_score",
+                      "recognize_ms",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "idle_resets": {
+                  "type": "integer"
+                },
+                "install_evidence": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "at": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "level": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "level",
+                      "type",
+                      "source",
+                      "detail",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "result": {
+                  "type": "string"
+                },
+                "stderr_summary": {
+                  "type": "string"
+                },
+                "stdout_summary": {
+                  "type": "string"
+                },
+                "termination_mode": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "method",
+                "command",
+                "result",
+                "exit_code",
+                "duration_sec",
+                "termination_mode",
+                "idle_resets",
+                "install_evidence",
+                "artifact_check",
+                "artifact_runnable",
+                "gui_actions",
+                "stdout_summary",
+                "stderr_summary",
+                "error"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "baseline_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detected_type": {
+            "type": "string"
+          },
+          "evidence_conflicts": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "level",
+                "type",
+                "source",
+                "detail",
+                "at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "extension_disguised": {
+            "type": "boolean"
+          },
+          "file_hash_sha256": {
+            "type": "string"
+          },
+          "file_path": {
+            "type": "string"
+          },
+          "file_size_bytes": {
+            "type": "integer"
+          },
+          "final_status": {
+            "enum": [
+              "install_completed",
+              "install_unverified",
+              "install_partial",
+              "already_installed",
+              "triggered",
+              "killed_on_timeout",
+              "failed",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "install_confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              null
+            ]
+          },
+          "judgment_profile": {
+            "enum": [
+              "loose",
+              "strict"
+            ],
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "platform_meta": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "pre_installed": {
+            "type": "boolean"
+          },
+          "requires_reboot": {
+            "type": "boolean"
+          },
+          "selection_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path",
+          "file_size_bytes",
+          "file_hash_sha256",
+          "detected_type",
+          "selection_reason",
+          "extension_disguised",
+          "pre_installed",
+          "requires_reboot",
+          "platform_meta",
+          "attempts",
+          "evidence_conflicts",
+          "install_confidence",
+          "final_status",
+          "notes",
+          "judgment_profile",
+          "baseline_digest"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "2.8",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "summary": {
+      "additionalProperties": true,
+      "properties": {
+        "by_status": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "flags": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "by_status",
+        "flags"
+      ],
+      "type": "object"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_id",
+    "config_digest",
+    "error",
+    "started_at",
+    "finished_at",
+    "platform",
+    "platform_meta",
+    "prereq",
+    "summary",
+    "layout_analysis",
+    "results",
+    "truncated",
+    "meta"
+  ],
+  "title": "AutoTrigger result schema 2.8",
+  "type": "object"
+}

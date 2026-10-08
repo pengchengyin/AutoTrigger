@@ -1,0 +1,6 @@
+/dist/
+/coverage.out
+/autotrigger-result.json*
+*.tmp
+/dump/
+/shots/

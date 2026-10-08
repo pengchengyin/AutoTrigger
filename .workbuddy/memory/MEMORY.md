@@ -1,31 +1,45 @@
-# 项目长期记忆（自动安装工具 PRD）
+# 项目长期记忆（自动安装工具）
 
 ## 项目性质
-- 本项目当前**只有 PRD 文档 + 少量脚本**，尚无代码。主文档：`自动安装工具prd-v2.11.md`（`自动安装工具prd.md` 是最初稿，保留不动）。
-- 主题：离线 Windows 沙箱里"自动触发/安装任意文件样本"的工具，供 EDR 采集行为。Go 单文件、Win7 SP1+、外部 7-Zip 与 OCR 前置。
+- **需求已收口（PRD v2.13），已进入开发**：Go 实现位于 `cmd/`、`internal/`、`pkg/`、`tools/`，
+  产物 `dist/AutoTrigger.exe`（v0.1.0，Schema 2.8，资源包 0.1.0）。
+- 主题：离线 Windows 沙箱中"自动触发/安装任意文件样本"供 EDR 采集行为。Go 1.20.x 单文件、
+  Win7 SP1+、外部 7-Zip 与 OCR 前置、安装成功优先。
+- 权威文档：`自动安装工具prd-v2.13.md`（唯一 PRD）；另 `docs/图像模板制作说明.md`(D17)、
+  `docs/架构说明.md`、`docs/验收状态.md`、`README.md`、`DEPLOY.md`。
 
 ## 用户约定（务必遵守）
-1. **每轮改动后自动提交 git**，commit message 用中文。
-   实测：`git-commit` skill 在本机不存在，直接用 `git add -A && git commit -m "..."`。
-2. **云函数改动要上传并部署**（本项目暂不涉及）。
-3. **文档版本号与文件名必须同步递增**（C37 定案）：任何一次改 PRD 都要
-   ① 版本行 `vN` → `vN+1`；② 新增变更记录 `| C.. |`；③ `git mv` 重命名为 `自动安装工具prd-vN+1.md`。
-4. 文档写作风格：表格化、每条决策写"为什么"、变更记录里注明落点（如 `F14.7、A32`）。
+1. **每轮改动后自动提交 git**，commit message 用中文（`git add -A && git commit -m "..."`）。
+2. **文档版本号与文件名必须同步递增**（C37）：改 PRD 就要 ① 版本行 +1；② 新增 `| C.. |`
+   变更记录；③ `git mv` 重命名为 `自动安装工具prd-vN+1.md`。
+3. 写作风格：表格化、每条决策写"为什么"、变更记录注明落点（如 `F14.7、A32`）。
 
 ## 长 Markdown 的安全编辑流程（踩坑后固化）
-- ⚠️ **不要用"标题/行首前缀"做 `old_string`**：`| C39 | **...**` 这种前缀被替换会**吞掉整行的行标签**，导致后续文本悬挂（已犯两次）。要用**行中段唯一片段**作锚点，或把整行完整纳入 `old_string`。
-- ⚠️ **同一批不要并行发多个 Edit**：本会话多次出现"返回成功但内容回退"，必须**逐个 Edit**，最后用 `grep -c` 逐锚点复核。
-- **调整表格行顺序**：先改内容，再用 PowerShell 读行 → 交换数组下标 → `WriteAllText`（保持 **UTF-8 无 BOM + LF**，否则整文件 diff 爆炸）。
-- 编辑后统一校验：`for k in 锚点...; do grep -c "$k" 文件; done`。
+- ⚠️ **不要用"行首前缀"做 `old_string`**（如 `| C39 | **...`）：会吞掉表格行标签，导致文本悬挂
+  （已犯两次）。要用**行中段唯一片段**或将整行完整纳入。
+- ⚠️ **同一批不要并行发多个 Edit**：多次出现"返回成功但内容回退"。必须**逐个 Edit**，
+  最后 `for k in 锚点...; do grep -c "$k" 文件; done` 逐条复核。
+- 调整表格行顺序：PowerShell 读行 → 交换数组下标 → `WriteAllText`（保持 UTF-8 无 BOM + LF）。
 
-## 本机/sandbox PowerShell 事实（少走弯路）
-- PowerShell 工具**不回显 stdout**：结果要写文件再用 Read 工具看。
-- sandbox 中 **`.ps1` 无法执行**（`& script.ps1` 失败且文件改动被回滚）；可用替代：`[System.Management.Automation.Language.Parser]::ParseFile($f,[ref]$toks,[ref]$errs)` 做**纯静态语法校验**。
-- 含中文的 `.ps1` **必须 UTF-8 with BOM**（PS 5.1 否则按 ANSI 解码，报大量虚假语法错误）；`.md` 则保持 **无 BOM + LF**。
-- `1>` / `2>` 只捕获 PowerShell 流，脚本内 `[Console]::Out/Error` 直写句柄不被捕获；`*>` 可捕获 `Write-Host`。
-- 环境：Win10 build 26200 / i7-13700H / PowerShell 5.1；未安装任何 OCR 引擎（PaddleOCR-json 等）。
+## 开发环境事实（编译前必看）
+- **Go 位置**：`D:\Go\bin\go.exe`（go1.20.1 windows/amd64，**不在 PATH**）。GOPROXY 默认
+  `proxy.golang.org` **不可达**（实测 HTTP 000），需 `goproxy.cn`；CGO_ENABLED 默认 0。
+- ⚠️ **`D:\Go\src` 下有 3358 个 `*.old.go`**（覆盖 536 目录，另有 `*.old.md`/`LICENSE.old`），
+  疑来自 `D:\AntiySafeDocBackup`（安天安全软件，2024-05-13）。Go 会当成包的一部分，
+  `go build` 报 `found packages X and X_test` 或 `import cycle not allowed`，**完全无法编译**。
+  绕过（不动原 GOROOT）：另建干净 GOROOT —— `junction` 指向原 `bin`/`pkg`，
+  src 用 `find . -type f ! -name "*.old*" -print0 | tar --null -cf - -T -` **只复制不删除**，
+  再用 `GOROOT=<新目录>` 编译。
+- ⚠️ **执行环境有"批量删除守卫"**（`SAFE_DELETE_BULK_GUARD`）：批量 `Remove-Item`/`rmdir`
+  会被**静默拦截且不报错**（只有单文件删除才暴露错误）。清理临时目录时会遇到。
+- ⚠️ **`cmd //c "..."` 在本环境 Git Bash 中不生效**（cmd 进入交互模式、命令静默丢失）；
+  需要 Windows 命令时改用原生终端工具。
+- PowerShell 工具**不回显 stdout**（结果写文件再 Read）；含中文的 `.ps1` 必须 **UTF-8 with BOM**，
+  `.md` 保持**无 BOM + LF**。
+- 环境：Win10 build 26200 / i7-13700H / PowerShell 5.1；未安装任何 OCR 引擎。
 
-## 当前文档状态（v2.11）
-- `schema_version: 2.8`；`resource_pack_version: 1.0`（新）。
-- 已定案：判定口径宽松（DC19）、单实例串行 + 单文件 600s（DC20）、watch_dirs 五处（C35）、内置资源包（C40）。
-- 待确认清单第 12 节：Q17~Q20 已关闭，其余 Q2~Q16 部分仍未答复。
+## 当前文档状态（v2.13）
+- `schema_version: 2.8`；已定案：判定宽松（DC19）、单实例串行 + 单文件 600s（DC20）、
+  watch_dirs 五处（C35）、内置资源包（C40）、跨平台扩展（4.8）、CLI 帮助面（C42）。
+- 退出码：0 完成 / 1 异常 / 2 参数路径非法 / 3 配置错误 / 4 缺 7-Zip / 5 缺 OCR /
+  6 已运行 / 130 中止。交付物 D1~D17；验收 A1~A32。

@@ -429,9 +429,9 @@ function New-EngineResult {
     param([string]$Id, [string]$Name, [string]$Path, [bool]$Found)
     return [pscustomobject]@{
         engine = $Id; name = $Name; path = $Path; found = $Found; available = $false
-        version = $null; transports = @(); init_ms = $null; elapsed_ms = $null
+        version = $null; transports = (New-Object System.Collections.ArrayList); init_ms = $null; elapsed_ms = $null
         languages = @(); coords = $null; native_score = $null
-        texts = @(); words = @(); raw_code = $null; summary = ''; issues = @()
+        texts = (New-Object System.Collections.ArrayList); words = (New-Object System.Collections.ArrayList); raw_code = $null; summary = ''; issues = @()
     }
 }
 
@@ -443,7 +443,8 @@ function Test-PaddleLikeEngine {
     if (-not $Exe) { $r.summary = '未发现'; return $r }
 
     $issues = New-Object System.Collections.ArrayList
-    $argText = '-image_path=' + (Quote-Arg $ImagePath)
+    $imageOption = if ($Spec.Id -eq 'rapidocr_json') { '--image_path=' } else { '-image_path=' }
+    $argText = $imageOption + (Quote-Arg $ImagePath)
 
     Write-Report ("  [CLI 模式] {0} {1}" -f $Spec.ExeName, $argText) 'DarkGray'
     $cli = Invoke-Proc -Exe $Exe -ArgText $argText -TimeoutSec $TimeoutSec
