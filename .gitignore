@@ -1,6 +1,8 @@
 /dist/
 /coverage.out
-/autotrigger-result.json*
+autotrigger-result.json*
+autotrigger-result.json.log*
+*.journal.ndjson
 *.tmp
 /dump/
 /shots/
