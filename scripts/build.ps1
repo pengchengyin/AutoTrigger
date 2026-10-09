@@ -9,6 +9,7 @@ if ($unformatted) { throw "Formatting changed files: $unformatted" }
 Invoke-Go -Arguments @('vet', './...')
 Invoke-Go -Arguments @('test', './...', '-coverprofile=coverage.out')
 Invoke-Go -Arguments @('run', './tools/schema-gen')
+Invoke-Go -Arguments @('run', './tools/icon-gen')
 if ($Release) { Invoke-Go -Arguments @('run', './tools/template-gen', '--masters', 'masters', '--out', 'internal/resources/assets/builtin/templates', '--release') }
 New-Item -ItemType Directory -Force -Path dist | Out-Null
 $env:GOOS = 'windows'; $env:GOARCH = 'amd64'

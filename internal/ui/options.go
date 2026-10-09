@@ -229,6 +229,72 @@ func WriteConfigFile(path string, overwrite bool) (bool, error) {
 	return true, nil
 }
 
+// ConfigEditorBody 返回配置编辑页应展示的 JSON 文本。
+// explicit 为空时优先加载 exe 同目录 config.json；该文件不存在则展示内置默认配置，
+// 但不把它伪装成已经落盘的用户配置。
+func ConfigEditorBody(explicit, exeDir string) (body, resolvedPath string, fromDisk bool, err error) {
+	resolvedPath = strings.TrimSpace(explicit)
+	explicitPath := resolvedPath != ""
+	if resolvedPath == "" {
+		resolvedPath = ConfigPath(exeDir)
+	}
+	if fileExists(resolvedPath) {
+		b, readErr := os.ReadFile(resolvedPath)
+		if readErr != nil {
+			return "", resolvedPath, false, readErr
+		}
+		return string(b), resolvedPath, true, nil
+	}
+	if explicitPath {
+		return "", resolvedPath, false, fmt.Errorf("配置文件不存在：%s", resolvedPath)
+	}
+	body, err = DefaultConfigJSON()
+	if err != nil {
+		return "", resolvedPath, false, err
+	}
+	return body, resolvedPath, false, nil
+}
+
+// ValidateConfigJSONBody 校验一段尚未保存的配置 JSON。
+// 复用 config.Load 的深合并、未知键 warning 与 Validate 规则，避免 GUI 出现第二套校验口径。
+func ValidateConfigJSONBody(body, exeDir string) ([]string, error) {
+	tmp, err := os.CreateTemp("", "autotrigger-ui-config-*.json")
+	if err != nil {
+		return nil, err
+	}
+	name := tmp.Name()
+	_, writeErr := tmp.WriteString(body)
+	closeErr := tmp.Close()
+	defer os.Remove(name)
+	if writeErr != nil {
+		return nil, writeErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
+	}
+	_, warnings, err := config.Load(name, exeDir)
+	return warnings, err
+}
+
+// WriteConfigEditorBody 先校验编辑器内容，再写入目标路径。
+// 保存前校验能避免无效配置覆盖原有有效配置。
+func WriteConfigEditorBody(path, body, exeDir string) ([]string, error) {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		p = ConfigPath(exeDir)
+	}
+	warnings, err := ValidateConfigJSONBody(body, exeDir)
+	if err != nil {
+		return warnings, err
+	}
+	if dir := filepath.Dir(p); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return warnings, err
+		}
+	}
+	return warnings, os.WriteFile(p, []byte(body), 0o644)
+}
+
 func fileExists(path string) bool {
 	if strings.TrimSpace(path) == "" {
 		return false

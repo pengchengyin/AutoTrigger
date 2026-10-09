@@ -29,6 +29,10 @@ var (
 	procRegisterClassExW      = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW       = user32.NewProc("CreateWindowExW")
 	procDefWindowProcW        = user32.NewProc("DefWindowProcW")
+	procBeginPaint            = user32.NewProc("BeginPaint")
+	procEndPaint              = user32.NewProc("EndPaint")
+	procFillRect              = user32.NewProc("FillRect")
+	procDrawTextW             = user32.NewProc("DrawTextW")
 	procDestroyWindow         = user32.NewProc("DestroyWindow")
 	procPostQuitMessage       = user32.NewProc("PostQuitMessage")
 	procGetMessageW           = user32.NewProc("GetMessageW")
@@ -56,6 +60,11 @@ var (
 	procGetDeviceCaps         = gdi32.NewProc("GetDeviceCaps")
 	procCreateFontIndirectW   = gdi32.NewProc("CreateFontIndirectW")
 	procGetStockObject        = gdi32.NewProc("GetStockObject")
+	procCreateSolidBrush      = gdi32.NewProc("CreateSolidBrush")
+	procCreatePen             = gdi32.NewProc("CreatePen")
+	procSelectObject          = gdi32.NewProc("SelectObject")
+	procDeleteObject          = gdi32.NewProc("DeleteObject")
+	procRoundRect             = gdi32.NewProc("RoundRect")
 	procSetBkMode             = gdi32.NewProc("SetBkMode")
 	procSetTextColor          = gdi32.NewProc("SetTextColor")
 	procGetModuleHandleW      = kernel32.NewProc("GetModuleHandleW")
@@ -94,6 +103,7 @@ const (
 	idcArrow       = 32512
 	defaultGUIFont = 17 // GetStockObject(DEFAULT_GUI_FONT)
 	fwBold         = 700
+	psSolid        = 0
 
 	colorWindow            = 5
 	colorWindowText        = 8
@@ -138,17 +148,21 @@ const (
 	wmGetTextLength  = 0x000E
 	wmDestroy        = 0x0002
 	wmSize           = 0x0005
+	wmPaint          = 0x000F
 	wmClose          = 0x0010
+	wmEraseBkgnd     = 0x0014
 	wmGetMinMaxInfo  = 0x0024
 	wmSetFont        = 0x0030
 	wmCommand        = 0x0111
+	wmMouseMove      = 0x0200
+	wmLButtonDown    = 0x0201
 	wmCtlColorEdit   = 0x0133
 	wmCtlColorBtn    = 0x0135
 	wmCtlColorStatic = 0x0138
 	wmCopy           = 0x0301
 
 	bnClicked = 0
-	enChange  = 1
+	enChange  = 0x0300
 
 	// CBN_SELCHANGE：下拉框选择变化（数值与 BN_CLICKED 不同，需单独判断）。
 	cbnSelChange = 1
@@ -166,6 +180,15 @@ const (
 	cbAddString = 0x0143
 	cbGetCurSel = 0x0147
 	cbSetCurSel = 0x014E
+
+	// DrawText 格式。
+	dtLeft        = 0x00000000
+	dtCenter      = 0x00000001
+	dtRight       = 0x00000002
+	dtVCenter     = 0x00000004
+	dtSingleLine  = 0x00000020
+	dtWordBreak   = 0x00000010
+	dtEndEllipsis = 0x00008000
 
 	// WM_APP 起的自定义消息：仅用于"后台线程 → 界面线程"的单向通知，
 	// 界面线程在窗口过程内取数据并刷新控件（跨线程不直接操作窗口）。
@@ -219,6 +242,15 @@ type msgT struct {
 
 type rectT struct {
 	Left, Top, Right, Bottom int32
+}
+
+type paintStruct struct {
+	Hdc        uintptr
+	Erase      int32
+	RcPaint    rectT
+	Restore    int32
+	IncUpdate  int32
+	RGBReserve [32]byte
 }
 
 type pointT struct {
@@ -628,9 +660,13 @@ func openFileDialogWith(owner uintptr, title, initialDir string, filterParts []s
 // saveFileDialog 打开"另存为"对话框；用户取消返回 ok=false。
 // initial 会预填到文件名框（超长则截断，最长 4095 个 UTF-16 码元），不改变原文件。
 func saveFileDialog(owner uintptr, title, initial, defaultExt string) (string, bool) {
+	return saveFileDialogWith(owner, title, initial, defaultExt, saveDialogFilter)
+}
+
+func saveFileDialogWith(owner uintptr, title, initial, defaultExt string, filterParts []string) (string, bool) {
 	buf := make([]uint16, 4096)
 	copy(buf, utf16Slice(initial))
-	filter := dialogFilterSlice(saveDialogFilter)
+	filter := dialogFilterSlice(filterParts)
 	ofn := openFileNameW{
 		StructSize:  uint32(unsafe.Sizeof(openFileNameW{})),
 		Owner:       owner,

@@ -12,6 +12,7 @@ test -z "$($AT_GO_BINARY fmt ./...)"
 $AT_GO_BINARY vet ./...
 $AT_GO_BINARY test ./... -coverprofile=coverage.out
 $AT_GO_BINARY run ./tools/schema-gen
+$AT_GO_BINARY run ./tools/icon-gen
 if [ "$AT_RELEASE" = 1 ]; then
   $AT_GO_BINARY run ./tools/template-gen --masters masters --out internal/resources/assets/builtin/templates --release
 fi

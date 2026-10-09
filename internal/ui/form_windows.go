@@ -4,8 +4,10 @@ package ui
 
 import (
 	"autotrigger/internal/cli"
+	"autotrigger/internal/config"
 	"autotrigger/pkg/schema"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -52,6 +55,48 @@ const (
 	idLblLog
 	idLog
 	idStatus
+	idCfgEditor
+	idCfgLoad
+	idCfgSave
+	idCfgImport
+	idCfgExport
+	idCfgValidate
+	idCfgStatus
+	idResultView
+	idResultRefresh
+	idResultOpenFile
+	idResultOpenDir
+	idResultCopy
+	idTemplateAll
+	idTemplateBuiltin
+	idTemplateExternal
+	idTemplateUse
+	idLogFiles
+	idSettingsSave
+	idOCREngineLabel
+	idOCREngine
+	idLogFilter
+	idTaskNameLabel
+	idTaskName
+	idTaskSearch
+	idTaskList
+	idTaskView
+	idSettingsBasic
+	idSettingsAdvanced
+	idHelpTopics
+	idHelpBody
+	idHelpAbout
+	idOutputDir
+	idSettingsRecognition
+	idOCREnginePathLabel
+	idOCREnginePath
+	idOCREngineBrowse
+	idSevenZipLabel
+	idSevenZip
+	idSevenZipBrowse
+	idOCRScoreLabel
+	idOCRScore
+	idTaskSearchLabel
 )
 
 // 布局常量，单位为 96 DPI 下的像素（实际值经 scale 换算）。
@@ -85,18 +130,40 @@ var configDialogFilter = []string{
 }
 
 type form struct {
-	deps       cli.Dependencies
-	hwnd       uintptr
-	instance   uintptr
-	font       uintptr
-	statusFont uintptr
-	scale      float64
-	className  *uint16
-	title      string
-	exePath    string
-	exeDir     string
-	opts       Options
-	ctrls      map[int]uintptr
+	deps                cli.Dependencies
+	hwnd                uintptr
+	instance            uintptr
+	font                uintptr
+	statusFont          uintptr
+	scale               float64
+	className           *uint16
+	title               string
+	exePath             string
+	exeDir              string
+	opts                Options
+	ctrls               map[int]uintptr
+	page                pageID
+	hoverPage           pageID
+	templates           templateInfo
+	configOpen          bool
+	templateTab         int
+	terminalBrush       uintptr
+	logFiles            []string
+	checkingPrereq      bool
+	prereqChecked       bool
+	prereqCode          int
+	prereqWarnings      bool
+	prereqLogStart      int
+	appIcon             uintptr
+	historyDir          string
+	history             []taskRecord
+	historyView         []taskRecord
+	historyStats        [3]int
+	activeTask          string
+	selectedResult      string
+	settingsAdvanced    bool
+	settingsRecognition bool
+	loadingSettings     bool
 
 	mu         sync.Mutex
 	logBuf     []byte
@@ -132,10 +199,27 @@ func newForm(deps cli.Dependencies) *form {
 		className:  utf16Ptr("AutoTriggerMainWindow"),
 		title:      fmt.Sprintf("AutoTrigger 图形界面 — 任意文件自动安装/触发工具  v%s", cli.Version),
 		opts:       NewOptions(exeDir),
+		page:       pageHome,
+		hoverPage:  pageNone,
+		templates:  loadTemplateInfo(exeDir),
 		statusKind: statusKindInfo,
 	}
 	f.font = uiFont()
 	f.statusFont = uiFontBold()
+	f.appIcon = loadAppIcon(f.px(64))
+	root, err := os.UserConfigDir()
+	if err != nil {
+		root = exeDir
+	}
+	f.historyDir = filepath.Join(root, "AutoTrigger", "history")
+	f.history, _ = loadHistory(f.historyDir)
+	if p, err := loadPreferences(filepath.Dir(f.historyDir)); err == nil {
+		if p.ConfigPath != "" {
+			f.opts.Config = p.ConfigPath
+		}
+		f.opts.Recursive = p.Recursive
+		f.opts.NoArchive = p.NoArchive
+	}
 	return f
 }
 
@@ -164,7 +248,7 @@ func (f *form) create() error {
 		// 父窗口底色盖到日志框上（表现为日志区被"擦花"）。
 		wsOverlappedWindow|wsClipChildren,
 		cwUseDefault, cwUseDefault,
-		uintptr(f.px(900)), uintptr(f.px(680)),
+		uintptr(f.px(1020)), uintptr(f.px(700)),
 		0, 0, hInst, 0)
 	if hwnd == 0 {
 		return fmt.Errorf("CreateWindowExW: %v", err)
@@ -172,13 +256,21 @@ func (f *form) create() error {
 	f.hwnd = hwnd
 	f.createControls()
 	f.applyDefaults()
+	f.loadSettingsFields()
+	f.createWorkflowControls()
+	f.loadSettingsFields()
 	f.layout()
+	send(f.hwnd, 0x80, 1, f.appIcon)
+	send(f.hwnd, 0x80, 0, f.appIcon)
 	return nil
 }
 
 func (f *form) show() {
 	procShowWindow.Call(f.hwnd, swShow)
 	procUpdateWindow.Call(f.hwnd)
+	if f.page != pageTask {
+		return
+	}
 	if h := f.ctrls[idInput]; h != 0 {
 		procSetFocus.Call(h)
 	}
@@ -191,10 +283,15 @@ func (f *form) loop() {
 		if int32(r) <= 0 {
 			break
 		}
+		if handled, _, _ := procIsDialogMessageW.Call(f.hwnd, uintptr(unsafe.Pointer(&m))); handled != 0 {
+			continue
+		}
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
 }
+
+var procIsDialogMessageW = user32.NewProc("IsDialogMessageW")
 
 // ---------------------------------------------------------------- 控件
 
@@ -218,11 +315,11 @@ func (f *form) label(id int, text string) {
 }
 
 func (f *form) edit(id int, text string) {
-	f.addControl(id, "EDIT", text, wsChild|wsVisible|wsTabStop|esAutoHScroll, wsExClientEdge)
+	f.addControl(id, "EDIT", text, wsChild|wsVisible|wsTabStop|esAutoHScroll|0x00800000, 0)
 }
 
 func (f *form) button(id int, text string) {
-	f.addControl(id, "BUTTON", text, wsChild|wsVisible|wsTabStop|bsPushButton, 0)
+	f.addControl(id, "BUTTON", text, wsChild|wsVisible|wsTabStop|0xB, 0)
 }
 
 func (f *form) check(id int, text string, checked bool) {
@@ -317,12 +414,42 @@ func (f *form) createControls() {
 	if h, ok := f.ctrls[idStatus]; ok && h != 0 && f.statusFont != 0 {
 		send(h, wmSetFont, f.statusFont, 1)
 	}
+
+	f.addControl(idCfgEditor, "EDIT", "",
+		wsChild|wsTabStop|wsVScroll|esMultiline|esAutoVScroll|esWantReturn,
+		wsExClientEdge)
+	f.button(idCfgLoad, "加载")
+	f.button(idCfgSave, "保存")
+	f.button(idCfgImport, "导入")
+	f.button(idCfgExport, "导出")
+	f.button(idCfgValidate, "校验")
+	f.label(idCfgStatus, "配置编辑器尚未加载。")
+
+	f.addControl(idResultView, "EDIT", "",
+		wsChild|wsTabStop|wsVScroll|esMultiline|esAutoVScroll|esReadOnly|esWantReturn,
+		wsExClientEdge)
+	f.button(idResultRefresh, "刷新")
+	f.button(idResultOpenFile, "打开结果")
+	f.button(idResultOpenDir, "打开目录")
+	f.button(idResultCopy, "复制")
+	f.button(idTemplateAll, "全部模板")
+	f.button(idTemplateBuiltin, "内置模板")
+	f.button(idTemplateExternal, "自定义模板")
+	f.button(idTemplateUse, "使用此模板库")
+	f.button(idSettingsSave, "保存设置")
+	f.label(idOCREngineLabel, "OCR 引擎")
+	f.combo(idOCREngine, []string{"PaddleOCR-json", "RapidOCR-json", "Umi-OCR", "Tesseract", "Windows OCR", "不使用 OCR"}, 0)
+	f.combo(idLogFilter, []string{"全部级别", "DEBUG", "INFO", "WARN", "ERROR"}, 0)
+	f.addControl(idLogFiles, "LISTBOX", "", wsChild|wsTabStop|wsVScroll|0x1, wsExClientEdge)
+	f.terminalBrush, _, _ = procCreateSolidBrush.Call(rgb(20, 27, 36))
 }
 
 func (f *form) applyDefaults() {
 	setWindowTextRaw(f.ctrls[idInput], f.opts.Input)
 	setWindowTextRaw(f.ctrls[idOutput], f.opts.Output)
 	setWindowTextRaw(f.ctrls[idConfig], f.opts.Config)
+	send(f.ctrls[idRecursive], bmSetCheck, uintptr(boolCheck(f.opts.Recursive)), 0)
+	send(f.ctrls[idNoArchive], bmSetCheck, uintptr(boolCheck(f.opts.NoArchive)), 0)
 	// 超时按「数值 + 单位」回填：能被 60 整除时用分钟显示（300 秒 → 5 分钟）。
 	value, unit := SplitTimeout(f.opts.TimeoutSec)
 	setWindowTextRaw(f.ctrls[idTimeout], strconv.Itoa(value))
@@ -379,11 +506,61 @@ func (f *form) clientSize() (int, int) {
 
 func (f *form) layout() {
 	clientW, clientH := f.clientSize()
-	mx, my := f.px(uiPadX), f.px(uiPadY)
+	f.showTaskControls(false)
+	f.showConfigControls(false)
+	f.showResultControls(false)
+	f.hideWorkflowControls()
+	procShowWindow.Call(f.ctrls[idLogFiles], swHide)
+	procShowWindow.Call(f.ctrls[idSettingsSave], swHide)
+	procShowWindow.Call(f.ctrls[idOCREngineLabel], swHide)
+	procShowWindow.Call(f.ctrls[idOCREngine], swHide)
+	procShowWindow.Call(f.ctrls[idLogFilter], swHide)
+	for _, id := range []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse} {
+		procShowWindow.Call(f.ctrls[id], swHide)
+	}
+	switch f.page {
+	case pageSettings:
+		f.layoutSettingsPage(clientW, clientH)
+	case pageTemplates:
+		r := f.taskSurfaceRect(clientW, clientH)
+		for i, id := range []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse} {
+			procShowWindow.Call(f.ctrls[id], swShow)
+			f.place(id, int(r.Left)+f.px(18+i*150), int(r.Top)+f.px(12), f.px(140), f.px(32))
+		}
+	case pageTask:
+		f.layoutTaskList(clientW, clientH)
+	case pageNewTask:
+		f.layoutNewTask(clientW, clientH)
+	case pageHelp:
+		f.layoutHelp(clientW, clientH)
+	case pageConfig:
+		f.showConfigControls(true)
+		f.layoutConfigControls(clientW, clientH)
+	case pageLogs, pageTaskDetail:
+		f.showResultControls(true)
+		f.layoutResultControls(clientW, clientH)
+	default:
+		procInvalidateRect.Call(f.hwnd, 0, 1)
+	}
+	procInvalidateRect.Call(f.hwnd, 0, 1)
+	procUpdateWindow.Call(f.hwnd)
+}
+
+func (f *form) layoutTaskControls(clientW, clientH int) {
+	f.showTaskControls(true)
 	rowH, gapY, gapX := f.px(uiRowH), f.px(uiGapY), f.px(uiGapX)
 	labelW := f.px(uiLabelW)
-	right := clientW - mx
-	y := my
+	sections := f.taskSectionRects(f.taskSurfaceRect(clientW, clientH))
+	if len(sections) < 4 {
+		return
+	}
+	sample := f.taskSectionContent(sections[0].Rect)
+	params := f.taskSectionContent(sections[1].Rect)
+	command := f.taskSectionContent(sections[2].Rect)
+	logs := f.taskSectionContent(sections[3].Rect)
+	mx := int(sample.Left)
+	right := int(sample.Right)
+	y := int(sample.Top)
 
 	// 1) 样本
 	btnFileW, btnDirW := f.px(88), f.px(104)
@@ -407,9 +584,11 @@ func (f *form) layout() {
 	f.place(idBrowseConfig, right-b3-b2-b1-gapX*2, y, b1, rowH)
 	f.place(idMakeConfig, right-b3-b2-gapX, y, b2, rowH)
 	f.place(idEditConfig, right-b3, y, b3, rowH)
-	y += rowH + gapY
 
 	// 4) 超时（数值 + 单位下拉）/ 日志级别（下拉）
+	mx = int(params.Left)
+	right = int(params.Right)
+	y = int(params.Top)
 	x := mx
 	lblTimeoutW, timeoutW, unitW := f.px(48), f.px(52), f.px(76)
 	f.place(idLblTimeout, x, y+f.px(4), lblTimeoutW, rowH)
@@ -447,25 +626,305 @@ func (f *form) layout() {
 		f.place(item.id, x, y, f.px(item.w), rowH)
 		x += f.px(item.w) + gapX
 	}
-	y += rowH + gapY
 
 	// 7) 等价命令行
+	mx = int(command.Left)
+	right = int(command.Right)
+	y = int(command.Top)
 	copyW := f.px(72)
 	f.place(idLblCommand, mx, y+f.px(4), labelW, rowH)
 	f.place(idCommand, mx+labelW, y, right-(mx+labelW)-copyW-gapX, rowH)
 	f.place(idCopyCommand, right-copyW, y, copyW, rowH)
-	y += rowH + gapY
 
 	// 8) 日志 + 状态
+	mx = int(logs.Left)
+	right = int(logs.Right)
+	y = int(logs.Top)
 	statusH := f.px(28)
 	f.place(idLblLog, mx, y, labelW, f.px(18))
 	logTop := y + f.px(20)
-	logH := clientH - my - statusH - logTop - f.px(8)
-	if logH < f.px(90) {
-		logH = f.px(90)
+	statusTop := int(logs.Bottom) - statusH
+	logH := statusTop - logTop - f.px(6)
+	if logH < f.px(24) {
+		logH = f.px(24)
 	}
 	f.place(idLog, mx, logTop, right-mx, logH)
-	f.place(idStatus, mx, logTop+logH+f.px(6), right-mx, statusH)
+	f.place(idStatus, mx, statusTop, right-mx, statusH)
+	procInvalidateRect.Call(f.hwnd, 0, 1)
+}
+
+func (f *form) layoutConfigControls(clientW, clientH int) {
+	r := f.taskSurfaceRect(clientW, clientH)
+	pad := f.px(18)
+	left := int(r.Left) + pad
+	right := int(r.Right) - pad
+	top := int(r.Top) + pad
+	rowH := f.px(uiRowH)
+	gap := f.px(uiGapX)
+	x := left
+	for _, item := range []struct {
+		id int
+		w  int
+	}{{idCfgLoad, 76}, {idCfgSave, 76}, {idCfgImport, 76}, {idCfgExport, 76}, {idCfgValidate, 76}} {
+		f.place(item.id, x, top, f.px(item.w), rowH)
+		x += f.px(item.w) + gap
+	}
+	statusH := f.px(24)
+	editorTop := top + rowH + f.px(10)
+	statusTop := int(r.Bottom) - pad - statusH
+	editorH := statusTop - editorTop - f.px(8)
+	if editorH < f.px(120) {
+		editorH = f.px(120)
+	}
+	f.place(idCfgEditor, left, editorTop, right-left, editorH)
+	f.place(idCfgStatus, left, statusTop, right-left, statusH)
+	procInvalidateRect.Call(f.hwnd, 0, 1)
+}
+
+func (f *form) layoutResultControls(clientW, clientH int) {
+	r := f.taskSurfaceRect(clientW, clientH)
+	pad := f.px(18)
+	left := int(r.Left) + pad
+	right := int(r.Right) - pad
+	top := int(r.Top) + pad
+	if f.page == pageTaskDetail {
+		top += f.px(164)
+	}
+	rowH := f.px(uiRowH)
+	gap := f.px(uiGapX)
+	x := left
+	for _, item := range []struct {
+		id int
+		w  int
+	}{{idResultRefresh, 76}, {idResultOpenFile, 96}, {idResultOpenDir, 96}, {idResultCopy, 76}} {
+		f.place(item.id, x, top, f.px(item.w), rowH)
+		x += f.px(item.w) + gap
+	}
+	viewTop := top + rowH + f.px(10)
+	viewH := int(r.Bottom) - pad - viewTop
+	if f.page == pageLogs {
+		fileH := f.px(32 + 24*maxInt(1, len(f.logFiles)))
+		if fileH > f.px(112) {
+			fileH = f.px(112)
+		}
+		viewH = int(r.Bottom) - pad - viewTop - fileH - f.px(42)
+		procShowWindow.Call(f.ctrls[idLogFilter], swShow)
+		f.place(idLogFilter, right-f.px(180), top, f.px(180), f.comboDropH(rowH, 5))
+		procShowWindow.Call(f.ctrls[idLogFiles], swShow)
+		f.place(idLogFiles, left, viewTop+viewH+f.px(42), right-left, fileH)
+	}
+	if f.page == pageTaskDetail {
+		viewTop = top + rowH + f.px(10)
+		viewH = int(r.Bottom) - pad - viewTop
+	}
+	if viewH < f.px(120) {
+		viewH = f.px(120)
+	}
+	f.place(idResultView, left, viewTop, right-left, viewH)
+	procInvalidateRect.Call(f.hwnd, 0, 1)
+}
+
+func (f *form) layoutSettingsControls(w, h int) {
+	r := f.taskSurfaceRect(w, h)
+	left, top := int(r.Left)+f.px(30), int(r.Top)+f.px(58)
+	width := int(r.Right) - left - f.px(30)
+	rows := [][2]int{{idLblOutput, idOutputDir}, {idLblConfig, idConfig}, {idLblTimeout, idTimeout}, {idLblLogLevel, idLogLevel}}
+	for i, pair := range rows {
+		y := top + f.px(i*48)
+		for _, id := range pair {
+			procShowWindow.Call(f.ctrls[id], swShow)
+		}
+		f.place(pair[0], left, y, f.px(110), f.px(30))
+		f.place(pair[1], left+f.px(120), y, width-f.px(250), f.px(30))
+		if pair[1] == idLogLevel {
+			f.place(idLogLevel, left+f.px(120), y, width-f.px(250), f.comboDropH(f.px(30), 4))
+		}
+	}
+	for i, id := range []int{idBrowseOutput, idBrowseConfig, idTimeoutUnit} {
+		procShowWindow.Call(f.ctrls[id], swShow)
+		height := f.px(30)
+		if id == idTimeoutUnit {
+			height = f.comboDropH(height, 2)
+		}
+		f.place(id, int(r.Right)-f.px(150), top+f.px(i*48), f.px(120), height)
+	}
+	for i, id := range []int{idRecursive, idNoArchive, idNoOCR, idLock} {
+		procShowWindow.Call(f.ctrls[id], swShow)
+		f.place(id, left+f.px((i%2)*260), top+f.px(220+(i/2)*38), f.px(250), f.px(30))
+	}
+	procShowWindow.Call(f.ctrls[idOCREngineLabel], swShow)
+	procShowWindow.Call(f.ctrls[idOCREngine], swShow)
+	f.place(idOCREngineLabel, left, top+f.px(184), f.px(110), f.px(30))
+	f.place(idOCREngine, left+f.px(120), top+f.px(184), width-f.px(150), f.comboDropH(f.px(30), 6))
+	for i, id := range []int{idPrereq, idValidate, idMakeConfig} {
+		procShowWindow.Call(f.ctrls[id], swShow)
+		f.place(id, left+f.px(i*150), top+f.px(320), f.px(140), f.px(34))
+	}
+	procShowWindow.Call(f.ctrls[idStatus], swShow)
+	f.place(idStatus, left, top+f.px(366), width, f.px(48))
+	procShowWindow.Call(f.ctrls[idSettingsSave], swShow)
+	f.place(idSettingsSave, int(r.Right)-f.px(170), top+f.px(320), f.px(140), f.px(34))
+}
+
+func (f *form) saveSettings() bool {
+	opts, err := f.collect()
+	if err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return false
+	}
+	body, path, _, err := ConfigEditorBody(opts.Config, f.exeDir)
+	if err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return false
+	}
+	var doc map[string]interface{}
+	if err = json.Unmarshal([]byte(body), &doc); err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return false
+	}
+	doc["timeout_sec"] = opts.TimeoutSec
+	engines := []string{"paddleocr_json", "rapidocr_json", "umi_ocr", "tesseract", "windows", "none"}
+	engineIndex := f.comboIndex(idOCREngine)
+	if engineIndex < 0 || engineIndex >= len(engines) {
+		f.setStatusKind("请选择 OCR 引擎。", statusKindFail)
+		return false
+	}
+	for _, update := range []struct {
+		section, key string
+		value        interface{}
+	}{
+		{"output", "path", opts.Output}, {"output", "log_level", opts.LogLevel}, {"ocr", "enabled", !opts.NoOCR}, {"lock", "enabled", opts.Lock},
+		{"ocr", "engine", engines[engineIndex]},
+		{"ocr", "engine_path", strings.TrimSpace(windowText(f.ctrls[idOCREnginePath]))},
+		{"archive", "sevenzip_path", strings.TrimSpace(windowText(f.ctrls[idSevenZip]))},
+	} {
+		section, ok := doc[update.section].(map[string]interface{})
+		if !ok {
+			section = map[string]interface{}{}
+			doc[update.section] = section
+		}
+		section[update.key] = update.value
+	}
+	score, err := strconv.ParseFloat(strings.TrimSpace(windowText(f.ctrls[idOCRScore])), 64)
+	if err != nil || score < 0 || score > 1 {
+		f.setStatusKind("识别置信度必须是 0 到 1 的数值。", statusKindFail)
+		return false
+	}
+	if section, ok := doc["ocr"].(map[string]interface{}); ok {
+		section["min_score"] = score
+	}
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err == nil {
+		if path == "" {
+			path = filepath.Join(f.exeDir, "config.json")
+		}
+		_, err = WriteConfigEditorBody(path, string(b), f.exeDir)
+	}
+	if err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return false
+	}
+	setWindowTextRaw(f.ctrls[idConfig], path)
+	f.configOpen = false
+	f.selectedResult = ""
+	f.prereqChecked = false
+	f.refreshCommand()
+	if err = f.persistPreferences(path); err != nil {
+		f.setStatusKind("配置已保存，但界面偏好无法保存："+err.Error(), statusKindWarn)
+		f.appendLog([]byte("[警告] 界面偏好保存失败：" + err.Error() + "\n"))
+		return true
+	}
+	f.setStatusKind("设置已保存，下次启动和新建任务会沿用这些设置。", statusKindOK)
+	return true
+}
+
+func (f *form) useTemplatePack() {
+	body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), f.exeDir)
+	if f.configOpen {
+		body, err = windowText(f.ctrls[idCfgEditor]), nil
+	}
+	if err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return
+	}
+	var doc map[string]json.RawMessage
+	if err = json.Unmarshal([]byte(body), &doc); err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return
+	}
+	var gui map[string]interface{}
+	if raw := doc["gui_automation"]; len(raw) > 0 {
+		err = json.Unmarshal(raw, &gui)
+	}
+	if err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return
+	}
+	if gui == nil {
+		gui = map[string]interface{}{}
+	}
+	gui["template_pack"] = []string{"merged", "builtin", "external"}[f.templateTab]
+	if f.templateTab != 2 {
+		gui["builtin_templates"] = true
+	}
+	doc["gui_automation"], _ = json.Marshal(gui)
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return
+	}
+	f.settingsAdvanced = true
+	f.settingsRecognition = false
+	f.setPage(pageSettings)
+	setWindowTextRaw(f.ctrls[idCfgEditor], toCRLF(string(b)))
+	f.configOpen = true
+	setWindowTextRaw(f.ctrls[idCfgStatus], "模板库已选入配置；保存后用于执行。")
+	f.layout()
+}
+
+func (f *form) showTaskControls(visible bool) {
+	cmd := uintptr(swHide)
+	if visible {
+		cmd = swShow
+	}
+	for _, id := range []int{
+		idLblInput, idInput, idBrowseFile, idBrowseDir,
+		idLblOutput, idOutput, idBrowseOutput,
+		idLblConfig, idConfig, idBrowseConfig, idMakeConfig, idEditConfig,
+		idLblTimeout, idTimeout, idTimeoutUnit, idLblLogLevel, idLogLevel,
+		idLblOptions, idRecursive, idNoArchive, idNoOCR, idLock,
+		idRun, idStop, idPrereq, idValidate, idOpenResult,
+		idLblCommand, idCommand, idCopyCommand,
+		idLblLog, idLog, idStatus,
+	} {
+		if h := f.ctrls[id]; h != 0 {
+			procShowWindow.Call(h, cmd)
+		}
+	}
+}
+
+func (f *form) showConfigControls(visible bool) {
+	cmd := uintptr(swHide)
+	if visible {
+		cmd = swShow
+	}
+	for _, id := range []int{idCfgEditor, idCfgLoad, idCfgSave, idCfgImport, idCfgExport, idCfgValidate, idCfgStatus} {
+		if h := f.ctrls[id]; h != 0 {
+			procShowWindow.Call(h, cmd)
+		}
+	}
+}
+
+func (f *form) showResultControls(visible bool) {
+	cmd := uintptr(swHide)
+	if visible {
+		cmd = swShow
+	}
+	for _, id := range []int{idResultView, idResultRefresh, idResultOpenFile, idResultOpenDir, idResultCopy} {
+		if h := f.ctrls[id]; h != 0 {
+			procShowWindow.Call(h, cmd)
+		}
+	}
 }
 
 // ---------------------------------------------------------------- 窗口过程
@@ -481,6 +940,11 @@ func (f *form) wndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.P
 	switch msg {
 	case wmAppLog:
 		f.flushLog()
+		if f.page == pageLogs {
+			setWindowTextRaw(f.ctrls[idResultView], f.filteredLogText())
+			send(f.ctrls[idResultView], emSetSel, ^uintptr(0), ^uintptr(0))
+			send(f.ctrls[idResultView], emScrollCaret, 0, 0)
+		}
 		atomic.StoreInt32(&f.pending, 0)
 		f.mu.Lock()
 		more := f.flushed < len(f.logBuf)
@@ -515,7 +979,7 @@ func ctlColorScheme(role ctlRole) (bkMode, brushIdx uintptr) {
 	if role == roleLog {
 		return opaqueBk, colorWindow
 	}
-	return transparentBk, color3DFace
+	return transparentBk, colorWindow
 }
 
 // ctlTextColor 返回子控件的文字色：普通标签/按钮用系统色，状态行按语义着色。
@@ -556,9 +1020,30 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 		}
 	}()
 	switch msg {
+	case wmPaint:
+		return f.paint()
+	case wmEraseBkgnd:
+		return 1
 	case wmClose:
 		return f.onClose()
 	case wmDestroy:
+		if f.appIcon != 0 {
+			user32.NewProc("DestroyIcon").Call(f.appIcon)
+			f.appIcon = 0
+		}
+		if f.terminalBrush != 0 {
+			procDeleteObject.Call(f.terminalBrush)
+			f.terminalBrush = 0
+		}
+		stock, _, _ := procGetStockObject.Call(defaultGUIFont)
+		if f.statusFont != 0 && f.statusFont != stock {
+			procDeleteObject.Call(f.statusFont)
+			f.statusFont = 0
+		}
+		if f.font != 0 && f.font != stock {
+			procDeleteObject.Call(f.font)
+			f.font = 0
+		}
 		procPostQuitMessage.Call(0)
 		return 0
 	case wmSize:
@@ -567,14 +1052,38 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 	case wmGetMinMaxInfo:
 		if lparam != nil {
 			mmi := (*minMaxInfoT)(lparam)
-			mmi.MinTrackSize.X = int32(f.px(800))
-			mmi.MinTrackSize.Y = int32(f.px(540))
+			mmi.MinTrackSize.X = int32(f.px(920))
+			mmi.MinTrackSize.Y = int32(f.px(600))
 		}
+		return 0
+	case wmMouseMove:
+		x, y := mousePoint(lparam)
+		f.onMouseMove(x, y)
+		return 0
+	case wmLButtonDown:
+		x, y := mousePoint(lparam)
+		f.onMouseDown(x, y)
 		return 0
 	case wmCommand:
 		f.onCommand(int(uint16(wparam&0xFFFF)), int(uint16((wparam>>16)&0xFFFF)))
 		return 0
+	case 0x4E:
+		if lparam != nil {
+			f.workflowNotify(lparam)
+		}
+		return 0
+	case 0x2B: // WM_DRAWITEM: native buttons keep focus and keyboard semantics.
+		if lparam != nil {
+			f.paintNativeButton((*buttonDrawItem)(lparam))
+			return 1
+		}
 	case wmCtlColorStatic, wmCtlColorBtn:
+		if uintptr(lparam) == f.ctrls[idResultView] && f.page == pageLogs {
+			procSetBkMode.Call(wparam, opaqueBk)
+			procSetBkColor.Call(wparam, rgb(20, 27, 36))
+			procSetTextColor.Call(wparam, rgb(204, 231, 215))
+			return f.terminalBrush
+		}
 		// 只读多行 EDIT（日志区）发送的也是 WM_CTLCOLORSTATIC，必须与 STATIC 标签区分；
 		// 状态行同理，需要按语义给文字色（成功绿 / 失败红）。
 		role := f.ctlRoleOf(lparam)
@@ -589,7 +1098,172 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 	return r
 }
 
+func (f *form) onMouseMove(x, y int) {
+	hover := f.navPageAt(x, y)
+	if hover == f.hoverPage {
+		return
+	}
+	f.hoverPage = hover
+	procInvalidateRect.Call(f.hwnd, 0, 0)
+}
+
+func (f *form) onMouseDown(x, y int) {
+	clientW, clientH := f.clientSize()
+	if action, ok := f.headerActionAt(x, y, clientW); ok {
+		f.performHeaderAction(action.ID)
+		return
+	}
+	if p := f.navPageAt(x, y); p != pageNone {
+		f.setPage(p)
+		return
+	}
+	switch f.homeActionAt(x, y, clientW, clientH) {
+	case 0:
+		f.beginNewTask()
+	case 1:
+		f.setPage(pageTemplates)
+	case 2:
+		f.setPage(pageLogs)
+	case 3:
+		f.setPage(pageSettings)
+	}
+}
+
+func (f *form) performHeaderAction(id string) {
+	switch id {
+	case "new-task":
+		f.beginNewTask()
+	case "back-tasks":
+		f.selectedResult = ""
+		f.setPage(pageTask)
+	case "import-history":
+		f.importHistory()
+	case "run-task":
+		f.setPage(pageNewTask)
+		f.startRun()
+	case "check-prereq":
+		f.checkPrereq()
+	case "open-templates":
+		f.openTemplateDir()
+	case "refresh-templates":
+		f.reloadTemplates()
+	case "refresh-result":
+		f.refreshResultView()
+	case "open-result-file":
+		f.openResultFile()
+	case "open-result-dir":
+		f.openResultDir()
+	case "load-config":
+		f.loadConfigEditor(true)
+	case "save-config":
+		f.saveConfigEditor()
+	case "validate-config":
+		if f.page == pageConfig {
+			f.validateConfigEditor()
+		} else {
+			f.setPage(pageTask)
+			f.validateConfig()
+		}
+	}
+}
+
+func (f *form) openTemplateDir() {
+	dir := strings.TrimSpace(f.templates.TemplateDir)
+	if dir == "" {
+		dir = filepath.Join(f.exeDir, "templates")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		messageBox(f.hwnd, "模板目录不存在",
+			"外部模板目录尚不存在：\n"+dir+"\n\n当前仍会使用内置资源包与 UIA/OCR 识别。",
+			mbOK|mbIconInfo)
+		return
+	}
+	if err := shellOpen(dir); err != nil {
+		messageBox(f.hwnd, "打开失败", err.Error(), mbOK|mbIconError)
+		return
+	}
+	f.setStatus("已打开模板目录：" + dir)
+}
+
+func (f *form) reloadTemplates() {
+	f.templates = loadTemplateInfoWithConfig(f.exeDir, strings.TrimSpace(windowText(f.ctrls[idConfig])))
+	if f.templates.Error != "" {
+		f.setStatusKind("模板刷新失败："+f.templates.Error, statusKindFail)
+	} else if len(f.templates.Warnings) > 0 {
+		f.setStatusKind("模板已刷新，但存在资源警告。", statusKindWarn)
+	} else {
+		f.setStatusKind("模板已刷新。", statusKindOK)
+	}
+	procInvalidateRect.Call(f.hwnd, 0, 1)
+}
+
+func (f *form) setPage(page pageID) {
+	if page == pageConfig {
+		page = pageSettings
+		f.settingsAdvanced = true
+		f.settingsRecognition = false
+	}
+	if page == pageNone || page == f.page {
+		return
+	}
+	f.page = page
+	f.hoverPage = pageNone
+	f.layout()
+	if page == pageTask {
+		f.refreshTaskList()
+		if h := f.ctrls[idTaskSearch]; h != 0 {
+			procSetFocus.Call(h)
+		}
+	} else if page == pageConfig {
+		if !f.configOpen {
+			f.loadConfigEditor(false)
+		}
+		if h := f.ctrls[idCfgEditor]; h != 0 {
+			procSetFocus.Call(h)
+		}
+	} else if page == pageLogs || page == pageTaskDetail {
+		f.refreshResultView()
+	} else if page == pageSettings {
+		body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), f.exeDir)
+		if err != nil {
+			f.setStatusKind(err.Error(), statusKindFail)
+			return
+		}
+		var doc struct {
+			OCR struct {
+				Engine string `json:"engine"`
+			} `json:"ocr"`
+		}
+		if err = json.Unmarshal([]byte(body), &doc); err != nil {
+			f.setStatusKind(err.Error(), statusKindFail)
+			return
+		}
+		for i, engine := range []string{"paddleocr_json", "rapidocr_json", "umi_ocr", "tesseract", "windows", "none"} {
+			if engine == doc.OCR.Engine {
+				f.setComboSel(idOCREngine, i)
+				break
+			}
+		}
+	}
+}
+
 func (f *form) onCommand(id, code int) {
+	if f.workflowCommand(id, code) {
+		return
+	}
+	if id == idLogFilter && code == cbnSelChange {
+		setWindowTextRaw(f.ctrls[idResultView], f.filteredLogText())
+		return
+	}
+	if id == idLogFiles && code == 2 {
+		index := int(send(f.ctrls[idLogFiles], 0x188, 0, 0))
+		if index >= 0 && index < len(f.logFiles) {
+			if err := shellOpen(f.logFiles[index]); err != nil {
+				f.setStatusKind(err.Error(), statusKindFail)
+			}
+		}
+		return
+	}
 	switch {
 	case code == cbnSelChange && (id == idLogLevel || id == idTimeoutUnit):
 		// 下拉框选择变化：刷新等价命令行预览（不改动其它状态）。
@@ -608,6 +1282,14 @@ func (f *form) onCommand(id, code int) {
 				f.refreshCommand()
 			}
 		case idBrowseOutput:
+			if f.page == pageSettings {
+				if p, ok := pickFolderDialog(f.hwnd, "选择结果保存目录"); ok {
+					setWindowTextRaw(f.ctrls[idOutputDir], p)
+					setWindowTextRaw(f.ctrls[idOutput], filepath.Join(p, DefaultResultName))
+					f.refreshCommand()
+				}
+				return
+			}
 			cur := strings.TrimSpace(windowText(f.ctrls[idOutput]))
 			if p, ok := saveFileDialog(f.hwnd, "保存结果 JSON 到…", cur, "json"); ok {
 				setWindowTextRaw(f.ctrls[idOutput], p)
@@ -615,6 +1297,8 @@ func (f *form) onCommand(id, code int) {
 			}
 		case idBrowseConfig:
 			f.pickInto(idConfig, "选择配置文件（config.json）", configDialogFilter)
+			f.configOpen = false
+			f.loadSettingsFields()
 		case idMakeConfig:
 			f.makeConfig()
 		case idEditConfig:
@@ -631,6 +1315,32 @@ func (f *form) onCommand(id, code int) {
 			f.openResultDir()
 		case idCopyCommand:
 			f.copyCommand()
+		case idCfgLoad:
+			f.loadConfigEditor(true)
+		case idCfgSave:
+			f.saveConfigEditor()
+			f.loadSettingsFields()
+		case idCfgImport:
+			f.importConfigEditor()
+		case idCfgExport:
+			f.exportConfigEditor()
+		case idCfgValidate:
+			f.validateConfigEditor()
+		case idResultRefresh:
+			f.refreshResultView()
+		case idResultOpenFile:
+			f.openResultFile()
+		case idResultOpenDir:
+			f.openResultDir()
+		case idResultCopy:
+			f.copyResultView()
+		case idTemplateAll, idTemplateBuiltin, idTemplateExternal:
+			f.templateTab = id - idTemplateAll
+			procInvalidateRect.Call(f.hwnd, 0, 1)
+		case idTemplateUse:
+			f.useTemplatePack()
+		case idSettingsSave:
+			f.saveSettings()
 		case idRecursive, idNoArchive, idNoOCR, idLock:
 			f.refreshCommand()
 		}
@@ -695,6 +1405,14 @@ func (f *form) collect() (Options, error) {
 		TimeoutSec: timeout,
 		LogLevel:   level,
 	}, nil
+}
+
+func (f *form) currentOptions() Options {
+	opts, err := f.collect()
+	if err != nil {
+		return f.opts
+	}
+	return opts
 }
 
 func (f *form) refreshCommand() {
@@ -807,16 +1525,147 @@ func (f *form) validateConfig() {
 	f.launch("校验配置", f.auxArgs("--config", path, "--dump-config", "--pretty"), true)
 }
 
+func (f *form) loadConfigEditor(showMessage bool) {
+	path := strings.TrimSpace(windowText(f.ctrls[idConfig]))
+	body, resolved, fromDisk, err := ConfigEditorBody(path, f.exeDir)
+	if err != nil {
+		if showMessage {
+			messageBox(f.hwnd, "加载失败", err.Error(), mbOK|mbIconError)
+		}
+		setWindowTextRaw(f.ctrls[idCfgStatus], "加载失败："+err.Error())
+		f.setStatusKind("配置加载失败。", statusKindFail)
+		return
+	}
+	if fromDisk {
+		setWindowTextRaw(f.ctrls[idConfig], resolved)
+	}
+	if pretty, formatErr := json.MarshalIndent(json.RawMessage(body), "", "  "); formatErr == nil {
+		body = toCRLF(string(pretty))
+	}
+	setWindowTextRaw(f.ctrls[idCfgEditor], body)
+	f.configOpen = true
+	f.refreshCommand()
+	source := "来自内置默认配置，尚未保存。"
+	if fromDisk {
+		source = "来自文件：" + resolved
+	}
+	setWindowTextRaw(f.ctrls[idCfgStatus], source)
+	f.setStatus("配置已加载：" + resolved)
+}
+
+func (f *form) saveConfigEditor() {
+	path := strings.TrimSpace(windowText(f.ctrls[idConfig]))
+	if path == "" {
+		path = ConfigPath(f.exeDir)
+	}
+	body := windowText(f.ctrls[idCfgEditor])
+	warnings, err := WriteConfigEditorBody(path, body, f.exeDir)
+	if err != nil {
+		messageBox(f.hwnd, "保存失败", "配置未保存，原文件保持不变。\n\n"+err.Error(), mbOK|mbIconError)
+		setWindowTextRaw(f.ctrls[idCfgStatus], "保存失败："+err.Error())
+		f.setStatusKind("配置保存失败。", statusKindFail)
+		return
+	}
+	setWindowTextRaw(f.ctrls[idConfig], path)
+	f.refreshCommand()
+	status := "已保存并通过校验：" + path
+	f.templates = loadTemplateInfoWithConfig(f.exeDir, path)
+	if prefErr := f.persistPreferences(path); prefErr != nil {
+		warnings = append(warnings, "界面偏好保存失败："+prefErr.Error())
+	}
+	if len(warnings) > 0 {
+		status = "已保存，存在 warning：" + strings.Join(warnings, "；")
+		f.setStatusKind("配置已保存，但存在 warning。", statusKindWarn)
+	} else {
+		f.setStatusKind("配置已保存并通过校验。", statusKindOK)
+	}
+	setWindowTextRaw(f.ctrls[idCfgStatus], status)
+}
+
+func (f *form) importConfigEditor() {
+	start := f.startDir(strings.TrimSpace(windowText(f.ctrls[idConfig])))
+	p, ok := openFileDialogWith(f.hwnd, "导入配置文件", start, configDialogFilter)
+	if !ok {
+		return
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		messageBox(f.hwnd, "导入失败", err.Error(), mbOK|mbIconError)
+		return
+	}
+	setWindowTextRaw(f.ctrls[idConfig], p)
+	setWindowTextRaw(f.ctrls[idCfgEditor], toCRLF(string(b)))
+	f.configOpen = true
+	f.refreshCommand()
+	setWindowTextRaw(f.ctrls[idCfgStatus], "已导入："+p+"；保存前可先校验。")
+	f.setStatus("配置已导入：" + p)
+}
+
+func (f *form) exportConfigEditor() {
+	cur := strings.TrimSpace(windowText(f.ctrls[idConfig]))
+	if cur == "" {
+		cur = ConfigPath(f.exeDir)
+	}
+	p, ok := saveFileDialogWith(f.hwnd, "导出配置文件", cur, "json", configDialogFilter)
+	if !ok {
+		return
+	}
+	body := windowText(f.ctrls[idCfgEditor])
+	warnings, err := WriteConfigEditorBody(p, body, f.exeDir)
+	if err != nil {
+		messageBox(f.hwnd, "导出失败", "配置未导出。\n\n"+err.Error(), mbOK|mbIconError)
+		return
+	}
+	setWindowTextRaw(f.ctrls[idConfig], p)
+	f.refreshCommand()
+	status := "已导出并通过校验：" + p
+	if len(warnings) > 0 {
+		status = "已导出，存在 warning：" + strings.Join(warnings, "；")
+	}
+	setWindowTextRaw(f.ctrls[idCfgStatus], status)
+	f.setStatus("配置已导出：" + p)
+}
+
+func (f *form) validateConfigEditor() {
+	body := windowText(f.ctrls[idCfgEditor])
+	if strings.TrimSpace(body) == "" {
+		messageBox(f.hwnd, "没有可校验内容", "请先加载、导入或输入配置 JSON。", mbOK|mbIconInfo)
+		return
+	}
+	warnings, err := ValidateConfigJSONBody(body, f.exeDir)
+	if err != nil {
+		messageBox(f.hwnd, "校验失败", err.Error(), mbOK|mbIconError)
+		setWindowTextRaw(f.ctrls[idCfgStatus], "校验失败："+err.Error())
+		f.setStatusKind("配置校验失败。", statusKindFail)
+		return
+	}
+	if len(warnings) > 0 {
+		msg := "校验通过，但存在 warning：" + strings.Join(warnings, "；")
+		setWindowTextRaw(f.ctrls[idCfgStatus], msg)
+		f.setStatusKind("配置校验通过，但存在 warning。", statusKindWarn)
+		messageBox(f.hwnd, "校验通过（有警告）", strings.Join(warnings, "\n"), mbOK|mbIconInfo)
+		return
+	}
+	setWindowTextRaw(f.ctrls[idCfgStatus], "校验通过。")
+	f.setStatusKind("配置校验通过。", statusKindOK)
+}
+
 // ---------------------------------------------------------------- 运行
 
 func (f *form) auxArgs(extra ...string) []string {
 	args := append([]string{}, extra...)
 	// 附属命令不改动交付目录：日志写到临时目录。
 	args = append(args, "--log-file", filepath.Join(os.TempDir(), "autotrigger-ui-aux.log"))
+	args = append(args, "--output", "-")
 	return args
 }
 
 func (f *form) checkPrereq() {
+	if f.isRunning() {
+		return
+	}
+	f.checkingPrereq = true
+	f.prereqLogStart = len(f.logTextSnapshot())
 	f.launch("检查前置（7-Zip / OCR）", f.auxArgs("--check-prereq", "--json", "--pretty"), true)
 }
 
@@ -824,10 +1673,33 @@ func (f *form) startRun() {
 	if f.isRunning() {
 		return
 	}
+	if f.settingsAdvanced && f.configOpen {
+		if _, err := ValidateConfigJSONBody(windowText(f.ctrls[idCfgEditor]), f.exeDir); err != nil {
+			messageBox(f.hwnd, "配置需要修正", err.Error(), mbOK|mbIconError)
+			return
+		}
+		f.saveConfigEditor()
+		if f.statusKind == statusKindFail {
+			return
+		}
+		f.loadSettingsFields()
+	}
+	if !f.saveSettings() {
+		messageBox(f.hwnd, "设置需要修正", windowText(f.ctrls[idStatus]), mbOK|mbIconError)
+		return
+	}
 	opts, err := f.collect()
 	if err != nil {
 		messageBox(f.hwnd, "参数有误", err.Error(), mbOK|mbIconError)
 		return
+	}
+	if opts.Input != "" && opts.Output != "-" {
+		dir := filepath.Dir(opts.Output)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			messageBox(f.hwnd, "无法保存结果", err.Error(), mbOK|mbIconError)
+			return
+		}
+		opts.Output = filepath.Join(dir, "result-"+time.Now().Format("20060102-150405.000000000")+".json")
 	}
 	args, err := opts.Args()
 	if err != nil {
@@ -835,6 +1707,7 @@ func (f *form) startRun() {
 		return
 	}
 	f.resultPath = opts.Output
+	f.registerTask(opts)
 	f.launch("运行安装/触发", args, false)
 }
 
@@ -864,6 +1737,7 @@ func (f *form) launch(label string, args []string, aux bool) {
 	f.aux = aux
 	f.exitCode = 0
 	f.mu.Unlock()
+	f.refreshTaskList()
 	f.updateButtons()
 
 	display := filepath.Base(f.exePath) + " " + strings.Join(quoteEach(args), " ")
@@ -891,15 +1765,28 @@ func (f *form) onRunDone(code int) {
 	f.updateButtons()
 	f.flushLog()
 	if aux {
+		if f.checkingPrereq {
+			f.prereqChecked = true
+			f.prereqCode = code
+			log := f.logTextSnapshot()
+			if f.prereqLogStart < len(log) {
+				log = log[f.prereqLogStart:]
+			}
+			f.prereqWarnings = strings.Contains(log, "[警告]") || strings.Contains(log, "[WARN]")
+			f.checkingPrereq = false
+		}
 		// 前置检查/校验配置这类附属命令没有"安装结果"，不渲染结果横幅，
 		// 只按退出码给出档位（0 通过，其余按退出码含义说明）。
 		if code == 0 {
-			f.setStatusKind("√ 检查完成（结果见上方日志）", statusKindOK)
+			f.setStatusKind("√ 检查完成（详情见日志查看）", statusKindOK)
 		} else {
 			f.setStatusKind("× "+cli.ExitText(code)+"（退出码 "+strconv.Itoa(code)+"）", statusKindFail)
 		}
+		procInvalidateRect.Call(f.hwnd, 0, 1)
+		f.layout()
 		return
 	}
+	f.completeTask(code)
 	summary, ok := ReadResultSummary(resultPath)
 	var ref *ResultSummary
 	if ok {
@@ -910,6 +1797,9 @@ func (f *form) onRunDone(code int) {
 	f.flushLog()
 	kind, text := finishStatus(code, outcome)
 	f.setStatusKind(text, kind)
+	if f.page == pageLogs || f.page == pageTaskDetail {
+		f.refreshResultView()
+	}
 }
 
 // finishStatus 把退出码与总体结论翻译成状态行的配色档位与文案。
@@ -953,7 +1843,9 @@ func (f *form) updateButtons() {
 	enableWindow(f.ctrls[idRun], !running)
 	enableWindow(f.ctrls[idStop], running)
 	for _, id := range []int{idPrereq, idValidate, idMakeConfig, idEditConfig,
-		idBrowseFile, idBrowseDir, idBrowseOutput, idBrowseConfig} {
+		idBrowseFile, idBrowseDir, idBrowseOutput, idBrowseConfig,
+		idCfgLoad, idCfgSave, idCfgImport, idCfgExport, idCfgValidate,
+		idResultRefresh, idResultOpenFile, idResultOpenDir, idResultCopy} {
 		enableWindow(f.ctrls[id], !running)
 	}
 }
@@ -975,6 +1867,23 @@ func (f *form) openResultDir() {
 	f.setStatus("已打开目录：" + dir)
 }
 
+func (f *form) openResultFile() {
+	p := f.resultPathOrDefault()
+	if strings.TrimSpace(p) == "" || p == "-" {
+		messageBox(f.hwnd, "没有结果文件", "当前结果输出为 stdout 或尚未指定结果路径。", mbOK|mbIconInfo)
+		return
+	}
+	if _, err := os.Stat(p); err != nil {
+		messageBox(f.hwnd, "结果文件不存在", "尚未找到结果文件：\n"+p, mbOK|mbIconInfo)
+		return
+	}
+	if err := shellOpen(p); err != nil {
+		messageBox(f.hwnd, "打开失败", err.Error(), mbOK|mbIconError)
+		return
+	}
+	f.setStatus("已打开结果文件：" + p)
+}
+
 func (f *form) copyCommand() {
 	h := f.ctrls[idCommand]
 	if h == 0 {
@@ -984,6 +1893,133 @@ func (f *form) copyCommand() {
 	send(h, emSetSel, 0, ^uintptr(0))
 	send(h, wmCopy, 0, 0)
 	f.setStatus("等价命令行已复制到剪贴板，可直接用于脚本或第三方集成。")
+}
+
+func (f *form) refreshResultView() {
+	h := f.ctrls[idResultView]
+	if h == 0 {
+		return
+	}
+	setWindowTextRaw(h, f.resultViewText())
+	if f.page == pageLogs {
+		setWindowTextRaw(h, f.filteredLogText())
+		send(f.ctrls[idLogFiles], 0x184, 0, 0)
+		f.logFiles = nil
+		for _, path := range f.relatedLogFiles() {
+			if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
+				f.logFiles = append(f.logFiles, path)
+				line := fmt.Sprintf("%s    %d bytes", filepath.Base(path), stat.Size())
+				send(f.ctrls[idLogFiles], 0x180, 0, uintptr(unsafe.Pointer(utf16Ptr(line))))
+			}
+		}
+		if len(f.logFiles) == 0 {
+			send(f.ctrls[idLogFiles], 0x180, 0, uintptr(unsafe.Pointer(utf16Ptr("暂无结果或日志文件"))))
+		}
+	}
+	if f.page == pageLogs {
+		f.layout()
+	}
+	f.setStatus("结果视图已刷新。")
+}
+
+func (f *form) relatedLogFiles() []string {
+	result := f.resultPathOrDefault()
+	logPath := result + ".log"
+	if cfg, _, err := config.Load(strings.TrimSpace(windowText(f.ctrls[idConfig])), f.exeDir); err == nil && strings.TrimSpace(cfg.Output.LogFile) != "" {
+		logPath = cfg.Output.LogFile
+	}
+	return []string{result, logPath, result + ".journal.ndjson"}
+}
+
+func (f *form) filteredLogText() string {
+	text := f.logTextSnapshot()
+	if text == "" {
+		paths := f.relatedLogFiles()
+		if len(paths) > 1 {
+			if file, err := os.Open(paths[1]); err == nil {
+				defer file.Close()
+				if stat, err := file.Stat(); err == nil {
+					offset := stat.Size() - (96 << 10)
+					if offset < 0 {
+						offset = 0
+					}
+					file.Seek(offset, 0)
+					buffer := make([]byte, 96<<10)
+					n, _ := file.Read(buffer)
+					text = string(buffer[:n])
+				}
+			}
+		}
+	}
+	index := f.comboIndex(idLogFilter)
+	if index > 0 && index < 5 {
+		level := []string{"", "DEBUG", "INFO", "WARN", "ERROR"}[index]
+		text = filterLogLines(text, level)
+	}
+	if strings.TrimSpace(text) == "" {
+		text = "暂无匹配的日志。"
+	}
+	return toCRLF(text)
+}
+
+func (f *form) resultViewText() string {
+	var b strings.Builder
+	if f.page == pageLogs {
+		b.WriteString("当前会话日志\r\n")
+		b.WriteString(strings.Repeat("=", 32) + "\r\n")
+		if logText := f.logTextSnapshot(); strings.TrimSpace(logText) != "" {
+			b.WriteString(toCRLF(logText))
+			if !strings.HasSuffix(b.String(), "\r\n") {
+				b.WriteString("\r\n")
+			}
+		} else {
+			b.WriteString("暂无当前会话日志。\r\n")
+		}
+		b.WriteString("\r\n最近结果\r\n")
+		b.WriteString(strings.Repeat("=", 32) + "\r\n")
+	}
+	snap, ok := f.resultSnapshot()
+	if !ok {
+		b.WriteString("尚未读取到结果 JSON。\r\n")
+		b.WriteString("结果路径：" + f.resultPathOrDefault() + "\r\n")
+		b.WriteString("运行任务后点击“刷新”查看任务详情、逐文件结果和证据。\r\n")
+		return b.String()
+	}
+	b.WriteString(resultSnapshotReport(snap))
+	return b.String()
+}
+
+func (f *form) logTextSnapshot() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.logBuf) == 0 {
+		return ""
+	}
+	const maxView = 96 << 10
+	start := 0
+	if len(f.logBuf) > maxView {
+		start = len(f.logBuf) - maxView
+	}
+	return string(f.logBuf[start:])
+}
+
+func (f *form) copyResultView() {
+	h := f.ctrls[idResultView]
+	if h == 0 {
+		return
+	}
+	procSetFocus.Call(h)
+	send(h, emSetSel, 0, ^uintptr(0))
+	send(h, wmCopy, 0, 0)
+	f.setStatus("结果视图内容已复制。")
+}
+
+func toCRLF(s string) string {
+	out, _ := normalizeCRLF(s, false)
+	if !strings.HasSuffix(out, "\r\n") {
+		out += "\r\n"
+	}
+	return out
 }
 
 // ---------------------------------------------------------------- 日志

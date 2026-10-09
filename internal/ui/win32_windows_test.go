@@ -25,6 +25,10 @@ func TestWin32StructLayout(t *testing.T) {
 		{"NONCLIENTMETRICSW", unsafe.Sizeof(nonClientMetricsW{}), 504},
 		{"MINMAXINFO", unsafe.Sizeof(minMaxInfoT{}), 40},
 		{"RECT", unsafe.Sizeof(rectT{}), 16},
+		{"PAINTSTRUCT", unsafe.Sizeof(paintStruct{}), 72},
+		{"DRAWITEMSTRUCT", unsafe.Sizeof(buttonDrawItem{}), 64},
+		{"LVCOLUMNW", unsafe.Sizeof(listColumn{}), 56},
+		{"LVITEMW", unsafe.Sizeof(listItem{}), 88},
 	}
 	for _, c := range cases {
 		if c.got != c.want {
@@ -45,6 +49,8 @@ func TestWin32StructLayout(t *testing.T) {
 		{"MSG.WParam", unsafe.Offsetof(msgT{}.WParam), 16},
 		{"BROWSEINFOW.Callback", unsafe.Offsetof(browseInfoW{}.Callback), 40},
 		{"WNDCLASSEXW.WndProc", unsafe.Offsetof(wndClassEx{}.WndProc), 8},
+		{"DRAWITEMSTRUCT.DC", unsafe.Offsetof(buttonDrawItem{}.DC), 32},
+		{"LVITEMW.Text", unsafe.Offsetof(listItem{}.Text), 24},
 	}
 	for _, o := range offsets {
 		if o.got != o.want {
@@ -104,8 +110,8 @@ func TestCtlColorSchemeRoles(t *testing.T) {
 		t.Errorf("日志区配色 = (背景模式 %d, 画刷 %d)，期望 (不透明 %d, 白底 %d)", bk, brush, opaqueBk, colorWindow)
 	}
 	for name, role := range map[string]ctlRole{"标签": roleLabel, "状态行": roleStatus} {
-		if bk, brush := ctlColorScheme(role); bk != transparentBk || brush != color3DFace {
-			t.Errorf("%s配色 = (背景模式 %d, 画刷 %d)，期望 (透明 %d, 3D 面色 %d)", name, bk, brush, transparentBk, color3DFace)
+		if bk, brush := ctlColorScheme(role); bk != transparentBk || brush != colorWindow {
+			t.Errorf("%s配色 = (背景模式 %d, 画刷 %d)，期望 (透明 %d, 白底 %d)", name, bk, brush, transparentBk, colorWindow)
 		}
 	}
 }
@@ -188,5 +194,25 @@ func TestDropdownOptionsAlign(t *testing.T) {
 	}
 	if LogLevelIndex("debug") != 3 || LogLevelIndex("info") != 2 || LogLevelIndex("不存在的级别") != LogLevelIndex("info") {
 		t.Fatalf("日志级别下标映射错误：debug=%d info=%d 未知=%d", LogLevelIndex("debug"), LogLevelIndex("info"), LogLevelIndex("不存在的级别"))
+	}
+}
+
+func TestTaskSectionLayoutKeepsControlsBelowTitles(t *testing.T) {
+	f := &form{scale: 1}
+	sections := f.taskSectionRects(f.taskSurfaceRect(1020, 700))
+	if len(sections) != 4 {
+		t.Fatalf("任务页分区数量 = %d，期望 4", len(sections))
+	}
+	for i, section := range sections {
+		content := f.taskSectionContent(section.Rect)
+		if content.Top <= section.Rect.Top+26 {
+			t.Fatalf("分区 %q 内容区顶部 %d 过高，会压住标题区域 %+v", section.Title, content.Top, section.Rect)
+		}
+		if content.Bottom <= content.Top {
+			t.Fatalf("分区 %q 内容区高度无效：%+v", section.Title, content)
+		}
+		if i > 0 && sections[i-1].Rect.Bottom > section.Rect.Top {
+			t.Fatalf("分区 %q 与前一个分区重叠：前=%+v 当前=%+v", section.Title, sections[i-1].Rect, section.Rect)
+		}
 	}
 }

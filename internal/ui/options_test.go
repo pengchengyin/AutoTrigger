@@ -119,6 +119,67 @@ func TestWriteConfigFileNoClobber(t *testing.T) {
 	}
 }
 
+func TestConfigEditorBodyLoadsDiskOrDefaults(t *testing.T) {
+	dir := t.TempDir()
+	body, resolved, fromDisk, err := ConfigEditorBody("", dir)
+	if err != nil {
+		t.Fatalf("默认配置正文: %v", err)
+	}
+	if resolved != ConfigPath(dir) || fromDisk {
+		t.Fatalf("不存在 config.json 时应展示内置默认但不标记为落盘：path=%q fromDisk=%v", resolved, fromDisk)
+	}
+	if !strings.Contains(body, "timeout_sec") || !strings.Contains(body, "gui_automation") {
+		t.Fatalf("默认配置正文缺关键字段：%s", body)
+	}
+
+	path := ConfigPath(dir)
+	if err := os.WriteFile(path, []byte(`{"output":{"log_level":"debug"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body, resolved, fromDisk, err = ConfigEditorBody("", dir)
+	if err != nil {
+		t.Fatalf("读取落盘配置: %v", err)
+	}
+	if resolved != path || !fromDisk || body != `{"output":{"log_level":"debug"}}` {
+		t.Fatalf("落盘配置读取异常：body=%q path=%q fromDisk=%v", body, resolved, fromDisk)
+	}
+
+	if _, _, _, err = ConfigEditorBody(filepath.Join(dir, "missing.json"), dir); err == nil {
+		t.Fatal("显式指定不存在的配置文件应报错")
+	}
+}
+
+func TestWriteConfigEditorBodyValidatesBeforeOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	original := `{"output":{"log_level":"info"}}`
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteConfigEditorBody(path, `{"output":{"log_level":"verbose"}}`, dir); err == nil {
+		t.Fatal("无效配置保存前应被拦截")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != original {
+		t.Fatalf("无效配置不得覆盖原文件：%s", after)
+	}
+
+	warnings, err := WriteConfigEditorBody(path, `{"output":{"log_level":"debug"},"unknown_key":1}`, dir)
+	if err != nil {
+		t.Fatalf("未知字段只应 warning，不应保存失败: %v", err)
+	}
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "unknown_key") {
+		t.Fatalf("未知字段 warning 缺失：%v", warnings)
+	}
+	after, _ = os.ReadFile(path)
+	if !strings.Contains(string(after), `"debug"`) {
+		t.Fatalf("有效配置应写入：%s", after)
+	}
+}
+
 func TestNewOptionsDefaultsMatchCLI(t *testing.T) {
 	dir := t.TempDir()
 	o := NewOptions(dir)
