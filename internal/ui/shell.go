@@ -91,6 +91,7 @@ type statCard struct {
 }
 
 type templateInfo struct {
+	Entries         []templates.Entry
 	ResourceVersion string
 	Mode            string
 	TemplateDir     string
@@ -315,15 +316,22 @@ func loadTemplateInfoWithConfig(exeDir, path string) templateInfo {
 		dir = filepath.Join(exeDir, dir)
 	}
 	info := templateInfo{ResourceVersion: resources.Version, Mode: cfg.GUI.TemplatePack, TemplateDir: dir, Warnings: warnings}
-	lib, err := templates.Load(cfg.GUI, exeDir)
-	if err != nil {
-		info.Error = err.Error()
-		return info
+	for _, mode := range []string{"builtin", "external"} {
+		gui := cfg.GUI
+		gui.TemplatePack, gui.BuiltinTemplates = mode, true
+		lib, err := templates.Load(gui, exeDir)
+		if err != nil {
+			info.Error = err.Error()
+			continue
+		}
+		info.Masters += lib.Masters
+		info.Builtin += lib.BuiltinCount
+		info.External += lib.ExternalCount
+		info.Entries = append(info.Entries, lib.Entries...)
 	}
-	info.Masters = lib.Masters
-	info.Builtin = lib.BuiltinCount
-	info.External = lib.ExternalCount
-	info.Warnings = append(info.Warnings, lib.Warnings...)
+	if info.Builtin == 0 {
+		info.Warnings = append(info.Warnings, "内置图像模板尚未收录；内置关键词与规则仍可使用。")
+	}
 	return info
 }
 

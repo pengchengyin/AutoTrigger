@@ -99,6 +99,16 @@ const (
 	idOCRScoreLabel
 	idOCRScore
 	idTaskSearchLabel
+	idTemplateImport
+	idTemplateExport
+	idTemplateCheck
+	idTemplateBody
+	idTemplateStatus
+	idTemplateUseBuiltin
+	idTemplateUseExternal
+	idTemplateDetailsMerged
+	idTemplateDetailsBuiltin
+	idTemplateDetailsExternal
 )
 
 // 布局常量，单位为 96 DPI 下的像素（实际值经 scale 换算）。
@@ -149,6 +159,8 @@ type form struct {
 	templates           templateInfo
 	configOpen          bool
 	templateTab         int
+	templateChecking    bool
+	templateCheckResult chan templateCheckResult
 	terminalBrush       uintptr
 	logFiles            []string
 	checkingPrereq      bool
@@ -439,7 +451,17 @@ func (f *form) createControls() {
 	f.button(idTemplateAll, "全部模板")
 	f.button(idTemplateBuiltin, "内置模板")
 	f.button(idTemplateExternal, "自定义模板")
-	f.button(idTemplateUse, "使用此模板库")
+	f.button(idTemplateUse, "使用")
+	f.button(idTemplateUseBuiltin, "使用")
+	f.button(idTemplateUseExternal, "使用")
+	f.button(idTemplateImport, "+ 导入模板")
+	f.button(idTemplateExport, "导出内置资源")
+	f.button(idTemplateCheck, "校验模板")
+	for _, id := range []int{idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal} {
+		f.button(id, "详情")
+	}
+	f.label(idTemplateStatus, "")
+	f.addControl(idTemplateBody, "EDIT", "", wsChild|wsTabStop|wsVScroll|esMultiline|esAutoVScroll|esReadOnly, wsExClientEdge)
 	f.button(idSettingsSave, "保存设置")
 	f.label(idOCREngineLabel, "OCR 引擎")
 	f.combo(idOCREngine, []string{"PaddleOCR-json", "RapidOCR-json", "Umi-OCR", "Tesseract", "Windows OCR", "不使用 OCR"}, 0)
@@ -519,18 +541,14 @@ func (f *form) layout() {
 	procShowWindow.Call(f.ctrls[idOCREngineLabel], swHide)
 	procShowWindow.Call(f.ctrls[idOCREngine], swHide)
 	procShowWindow.Call(f.ctrls[idLogFilter], swHide)
-	for _, id := range []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse} {
+	for _, id := range templateControlIDs {
 		procShowWindow.Call(f.ctrls[id], swHide)
 	}
 	switch f.page {
 	case pageSettings:
 		f.layoutSettingsPage(clientW, clientH)
 	case pageTemplates:
-		r := f.taskSurfaceRect(clientW, clientH)
-		for i, id := range []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse} {
-			procShowWindow.Call(f.ctrls[id], swShow)
-			f.place(id, int(r.Left)+f.px(18+i*150), int(r.Top)+f.px(12), f.px(140), f.px(32))
-		}
+		f.layoutTemplates(clientW, clientH)
 	case pageTask:
 		f.layoutTaskList(clientW, clientH)
 	case pageNewTask:
@@ -843,48 +861,28 @@ func (f *form) saveSettings() bool {
 	return true
 }
 
-func (f *form) useTemplatePack() {
+func (f *form) applyTemplatePack(mode, dir string) bool {
 	body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), f.exeDir)
 	if f.configOpen {
 		body, err = windowText(f.ctrls[idCfgEditor]), nil
 	}
 	if err != nil {
-		f.setStatusKind(err.Error(), statusKindFail)
-		return
+		f.templateNotice("无法使用模板库：" + err.Error())
+		return false
 	}
-	var doc map[string]json.RawMessage
-	if err = json.Unmarshal([]byte(body), &doc); err != nil {
-		f.setStatusKind(err.Error(), statusKindFail)
-		return
-	}
-	var gui map[string]interface{}
-	if raw := doc["gui_automation"]; len(raw) > 0 {
-		err = json.Unmarshal(raw, &gui)
-	}
+	b, err := templateConfigBody(body, mode, dir)
 	if err != nil {
-		f.setStatusKind(err.Error(), statusKindFail)
-		return
-	}
-	if gui == nil {
-		gui = map[string]interface{}{}
-	}
-	gui["template_pack"] = []string{"merged", "builtin", "external"}[f.templateTab]
-	if f.templateTab != 2 {
-		gui["builtin_templates"] = true
-	}
-	doc["gui_automation"], _ = json.Marshal(gui)
-	b, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		f.setStatusKind(err.Error(), statusKindFail)
-		return
+		f.templateNotice("无法使用模板库：配置草稿无效，请到设置中修正。\r\n" + err.Error())
+		return false
 	}
 	f.settingsAdvanced = true
 	f.settingsRecognition = false
 	f.setPage(pageSettings)
-	setWindowTextRaw(f.ctrls[idCfgEditor], toCRLF(string(b)))
+	setWindowTextRaw(f.ctrls[idCfgEditor], toCRLF(b))
 	f.configOpen = true
 	setWindowTextRaw(f.ctrls[idCfgStatus], "模板库已选入配置；保存后用于执行。")
 	f.layout()
+	return true
 }
 
 func (f *form) showTaskControls(visible bool) {
@@ -943,6 +941,9 @@ func (f *form) showResultControls(visible bool) {
 // 本工具每进程只有一个窗口与一次类注册，无需 GWLP_USERDATA 中转。
 func (f *form) wndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Pointer) uintptr {
 	switch msg {
+	case wmAppTemplate:
+		f.finishTemplateCheck()
+		return 0
 	case wmAppLog:
 		f.flushLog()
 		if f.page == pageLogs {
@@ -1210,6 +1211,7 @@ func (f *form) openTemplateDir() {
 
 func (f *form) reloadTemplates() {
 	f.templates = loadTemplateInfoWithConfig(f.exeDir, strings.TrimSpace(windowText(f.ctrls[idConfig])))
+	f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
 	if f.templates.Error != "" {
 		f.setStatusKind("模板刷新失败："+f.templates.Error, statusKindFail)
 	} else if len(f.templates.Warnings) > 0 {
@@ -1231,6 +1233,10 @@ func (f *form) setPage(page pageID) {
 	}
 	f.page = page
 	f.hoverPage = pageNone
+	if page == pageTemplates {
+		f.templates = loadTemplateInfoWithConfig(f.exeDir, strings.TrimSpace(windowText(f.ctrls[idConfig])))
+		f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
+	}
 	f.layout()
 	if page == pageTask {
 		f.refreshTaskList()
@@ -1359,9 +1365,24 @@ func (f *form) onCommand(id, code int) {
 			f.copyResultView()
 		case idTemplateAll, idTemplateBuiltin, idTemplateExternal:
 			f.templateTab = id - idTemplateAll
-			procInvalidateRect.Call(f.hwnd, 0, 1)
+			f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
+			f.layout()
 		case idTemplateUse:
-			f.useTemplatePack()
+			f.applyTemplatePack("merged", "")
+		case idTemplateUseBuiltin:
+			f.applyTemplatePack("builtin", "")
+		case idTemplateUseExternal:
+			f.useExternalTemplates()
+		case idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal:
+			f.showTemplateDetails([]string{"merged", "builtin", "external"}[id-idTemplateDetailsMerged])
+		case idTemplateImport:
+			if dir, ok := pickFolderDialog(f.hwnd, "选择包含 templates.index.json 的模板目录"); ok {
+				f.importTemplateDir(dir)
+			}
+		case idTemplateExport:
+			f.exportTemplateResources()
+		case idTemplateCheck:
+			f.checkTemplates()
 		case idSettingsSave:
 			f.saveSettings()
 		case idRecursive, idNoArchive, idNoOCR, idLock:

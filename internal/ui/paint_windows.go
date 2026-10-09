@@ -398,28 +398,26 @@ func (f *form) paintInfoCard(hdc uintptr, r rectT, card infoCard) {
 }
 
 func (f *form) paintTemplateGrid(hdc uintptr, bounds rectT) {
-	bounds.Top += int32(f.px(56))
 	cards := []infoCard{
-		{Title: "内置模板资源包", Lines: []string{"资源版本：" + valueOr(f.templates.ResourceVersion, "unknown"), "母版：" + strconvI(f.templates.Masters), "变体：" + strconvI(f.templates.Builtin)}, Kind: templateKind(f.templates)},
-		{Title: "外部模板目录", Lines: []string{valueOr(f.templates.TemplateDir, "-"), "外部变体：" + strconvI(f.templates.External), "点击右上角打开目录"}, Kind: "info"},
-		{Title: "关键词表", Lines: []string{"buttons.zh-CN.json", "buttons.en-US.json", "用于 UIA / OCR 语义仲裁"}, Kind: "ok"},
-		{Title: "静默参数表", Lines: []string{"silent_params.windows.json", "按安装器类型选择参数"}, Kind: "ok"},
-		{Title: "入口与排除规则", Lines: []string{"install_entries / exclude_entries", "避免误触发卸载/修复入口"}, Kind: "warn"},
-		{Title: "GUI 规则", Lines: []string{"gui_rules.json", "限制自动点击动作边界"}, Kind: "run"},
+		{Title: "合并模板库", Lines: []string{"内置为底，自定义按 ID 覆盖", "默认推荐 · merged"}, Kind: "info"},
+		{Title: "内置模板库", Lines: []string{"图像模板：" + strconvI(f.templates.Builtin) + " 个", "关键词 / 静默参数 / 识别规则"}, Kind: "ok"},
+		{Title: "自定义模板库", Lines: []string{"图像模板：" + strconvI(f.templates.External) + " 个", "只使用外部模板 · external"}, Kind: "warn"},
 	}
-	if f.templateTab == 1 {
-		cards = cards[:1]
+	w, h := f.clientSize()
+	for i, r := range f.templateCardRects(w, h) {
+		if r.Right == 0 {
+			continue
+		}
+		f.paintInfoCard(hdc, r, cards[i])
+		label := []string{"合并", "内置", "自定义"}[i]
+		color := statColor(cards[i].Kind)
+		if f.templates.Mode == []string{"merged", "builtin", "external"}[i] {
+			label = "当前使用"
+		}
+		badge := rectT{Left: r.Right - int32(f.px(88)), Top: r.Top + int32(f.px(76)), Right: r.Right - int32(f.px(14)), Bottom: r.Top + int32(f.px(100))}
+		roundRect(hdc, badge, modernTheme.surface, color, f.px(4))
+		drawText(hdc, label, badge, color, f.font, dtCenter|dtVCenter|dtSingleLine)
 	}
-	if f.templateTab == 2 {
-		cards = cards[1:2]
-	}
-	if f.templates.Error != "" {
-		cards = append([]infoCard{{Title: "模板加载错误", Lines: []string{f.templates.Error}, Kind: "fail"}}, cards...)
-	}
-	if len(f.templates.Warnings) > 0 {
-		cards = append(cards, infoCard{Title: "资源警告", Lines: f.templates.Warnings, Kind: "warn"})
-	}
-	f.paintInfoCards(hdc, bounds, cards)
 }
 
 func (f *form) paintLogViewer(hdc uintptr, bounds rectT) {

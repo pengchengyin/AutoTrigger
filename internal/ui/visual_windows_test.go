@@ -106,6 +106,11 @@ func TestWindowsVisualClicks(t *testing.T) {
 		t.Fatal("external template tab failed")
 	}
 	capture("templates-external")
+	send(f.ctrls[idTemplateUseExternal], 0xF5, 0, 0)
+	if f.page != pageTemplates || !strings.Contains(windowText(f.ctrls[idTemplateBody]), "无法使用自定义模板") {
+		t.Fatal("empty external library was accepted")
+	}
+	send(f.ctrls[idTemplateAll], 0xF5, 0, 0)
 	send(f.ctrls[idTemplateUse], 0xF5, 0, 0)
 	if f.page != pageSettings || !f.settingsAdvanced {
 		t.Fatal("template use did not open config")
@@ -115,6 +120,64 @@ func TestWindowsVisualClicks(t *testing.T) {
 	}
 	capture("template-config")
 	send(f.ctrls[idCfgSave], 0xF5, 0, 0)
+	f.setPage(pageTemplates)
+	waitTemplateCheck := func() {
+		deadline := time.Now().Add(3 * time.Second)
+		for f.templateChecking && time.Now().Before(deadline) {
+			var message msgT
+			for {
+				available, _, _ := user32.NewProc("PeekMessageW").Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0, 1)
+				if available == 0 {
+					break
+				}
+				procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
+				procDispatchMessageW.Call(uintptr(unsafe.Pointer(&message)))
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	f.checkTemplates()
+	waitTemplateCheck()
+	if f.templateChecking || !strings.Contains(windowText(f.ctrls[idTemplateBody]), "模板校验未通过") {
+		t.Fatal("empty templates were reported as passing")
+	}
+	customDir := t.TempDir()
+	beforeDraft := windowText(f.ctrls[idCfgEditor])
+	f.importTemplateDir(customDir)
+	if f.page != pageTemplates || windowText(f.ctrls[idCfgEditor]) != beforeDraft {
+		t.Fatal("invalid import changed configuration")
+	}
+	writeTemplateFixture(t, customDir, false)
+	f.importTemplateDir(customDir)
+	if f.page != pageSettings || !strings.Contains(windowText(f.ctrls[idCfgEditor]), "template_dir") {
+		t.Fatal("template import did not stage CLI configuration")
+	}
+	send(f.ctrls[idCfgSave], 0xF5, 0, 0)
+	f.setPage(pageTemplates)
+	if f.templates.External != 1 {
+		t.Fatal("saved custom template inventory missing")
+	}
+	f.checkTemplates()
+	waitTemplateCheck()
+	if f.templateChecking || !strings.Contains(windowText(f.ctrls[idTemplateBody]), "校验通过：1") {
+		t.Fatal("valid template did not pass source self-test")
+	}
+	capture("templates-validated")
+	parent := t.TempDir()
+	f.exportTemplateResourcesTo(parent)
+	exports, _ := filepath.Glob(filepath.Join(parent, "AutoTrigger-resources-*", "templates", "templates.index.json"))
+	if len(exports) != 1 {
+		t.Fatal("builtin resource export missing index")
+	}
+	send(f.ctrls[idTemplateDetailsBuiltin], 0xF5, 0, 0)
+	if !strings.Contains(windowText(f.ctrls[idTemplateBody]), "buttons.zh-CN.json") {
+		t.Fatal("builtin rule details missing")
+	}
+	procMoveWindow.Call(f.hwnd, 0, 0, uintptr(f.px(920)), uintptr(f.px(600)), 1)
+	f.layout()
+	capture("templates-small")
+	procMoveWindow.Call(f.hwnd, 0, 0, uintptr(f.px(1020)), uintptr(f.px(700)), 1)
+	f.layout()
 	f.setPage(pageSettings)
 	send(f.ctrls[idSettingsBasic], 0xF5, 0, 0)
 	setWindowTextRaw(f.ctrls[idTimeout], "7")
