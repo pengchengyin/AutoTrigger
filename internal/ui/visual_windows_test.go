@@ -145,6 +145,9 @@ func TestWindowsVisualClicks(t *testing.T) {
 	}
 	fixturePath := filepath.Join(f.exeDir, "history-ui-test.json")
 	fixture := schema.Result{TaskID: "ui-test-history", StartedAt: time.Now(), Summary: schema.Summary{Total: 1, ByStatus: map[string]int{"skipped": 1}}}
+	finished := fixture.StartedAt.Add(12 * time.Second)
+	fixture.FinishedAt = &finished
+	fixture.Results = []schema.FileResult{{FilePath: filepath.Join(f.exeDir, "ui-test-only.exe"), FileSizeBytes: 1048576, DetectedType: "exe", FinalStatus: "skipped", Notes: "界面测试样本，未执行安装"}}
 	fixtureBytes, _ := json.Marshal(fixture)
 	if err := os.WriteFile(fixturePath, fixtureBytes, 0600); err != nil {
 		t.Fatal(err)
@@ -162,6 +165,11 @@ func TestWindowsVisualClicks(t *testing.T) {
 		t.Fatal("history detail navigation failed")
 	}
 	capture("task-detail")
+	procMoveWindow.Call(f.hwnd, 0, 0, uintptr(f.px(920)), uintptr(f.px(600)), 1)
+	f.layout()
+	capture("task-detail-small")
+	procMoveWindow.Call(f.hwnd, 0, 0, uintptr(f.px(1020)), uintptr(f.px(700)), 1)
+	f.layout()
 	f.performHeaderAction("back-tasks")
 	if f.page != pageTask {
 		t.Fatal("detail back failed")

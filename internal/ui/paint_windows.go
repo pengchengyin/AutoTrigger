@@ -494,36 +494,40 @@ func paintToolIcon(dc uintptr, r rectT) {
 
 func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 	if snap, ok := f.resultSnapshot(); ok {
-		top := rectT{Left: bounds.Left, Top: bounds.Top, Right: bounds.Right, Bottom: bounds.Top + int32(f.px(180))}
 		name := snap.TaskID
+		var selected taskRecord
 		for _, record := range f.history {
 			if record.Result == snap.Path {
 				name = record.Name
+				selected = record
 				break
 			}
 		}
-		started := "未提供"
-		if !snap.StartedAt.IsZero() {
-			started = snap.StartedAt.Local().Format("2006-01-02 15:04:05")
-		}
-		finished := "未提供"
-		if snap.FinishedAt != nil {
-			finished = snap.FinishedAt.Local().Format("2006-01-02 15:04:05")
-		}
-		cards := []infoCard{
-			{Title: "任务信息", Lines: []string{name, valueOr(snap.TaskID, "-"), "结果文件：" + snap.Path}, Kind: "info"},
-			{Title: "执行信息", Lines: []string{"开始：" + started, "结束：" + finished}, Kind: "info"},
-			{Title: "总体结论", Lines: []string{schemaOutcomeText(snap), schema.SummaryLine(snap.Summary.ByStatus, snap.Summary.Total)}, Kind: outcomeKind(snap)},
-		}
-		if snap.Error != "" {
-			cards[2].Lines = append(cards[2].Lines, "原因："+snap.Error)
-		}
+		cards := detailCards(snap, selected)
 		pad, gap := f.px(18), f.px(12)
-		width := (int(top.Right-top.Left) - 2*pad - 2*gap) / 3
-		for i, card := range cards {
-			left := int(top.Left) + pad + i*(width+gap)
-			f.paintInfoCard(hdc, rectT{Left: int32(left), Top: top.Top + int32(pad), Right: int32(left + width), Bottom: top.Top + int32(pad+f.px(142))}, card)
+		left, right := bounds.Left+int32(pad), bounds.Right-int32(pad)
+		status := schemaOutcomeText(snap)
+		if len(snap.Rows) == 1 && snap.Error == "" {
+			status = snap.Rows[0].Status
 		}
+		drawText(hdc, valueOr(name, "任务详情"), rectT{Left: left, Top: bounds.Top + int32(f.px(16)), Right: right - int32(f.px(220)), Bottom: bounds.Top + int32(f.px(42))}, modernTheme.text, f.statusFontOrDefault(), dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+		drawText(hdc, "任务 ID："+valueOr(snap.TaskID, "未提供"), rectT{Left: left, Top: bounds.Top + int32(f.px(42)), Right: right, Bottom: bounds.Top + int32(f.px(64))}, modernTheme.muted, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+		badge := rectT{Left: right - int32(f.px(210)), Top: bounds.Top + int32(f.px(18)), Right: right, Bottom: bounds.Top + int32(f.px(46))}
+		roundRect(hdc, badge, modernTheme.surfaceAlt, statColor(outcomeKind(snap)), f.px(6))
+		drawText(hdc, status, badge, statColor(outcomeKind(snap)), f.font, dtCenter|dtVCenter|dtSingleLine|dtEndEllipsis)
+		width := (int(bounds.Right-bounds.Left) - 2*pad - 2*gap) / 3
+		for i, card := range cards {
+			x := int(left) + i*(width+gap)
+			f.paintInfoCard(hdc, rectT{Left: int32(x), Top: bounds.Top + int32(f.px(76)), Right: int32(x + width), Bottom: bounds.Top + int32(f.px(220))}, card)
+		}
+		banner := rectT{Left: left, Top: bounds.Top + int32(f.px(232)), Right: right, Bottom: bounds.Top + int32(f.px(272))}
+		roundRect(hdc, banner, modernTheme.surfaceAlt, statColor(outcomeKind(snap)), f.px(6))
+		message := status + " · " + schema.SummaryLine(snap.Summary.ByStatus, snap.Summary.Total)
+		if snap.Error != "" {
+			message = "任务失败：" + snap.Error
+		}
+		banner.Left += int32(f.px(12))
+		drawText(hdc, message, banner, statColor(outcomeKind(snap)), f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 		return
 	}
 	cards := pageCards(pageTaskDetail, f.currentOptions(), f.exeDir, f.templates, nil, f.isRunning())

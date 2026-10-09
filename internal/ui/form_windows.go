@@ -692,7 +692,7 @@ func (f *form) layoutResultControls(clientW, clientH int) {
 	right := int(r.Right) - pad
 	top := int(r.Top) + pad
 	if f.page == pageTaskDetail {
-		top += f.px(164)
+		top = int(r.Top) + f.px(286)
 	}
 	rowH := f.px(uiRowH)
 	gap := f.px(uiGapX)
@@ -721,7 +721,7 @@ func (f *form) layoutResultControls(clientW, clientH int) {
 		viewTop = top + rowH + f.px(10)
 		viewH = int(r.Bottom) - pad - viewTop
 	}
-	if viewH < f.px(120) {
+	if viewH < f.px(120) && f.page != pageTaskDetail {
 		viewH = f.px(120)
 	}
 	f.place(idResultView, left, viewTop, right-left, viewH)

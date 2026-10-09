@@ -126,6 +126,7 @@ type pageAction struct {
 }
 
 type resultRow struct {
+	SizeBytes  int64
 	File       string
 	Path       string
 	Type       string
@@ -230,6 +231,7 @@ func readResultSnapshot(path string) (resultSnapshot, bool) {
 		}
 		method, evidence := resultAttemptSummary(r.Attempts)
 		snap.Rows = append(snap.Rows, resultRow{
+			SizeBytes:  r.FileSizeBytes,
 			File:       filepath.Base(r.FilePath),
 			Path:       r.FilePath,
 			Type:       valueOr(r.DetectedType, "-"),
