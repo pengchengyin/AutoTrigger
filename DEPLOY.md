@@ -66,6 +66,7 @@ third_party/ocr/RapidOCR-json_v0.2.0.7z
 | `install_verify.snapshot_depth` / `snapshot_max_entries` | 2 / 20000 |
 | `install_verify.settle_sec` / `quiet_polls` / `settle_max_sec` | 3 / 3 / 30 |
 | `install_verify.require_artifact` / `launch_check` | true / false；本期 launch_check=true 报配置错误 |
+| `msi.keep_verbose_log` / `msi.log_dir` | true / 空；未判安装成功的 MSI 样本会把 `/L*v` 日志复制到 `log_dir`（留空 = 结果文件同目录的 `<结果名>-msi-logs\`），装失败时靠它定位 1603 之类的原因 |
 | `lock.enabled` / `wait_sec` | true / 0；调用方自己串行排队 |
 | `output.journal` / `keep_journal_on_success` | true / false |
 | `output.log_level` / `max_file_size_mb` | info / 64；超限先删除 attempts 明细，保留固定记录 |

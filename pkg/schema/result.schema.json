@@ -423,6 +423,16 @@
                 "method": {
                   "type": "string"
                 },
+                "msi_log": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "result": {
                   "type": "string"
                 },
@@ -450,6 +460,7 @@
                 "gui_actions",
                 "stdout_summary",
                 "stderr_summary",
+                "msi_log",
                 "error"
               ],
               "type": "object"

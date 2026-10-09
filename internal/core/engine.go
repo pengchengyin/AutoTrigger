@@ -40,8 +40,11 @@ type Engine struct {
 	DumpDir         string
 	IgnorePaths     []string
 	MissingArchive  bool
-	Err             error
-	temps           []string
+	// ResultPath 是结果 JSON 的最终写入路径（`-` 表示写 stdout）。
+	// 失败样本的 MSI 详细日志默认留在它旁边，便于现场排查（F15.10）。
+	ResultPath string
+	Err        error
+	temps      []string
 }
 
 func (e *Engine) Run(ctx context.Context, input string) error {
@@ -385,7 +388,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		}
 		e.Log.Stage(logging.LevelInfo, logging.StageVerify, "第 %d/%d 次尝试判定：%s（置信度 %s）", i+1, len(commands), schema.StatusText(d.Status), confidence)
 		for _, c := range d.Conflicts {
-			e.Log.Stage(logging.LevelWarn, logging.StageVerify, "证据冲突（%s）：%s", c.ID, c.Detail)
+			e.Log.Stage(logging.LevelWarn, logging.StageVerify, "证据冲突（%s）：%s", c.ID, verify.ConflictText(c))
 		}
 		if d.Status == "install_completed" || e.DumpDir != "" {
 			break
@@ -400,6 +403,8 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		f.Notes = "terminated on timeout; installation evidence still collected"
 		e.Log.Stage(logging.LevelWarn, logging.StageRun, "安装进程因超时被终止，但仍采集到安装证据：%s", path)
 	}
+	// 临时目录随任务结束被删；先把手头这份"失败排查依据"搬出去。
+	e.keepFailureLogs(path, f)
 	return f
 }
 

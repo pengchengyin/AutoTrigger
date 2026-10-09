@@ -370,7 +370,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		return finish(3, err)
 	}
 	defer deps.NativeGUI.Close()
-	engine := core.Engine{Config: cfg, Runner: deps.Runner, Detector: detect.Detector{}, Trigger: deps.Trigger(cfg, pack), Opener: deps.Opener, Mounter: deps.Mounter, Extractor: extractor, Evidence: deps.Evidence, GUI: automator, Log: logger, Pack: pack, Result: &result, Recursive: opts.Recursive, IgnorePaths: []string{resultPath, logPath, resultPath + ".tmp", resultPath + ".journal.ndjson", exe}}
+	engine := core.Engine{Config: cfg, Runner: deps.Runner, Detector: detect.Detector{}, Trigger: deps.Trigger(cfg, pack), Opener: deps.Opener, Mounter: deps.Mounter, Extractor: extractor, Evidence: deps.Evidence, GUI: automator, Log: logger, Pack: pack, Result: &result, Recursive: opts.Recursive, ResultPath: resultPath, IgnorePaths: []string{resultPath, logPath, resultPath + ".tmp", resultPath + ".journal.ndjson", exe}}
 	engine.DisableArchives = opts.NoArchive
 	if opts.DumpUI {
 		engine.DumpDir = opts.Out

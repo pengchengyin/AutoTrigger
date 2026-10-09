@@ -5,7 +5,7 @@
   产物 `dist/AutoTrigger.exe`（v0.1.0，Schema 2.8，资源包 0.1.0）。
 - 主题：离线 Windows 沙箱中"自动触发/安装任意文件样本"供 EDR 采集行为。Go 1.20.x 单文件、
   Win7 SP1+、外部 7-Zip 与 OCR 前置、安装成功优先。
-- 权威文档：`自动安装工具prd-v2.16.md`（唯一 PRD）；另 `docs/图像模板制作说明.md`(D17)、
+- 权威文档：`自动安装工具prd-v2.17.md`（唯一 PRD）；另 `docs/图像模板制作说明.md`(D17)、
   `docs/架构说明.md`、`docs/验收状态.md`、`README.md`、`DEPLOY.md`。
 
 ## 用户约定（务必遵守）
@@ -38,18 +38,27 @@
   `.md` 保持**无 BOM + LF**。
 - 环境：Win10 build 26200 / i7-13700H / PowerShell 5.1；未安装任何 OCR 引擎。
 
-## 当前文档状态（v2.16）
+## 当前文档状态（v2.17）
 - `schema_version: 2.8`；已定案：判定宽松（DC19）、单实例串行 + 单文件 600s（DC20）、
   watch_dirs 五处（C35）、内置资源包（C40）、跨平台扩展（4.8）、CLI 帮助面（C42）、
   **图形操作界面（DC21 / C43 / F20：双击即用、input 可选文件/文件夹、配置生成与编辑、命令预览）**、
   **界面日志区渲染修正（C44）**、**日志友好化 + 彩色结果提示 + 两个下拉框（C45 / F20.6）**、
-  **界面超时预填 5 分钟而 CLI 维持 600 秒（DC22，预填值例外）**。
+  **界面超时预填 5 分钟而 CLI 维持 600 秒（DC22，预填值例外）**、
+  **失败样本保留安装器详细日志、MSI 日志按 UTF-16 解码（DC23 / C46 / F15.10）**。
 - 退出码：0 完成 / 1 异常 / 2 参数路径非法 / 3 配置错误 / 4 缺 7-Zip / 5 缺 OCR /
-  6 已运行 / 130 中止。交付物 D1~D17；验收 **A1~A33**。
+  6 已运行 / 130 中止。交付物 D1~D17；验收 **A1~A34**。
 - **GUI 关键实现事实**：`internal/ui`（`_windows` 实现 + `_other` stub）；双击判据 =
   `GetConsoleMode` 成功 **且** `GetConsoleProcessList` 进程数为 1；`--gui` 必须单独使用，
   否则退出码 2；界面不复制业务逻辑，只把参数拼成 args 交给 `cli.Run`，且**始终显式发出
   `--timeout <秒>`**（预填 300）。
+- **Windows 文本编码两大坑**（本机实测）：
+  ① **msiexec 的 `/L*v` 详细日志是 UTF-16LE + BOM（`FF FE`）**；其**本地化控制台消息也是
+  UTF-16LE 但常不带 BOM**。按 UTF-8 直接 `string(data)` 会得到"夹 NUL 的乱码"，后果是
+  **判定层扫日志关键词（B1 证据）永远匹配不上**、结果 JSON 的 `stdout_summary` 不可读。
+  修法：按 BOM 判定；无 BOM 时按 **NUL 落在奇数位/偶数位** 判 UTF-16LE/BE（普通 UTF-8 与
+  GBK 都不含 0x00，故不会误判）；尾部截断必须**对齐偶数边界**。
+  不允许引入 `golang.org/x/text` 转代码页（零依赖，DC2）。
+  ② 只读多行 EDIT 只认 CRLF、发的是 `WM_CTLCOLORSTATIC`（见 C44/C45）。
 - **GUI 渲染两大坑**：① 只读多行 EDIT 发的是 **`WM_CTLCOLORSTATIC`（0x0138）**，
   不是 `WM_CTLCOLOREDIT` —— 与 STATIC 标签共用"透明背景"会导致滚动时**文字重影**（C44）；
   ② 多行 EDIT **只在 CRLF 处折行**，日志用纯 `\n` 会不换行 → 写入前须 `normalizeCRLF` 归一

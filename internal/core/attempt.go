@@ -8,7 +8,6 @@ import (
 	"autotrigger/pkg/schema"
 	"context"
 	"fmt"
-	"os"
 	"time"
 )
 
@@ -145,11 +144,19 @@ loop:
 	}
 	if cmd.LogPath != "" {
 		a.Command += fmt.Sprintf(" [log=%s]", cmd.LogPath)
-		if data, err := os.ReadFile(cmd.LogPath); err == nil {
-			if len(data) > 65536 {
-				data = data[len(data)-65536:]
+		a.MSILog = schema.String(cmd.LogPath)
+		// MSI 的 /L*v 日志是 UTF-16LE，必须按 BOM 解码后再用（详见 loadInstallerLog）。
+		if text := loadInstallerLog(cmd.LogPath, installerLogTailBytes); text != "" {
+			if len(text) > 65536 {
+				text = text[len(text)-65536:]
 			}
-			a.StdoutSummary += string(data)
+			a.StdoutSummary += text
+			// 失败时把日志里最有诊断价值的一两行摘出来：1603 这类码本身不说明问题。
+			if cmd.MSI && a.ExitCode != nil && !verify.MSICodeIsSuccess(*a.ExitCode) {
+				if hint := msiFailureHint(text); hint != "" {
+					e.Log.Stage(logging.LevelWarn, logging.StageVerify, "MSI 详细日志要点：%s", hint)
+				}
+			}
 		}
 	}
 	// A later successful GUI finish supersedes earlier transient failure-page observations.

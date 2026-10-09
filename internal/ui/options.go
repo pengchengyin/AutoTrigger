@@ -292,7 +292,9 @@ func ResultBanner(exit int, s *ResultSummary, resultPath string) ([]string, stri
 	} else {
 		lines = append(lines, "  "+cli.ExitText(exit))
 	}
-	lines = append(lines, "  工具状态：退出码 "+strconv.Itoa(exit)+"（"+cli.ExitText(exit)+"）")
+	// 用「——」而不是括号：退出码中文说明里自带括号（如「处理完成（具体结果见结果 JSON）」），
+	// 再套一层会写成「退出码 0（处理完成（…））」，嵌套括号读起来很别扭。
+	lines = append(lines, "  工具状态：退出码 "+strconv.Itoa(exit)+" —— "+cli.ExitText(exit))
 	if p := strings.TrimSpace(resultPath); p != "" && p != "-" {
 		lines = append(lines, "  结果文件："+p)
 		lines = append(lines, "  完整日志："+p+".log")

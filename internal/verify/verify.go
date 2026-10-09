@@ -149,7 +149,7 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		add("N5", "N", "filesystem_shrunk", "filesystem", fmt.Sprintf("%d removed entities", removed))
 	}
 	if exit != nil {
-		if cmd.MSI && (*exit == 0 || *exit == 3010 || *exit == 1641) {
+		if cmd.MSI && MSICodeIsSuccess(*exit) {
 			add("S3", "S", "msi_success_code", "msiexec", fmt.Sprint(*exit))
 			o.RequiresReboot = *exit == 3010 || *exit == 1641
 		} else if *exit == 0 {

@@ -164,6 +164,7 @@ type Attempt struct {
 	GUIActions       []GUIAction `json:"gui_actions"`
 	StdoutSummary    string      `json:"stdout_summary"`
 	StderrSummary    string      `json:"stderr_summary"`
+	MSILog           *string     `json:"msi_log"`
 	Error            *string     `json:"error"`
 }
 

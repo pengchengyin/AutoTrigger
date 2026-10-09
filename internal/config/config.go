@@ -29,6 +29,7 @@ type Config struct {
 	GUI                    GUI           `json:"gui_automation"`
 	OCR                    OCR           `json:"ocr"`
 	Verify                 Verify        `json:"install_verify"`
+	MSI                    MSI           `json:"msi"`
 	Lock                   Lock          `json:"lock"`
 	DLLExportProbeCount    int           `json:"dll_export_probe_count"`
 	Output                 Output        `json:"output"`
@@ -55,6 +56,17 @@ type ISO struct {
 	KeepExtractedOnSuccess   bool   `json:"keep_extracted_on_success"`
 	MotWPolicy               string `json:"motw_policy"`
 }
+
+// MSI 控制 Windows Installer 样本的详细日志处理。
+//
+// 背景：msiexec 的 /L*v 日志写在临时工作目录里，而临时目录在任务结束时被整体删除 ——
+// 偏偏在"安装失败要查日志"的时候把日志删了。开启本项后，**未判为安装成功的样本**
+// 会把各次尝试的详细日志复制到 log_dir（留空 = 结果文件同目录下的 <结果名>-msi-logs\）再清理临时目录。
+type MSI struct {
+	KeepVerboseLog bool   `json:"keep_verbose_log"`
+	LogDir         string `json:"log_dir"`
+}
+
 type PackageLayout struct {
 	Enabled             bool   `json:"enabled"`
 	Mode                string `json:"mode"`

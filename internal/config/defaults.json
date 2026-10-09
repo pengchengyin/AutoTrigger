@@ -9,6 +9,7 @@
   "gui_automation":{"enabled":true,"poll_interval_ms":500,"click_jitter_px":3,"max_actions_per_window":10,"keyword_file":"buttons.zh-CN.json","template_pack":"merged","template_dir":"templates","template_dpi_mode":"auto","template_theme":"auto","template_min_similarity":0.86,"builtin_templates":true,"dump_failed_shots":false},
   "ocr":{"enabled":true,"engine":"paddleocr_json","engine_path":"auto","transport":"stdio","tcp_port":0,"startup_timeout_ms":10000,"recognize_timeout_ms":3000,"keep_alive":true,"restart_on_failure":true,"max_restarts":2,"require_ocr":false,"min_score":0.6,"roi_padding_px":12,"min_text_height_px":10,"max_text_height_px":80,"cache_by_screenshot_hash":true},
   "install_verify":{"judgment_profile":"loose","settle_sec":3,"quiet_polls":3,"settle_max_sec":30,"watch_dirs":["C:\\Program Files","C:\\Program Files (x86)","%ProgramData%","%LOCALAPPDATA%","%APPDATA%"],"watch_exclude":["%TEMP%","%LOCALAPPDATA%\\Temp","%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache","%LOCALAPPDATA%\\CrashDumps"],"snapshot_depth":2,"snapshot_max_entries":20000,"write_baseline":false,"min_new_files":1,"shrink_tolerance":0,"require_artifact":true,"launch_check":false,"launch_check_sec":10},
+  "msi":{"keep_verbose_log":true,"log_dir":""},
   "lock":{"enabled":true,"wait_sec":0},"dll_export_probe_count":3,
   "output":{"path":"","pretty":false,"journal":true,"keep_journal_on_success":false,"log_file":"","log_level":"info","max_file_size_mb":64}
 }

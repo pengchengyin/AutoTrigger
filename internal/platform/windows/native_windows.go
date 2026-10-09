@@ -6,6 +6,7 @@ package windows
 import (
 	"autotrigger/internal/core/ports"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 )
 
@@ -41,8 +43,75 @@ func (b *Buffer) Write(p []byte) (int, error) {
 	}
 	return n, nil
 }
-func (b *Buffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return string(b.b) }
-func utf(s string) *uint16       { p, _ := syscall.UTF16PtrFromString(s); return p }
+func (b *Buffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return decodeConsoleText(b.b) }
+
+// decodeConsoleText 把子进程的输出解码成 UTF-8 文本。
+//
+// Windows 上并非所有程序都往管道写 UTF-8：
+//   - **msiexec 等程序的本地化消息是 UTF-16LE（无 BOM）**，原样存下来就是"夹 NUL 的乱码"，
+//     既看不懂，也会让判定层扫描关键词（B1）永远匹配不上；
+//   - 有 BOM 的按 BOM 处理；
+//   - 其余（例如 cmd.exe 按 OEM 代码页输出）保持原字节，非法处替换为 U+FFFD ——
+//     代码页转换需要第三方依赖，与"零第三方依赖"约束冲突，故不引入。
+//
+// 判定 UTF-16 的依据是"NUL 字节集中在奇数位（LE）或偶数位（BE）"：
+// 正常 UTF-8 文本不会含 NUL，GBK 等双字节代码页也不会产生 0x00 字节，
+// 因此这个判据不会把普通输出误判成 UTF-16。
+func decodeConsoleText(b []byte) string {
+	if len(b) < 2 {
+		return string(b)
+	}
+	switch {
+	case b[0] == 0xFF && b[1] == 0xFE:
+		return decodeUTF16Bytes(b[2:], binary.LittleEndian)
+	case b[0] == 0xFE && b[1] == 0xFF:
+		return decodeUTF16Bytes(b[2:], binary.BigEndian)
+	}
+	if order := sniffUTF16Order(b); order != nil {
+		return decodeUTF16Bytes(b, order)
+	}
+	if !strings.ContainsRune(string(b), 0) {
+		return strings.ToValidUTF8(string(b), "\uFFFD")
+	}
+	// 含散落 NUL 但不像 UTF-16：去掉 NUL 再尽量还原，至少不把乱码写进结果 JSON。
+	return strings.ToValidUTF8(strings.ReplaceAll(string(b), "\x00", ""), "\uFFFD")
+}
+
+// sniffUTF16Order 按"NUL 位分布"猜测无 BOM 的 UTF-16 字节序；不像则返回 nil。
+func sniffUTF16Order(b []byte) binary.ByteOrder {
+	if len(b) < 4 || len(b)%2 != 0 {
+		return nil
+	}
+	units := len(b) / 2
+	odd, even := 0, 0
+	for i := 0; i+1 < len(b); i += 2 {
+		if b[i] == 0 {
+			even++
+		}
+		if b[i+1] == 0 {
+			odd++
+		}
+	}
+	// ASCII 字符在 UTF-16LE 里高字节为 0、在 UTF-16BE 里低字节为 0；
+	// 取 1/4 作阈值：既容得下"中英混排"的消息，又不会被普通文本触发。
+	if odd*4 >= units {
+		return binary.LittleEndian
+	}
+	if even*4 >= units {
+		return binary.BigEndian
+	}
+	return nil
+}
+
+// decodeUTF16Bytes 把 UTF-16 字节流按给定字节序解码成字符串；奇数字节尾巴丢弃。
+func decodeUTF16Bytes(b []byte, order binary.ByteOrder) string {
+	units := make([]uint16, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		units = append(units, order.Uint16(b[i:]))
+	}
+	return string(utf16.Decode(units))
+}
+func utf(s string) *uint16 { p, _ := syscall.UTF16PtrFromString(s); return p }
 
 // nativeAddress reinterprets Win32 return addresses pointing to foreign memory.
 func nativeAddress(value uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&value)) }
