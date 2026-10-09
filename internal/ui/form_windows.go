@@ -141,7 +141,9 @@ func (f *form) create() error {
 		0,
 		uintptr(unsafe.Pointer(f.className)),
 		uintptr(unsafe.Pointer(utf16Ptr(f.title))),
-		wsOverlappedWindow,
+		// WS_CLIPCHILDREN：父窗口重绘时跳过子控件区域，避免窗口缩放/滚动时
+		// 父窗口底色盖到日志框上（表现为日志区被"擦花"）。
+		wsOverlappedWindow|wsClipChildren,
 		cwUseDefault, cwUseDefault,
 		uintptr(f.px(900)), uintptr(f.px(680)),
 		0, 0, hInst, 0)
@@ -421,6 +423,19 @@ func (f *form) wndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.P
 	return f.handle(hwnd, msg, wparam, lparam)
 }
 
+// ctlColorScheme 返回子控件在 WM_CTLCOLOR* 下应使用的背景模式、文字色与画刷色。
+//
+// 关键坑：**只读 EDIT（日志区）向父窗口发送的是 WM_CTLCOLORSTATIC，而不是
+// WM_CTLCOLOREDIT**。若把它和 STATIC 标签一视同仁（透明背景 + 3D 面色画刷），
+// 控件在绘制文字前不再擦除背景，滚动或追加日志时旧字形会残留并与新文本叠加，
+// 实测表现为日志区“文字重影、互相覆盖”。故日志区单列一档：白底 + 不透明背景。
+func ctlColorScheme(isLog bool) (bkMode, textColorIdx, brushIdx uintptr) {
+	if isLog {
+		return opaqueBk, colorWindowText, colorWindow
+	}
+	return transparentBk, colorBtnText, color3DFace
+}
+
 func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Pointer) (result uintptr) {
 	// 窗口过程里的 panic 会直接终止进程，这里兜底并保留日志。
 	defer func() {
@@ -449,10 +464,13 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 		f.onCommand(int(uint16(wparam&0xFFFF)), int(uint16((wparam>>16)&0xFFFF)))
 		return 0
 	case wmCtlColorStatic, wmCtlColorBtn:
-		textColor, _, _ := procGetSysColor.Call(colorBtnText)
-		procSetBkMode.Call(wparam, transparentBk)
+		// 只读多行 EDIT（日志区）发送的也是 WM_CTLCOLORSTATIC，必须与 STATIC 标签区分。
+		isLog := lparam != nil && uintptr(lparam) == f.ctrls[idLog]
+		bkMode, textColorIdx, brushIdx := ctlColorScheme(isLog)
+		textColor, _, _ := procGetSysColor.Call(textColorIdx)
+		procSetBkMode.Call(wparam, bkMode)
 		procSetTextColor.Call(wparam, textColor)
-		return sysColorBrush(color3DFace)
+		return sysColorBrush(brushIdx)
 	case wmCtlColorEdit:
 		return sysColorBrush(colorWindow)
 	}

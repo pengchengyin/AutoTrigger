@@ -5,7 +5,7 @@
   产物 `dist/AutoTrigger.exe`（v0.1.0，Schema 2.8，资源包 0.1.0）。
 - 主题：离线 Windows 沙箱中"自动触发/安装任意文件样本"供 EDR 采集行为。Go 1.20.x 单文件、
   Win7 SP1+、外部 7-Zip 与 OCR 前置、安装成功优先。
-- 权威文档：`自动安装工具prd-v2.14.md`（唯一 PRD）；另 `docs/图像模板制作说明.md`(D17)、
+- 权威文档：`自动安装工具prd-v2.15.md`（唯一 PRD）；另 `docs/图像模板制作说明.md`(D17)、
   `docs/架构说明.md`、`docs/验收状态.md`、`README.md`、`DEPLOY.md`。
 
 ## 用户约定（务必遵守）

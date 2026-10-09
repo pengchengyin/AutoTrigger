@@ -94,3 +94,30 @@ func TestFlushableLenKeepsRunesIntact(t *testing.T) {
 		t.Fatalf("纯 ASCII 应全量返回，实得 %d", n)
 	}
 }
+
+// 只读多行 EDIT（日志区）走的是 WM_CTLCOLORSTATIC，而不是 WM_CTLCOLOREDIT。
+// 若它与 STATIC 标签共用"透明背景 + 3D 面色"方案，控件绘制文字前不再擦除背景，
+// 滚动或追加日志时旧字形残留并与新文本叠加，实测表现为"文字重影、互相覆盖"。
+// 本表把"日志区必须白底 + 不透明背景"固定下来，防止回归。
+func TestCtlColorSchemeKeepsLogOpaque(t *testing.T) {
+	bk, fg, brush := ctlColorScheme(true)
+	if bk != opaqueBk {
+		t.Errorf("日志区背景模式 = %d，期望不透明(%d)", bk, opaqueBk)
+	}
+	if fg != colorWindowText || brush != colorWindow {
+		t.Errorf("日志区配色 = (文字 %d, 画刷 %d)，期望 (%d, %d)", fg, brush, colorWindowText, colorWindow)
+	}
+	if bk, fg, brush = ctlColorScheme(false); bk != transparentBk || fg != colorBtnText || brush != color3DFace {
+		t.Errorf("标签/按钮配色 = (%d, %d, %d)，期望 (%d, %d, %d)", bk, fg, brush, transparentBk, colorBtnText, color3DFace)
+	}
+}
+
+// WS_CLIPCHILDREN 必须出现在主窗口样式里，否则父窗口重绘时会盖到子控件（日志框）区域。
+func TestMainWindowStyleClipsChildren(t *testing.T) {
+	if wsOverlappedWindow&wsClipChildren != 0 {
+		t.Fatalf("wsOverlappedWindow 已含 WS_CLIPCHILDREN，测试前提失效")
+	}
+	if wsClipChildren != 0x02000000 {
+		t.Fatalf("WS_CLIPCHILDREN 常量 = %#x，期望 0x02000000", wsClipChildren)
+	}
+}

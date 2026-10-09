@@ -79,6 +79,7 @@ const (
 	wsGroup            = 0x00020000
 	wsBorder           = 0x00800000
 	wsVScroll          = 0x00200000
+	wsClipChildren     = 0x02000000
 	wsExClientEdge     = 0x00000200
 
 	csHREDRAW    = 0x0002
@@ -93,12 +94,16 @@ const (
 	defaultGUIFont = 17 // GetStockObject(DEFAULT_GUI_FONT)
 
 	colorWindow            = 5
+	colorWindowText        = 8
 	color3DFace            = 15
 	colorBtnText           = 18
 	logPixelsX             = 88
 	spiGetNonClientMetrics = 0x0029
 
+	// 背景模式：只读多行 EDIT 必须用不透明模式，否则滚动/追加时旧字形不被擦除，
+	// 会与新文本叠在一起（实测表现为日志区"文字重影、互相覆盖"）。
 	transparentBk = 1
+	opaqueBk      = 2
 
 	mbOK           = 0x0000
 	mbYesNo        = 0x0004
