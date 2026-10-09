@@ -6,9 +6,11 @@ import (
 	"autotrigger/internal/cli"
 	"autotrigger/internal/config"
 	"autotrigger/pkg/schema"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -154,6 +156,8 @@ type form struct {
 	prereqCode          int
 	prereqWarnings      bool
 	prereqLogStart      int
+	prereqReport        *schema.Prereq
+	prereqOutput        []byte
 	appIcon             uintptr
 	historyDir          string
 	history             []taskRecord
@@ -828,6 +832,7 @@ func (f *form) saveSettings() bool {
 	f.configOpen = false
 	f.selectedResult = ""
 	f.prereqChecked = false
+	f.prereqReport = nil
 	f.refreshCommand()
 	if err = f.persistPreferences(path); err != nil {
 		f.setStatusKind("配置已保存，但界面偏好无法保存："+err.Error(), statusKindWarn)
@@ -1060,6 +1065,9 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 		x, y := mousePoint(lparam)
 		f.onMouseMove(x, y)
 		return 0
+	case 0x02A3: // WM_MOUSELEAVE
+		f.onMouseMove(-1, -1)
+		return 0
 	case wmLButtonDown:
 		x, y := mousePoint(lparam)
 		f.onMouseDown(x, y)
@@ -1103,8 +1111,23 @@ func (f *form) onMouseMove(x, y int) {
 	if hover == f.hoverPage {
 		return
 	}
+	previous := f.hoverPage
 	f.hoverPage = hover
-	procInvalidateRect.Call(f.hwnd, 0, 0)
+	if hover != pageNone {
+		tracking := struct {
+			Size, Flags uint32
+			Window      uintptr
+			Time        uint32
+		}{Flags: 2, Window: f.hwnd}
+		tracking.Size = uint32(unsafe.Sizeof(tracking))
+		user32.NewProc("TrackMouseEvent").Call(uintptr(unsafe.Pointer(&tracking)))
+	}
+	for i, item := range uiNavItems {
+		if item.ID == previous || item.ID == hover {
+			r := f.navItemRect(i)
+			procInvalidateRect.Call(f.hwnd, uintptr(unsafe.Pointer(&r)), 0)
+		}
+	}
 }
 
 func (f *form) onMouseDown(x, y int) {
@@ -1569,6 +1592,8 @@ func (f *form) saveConfigEditor() {
 	setWindowTextRaw(f.ctrls[idConfig], path)
 	f.refreshCommand()
 	status := "已保存并通过校验：" + path
+	f.prereqChecked = false
+	f.prereqReport = nil
 	f.templates = loadTemplateInfoWithConfig(f.exeDir, path)
 	if prefErr := f.persistPreferences(path); prefErr != nil {
 		warnings = append(warnings, "界面偏好保存失败："+prefErr.Error())
@@ -1671,8 +1696,12 @@ func (f *form) checkPrereq() {
 		return
 	}
 	f.checkingPrereq = true
+	f.prereqReport = nil
+	f.prereqChecked = false
+	f.prereqOutput = nil
 	f.prereqLogStart = len(f.logTextSnapshot())
-	f.launch("检查前置（7-Zip / OCR）", f.auxArgs("--check-prereq", "--json", "--pretty"), true)
+	f.launch("检测并准备 7-Zip / OCR", f.auxArgs("--check-prereq", "--json", "--pretty"), true)
+	procInvalidateRect.Call(f.hwnd, 0, 0)
 }
 
 func (f *form) startRun() {
@@ -1750,14 +1779,23 @@ func (f *form) launch(label string, args []string, aux bool) {
 	f.setStatusKind("正在执行："+label+" …", statusKindRun)
 	fmt.Fprintf(f.logSink(), "\n=== %s ===\n$ %s\n", label, display)
 
+	checking := f.checkingPrereq
 	go func() {
 		sink := f.logSink()
-		code := cli.Run(ctx, args, sink, sink, f.deps)
+		var report bytes.Buffer
+		var stdout io.Writer = sink
+		if checking {
+			stdout = io.MultiWriter(sink, &report)
+		}
+		code := cli.Run(ctx, args, stdout, sink, f.deps)
 		fmt.Fprintf(sink, "=== 结束：退出码 %d ===\n", code)
 		f.mu.Lock()
 		f.running = false
 		f.cancel = nil
 		f.exitCode = code
+		if checking {
+			f.prereqOutput = append([]byte(nil), report.Bytes()...)
+		}
 		f.mu.Unlock()
 		post(f.hwnd, wmAppDone, uintptr(code), 0)
 	}()
@@ -1767,13 +1805,16 @@ func (f *form) onRunDone(code int) {
 	f.mu.Lock()
 	aux := f.aux
 	resultPath := f.resultPath
+	prereqOutput := append([]byte(nil), f.prereqOutput...)
 	f.mu.Unlock()
 	f.updateButtons()
 	f.flushLog()
 	if aux {
+		wasPrereq := f.checkingPrereq
 		if f.checkingPrereq {
 			f.prereqChecked = true
 			f.prereqCode = code
+			f.prereqReport = parsePrereqReport(prereqOutput)
 			log := f.logTextSnapshot()
 			if f.prereqLogStart < len(log) {
 				log = log[f.prereqLogStart:]
@@ -1783,7 +1824,18 @@ func (f *form) onRunDone(code int) {
 		}
 		// 前置检查/校验配置这类附属命令没有"安装结果"，不渲染结果横幅，
 		// 只按退出码给出档位（0 通过，其余按退出码含义说明）。
-		if code == 0 {
+		if wasPrereq && f.prereqReport != nil {
+			kind := statusKindOK
+			if dependencyIssues(f.prereqReport) != "" || !f.prereqReport.OK {
+				kind = statusKindWarn
+			}
+			if code != 0 {
+				kind = statusKindFail
+			}
+			f.setStatusKind(dependencySummary(f.prereqReport, false)+"\r\n"+dependencyNotice(f.prereqReport), kind)
+		} else if wasPrereq {
+			f.setStatusKind("未取得环境检测结果："+cli.ExitText(code)+"，请查看日志。", statusKindFail)
+		} else if code == 0 {
 			f.setStatusKind("√ 检查完成（详情见日志查看）", statusKindOK)
 		} else {
 			f.setStatusKind("× "+cli.ExitText(code)+"（退出码 "+strconv.Itoa(code)+"）", statusKindFail)

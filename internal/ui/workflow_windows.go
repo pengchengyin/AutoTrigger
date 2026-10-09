@@ -441,12 +441,12 @@ func (f *form) layoutHelp(w, h int) {
 
 func (f *form) layoutRecognition(w, h int) {
 	r := f.taskSurfaceRect(w, h)
-	left, top := int(r.Left)+f.px(30), int(r.Top)+f.px(70)
+	left, top := int(r.Left)+f.px(30), int(r.Top)+f.px(56)
 	width := int(r.Right) - left - f.px(30)
 	f.showAt(idOCREngineLabel, left, top, f.px(130), f.px(30))
 	f.showAt(idOCREngine, left+f.px(140), top, width-f.px(140), f.comboDropH(f.px(30), 6))
 	for i, row := range [][3]int{{idOCREnginePathLabel, idOCREnginePath, idOCREngineBrowse}, {idSevenZipLabel, idSevenZip, idSevenZipBrowse}, {idOCRScoreLabel, idOCRScore, 0}} {
-		y := top + f.px(50*(i+1))
+		y := top + f.px(44*(i+1))
 		f.showAt(row[0], left, y, f.px(130), f.px(30))
 		fieldW := width - f.px(140)
 		if row[2] != 0 {
@@ -455,10 +455,10 @@ func (f *form) layoutRecognition(w, h int) {
 		}
 		f.showAt(row[1], left+f.px(140), y, fieldW, f.px(32))
 	}
-	f.showAt(idNoOCR, left, top+f.px(212), f.px(200), f.px(30))
-	f.showAt(idPrereq, left, top+f.px(264), f.px(140), f.px(34))
-	f.showAt(idSettingsSave, left+width-f.px(140), top+f.px(264), f.px(140), f.px(34))
-	f.showAt(idStatus, left, top+f.px(314), width, f.px(48))
+	f.showAt(idNoOCR, left, top+f.px(176), f.px(200), f.px(30))
+	f.showAt(idPrereq, left, top+f.px(302), f.px(140), f.px(34))
+	f.showAt(idSettingsSave, left+width-f.px(140), top+f.px(302), f.px(140), f.px(34))
+	f.showAt(idStatus, left, top+f.px(348), width, f.px(48))
 }
 
 func (f *form) showHelpTopic(index int) {

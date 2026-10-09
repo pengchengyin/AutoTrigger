@@ -51,6 +51,20 @@ func TestWindowsVisualClicks(t *testing.T) {
 	setWindowTextRaw(f.ctrls[idConfig], "")
 	defer user32.NewProc("DestroyWindow").Call(f.hwnd)
 	f.show()
+	procUpdateWindow.Call(f.hwnd)
+	for i := range uiNavItems {
+		r := f.navItemRect(i)
+		f.onMouseMove(int(r.Left+2), int(r.Top+2))
+		var dirty rectT
+		if changed, _, _ := user32.NewProc("GetUpdateRect").Call(f.hwnd, uintptr(unsafe.Pointer(&dirty)), 0); changed == 0 || dirty.Right > int32(f.px(uiSidebarW)) {
+			t.Fatalf("hover invalidated page content: %+v", dirty)
+		}
+		procUpdateWindow.Call(f.hwnd)
+	}
+	send(f.hwnd, 0x02A3, 0, 0)
+	if f.hoverPage != pageNone {
+		t.Fatal("hover not cleared on leave")
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +224,13 @@ func TestWindowsVisualClicks(t *testing.T) {
 		}
 	}
 	t.Logf("real environment check exit=%d", f.prereqCode)
+	if f.prereqReport == nil || !strings.Contains(windowText(f.ctrls[idStatus]), "7-Zip：") {
+		t.Fatal("environment result did not display structured dependency statuses")
+	}
+	f.setPage(pageSettings)
+	send(f.ctrls[idSettingsRecognition], 0xF5, 0, 0)
+	capture("settings-dependency-status")
+	f.setPage(pageHome)
 	if saved, err := os.ReadFile(sentinelPath); err != nil || string(saved) != "{\"test_sentinel\":true}" {
 		t.Fatal("environment check overwrote task output")
 	}

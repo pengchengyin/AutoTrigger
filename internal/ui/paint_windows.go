@@ -54,10 +54,35 @@ func (f *form) paint() uintptr {
 	var ps paintStruct
 	hdc, _, _ := procBeginPaint.Call(f.hwnd, uintptr(unsafe.Pointer(&ps)))
 	if hdc != 0 {
-		f.paintWindow(hdc)
+		f.paintBuffered(hdc, ps.RcPaint)
 	}
 	procEndPaint.Call(f.hwnd, uintptr(unsafe.Pointer(&ps)))
 	return 0
+}
+
+func (f *form) paintBuffered(hdc uintptr, dirty rectT) {
+	w, h := f.clientSize()
+	mem, _, _ := gdi32.NewProc("CreateCompatibleDC").Call(hdc)
+	if mem == 0 {
+		f.paintWindow(hdc)
+		return
+	}
+	defer gdi32.NewProc("DeleteDC").Call(mem)
+	bitmap, _, _ := gdi32.NewProc("CreateCompatibleBitmap").Call(hdc, uintptr(w), uintptr(h))
+	if bitmap == 0 {
+		f.paintWindow(hdc)
+		return
+	}
+	defer procDeleteObject.Call(bitmap)
+	old, _, _ := procSelectObject.Call(mem, bitmap)
+	defer procSelectObject.Call(mem, old)
+	gdi32.NewProc("IntersectClipRect").Call(mem, uintptr(dirty.Left), uintptr(dirty.Top), uintptr(dirty.Right), uintptr(dirty.Bottom))
+	if dirty.Right <= int32(f.px(uiSidebarW)) {
+		f.paintSidebar(mem, h)
+	} else {
+		f.paintWindow(mem)
+	}
+	gdi32.NewProc("BitBlt").Call(hdc, uintptr(dirty.Left), uintptr(dirty.Top), uintptr(dirty.Right-dirty.Left), uintptr(dirty.Bottom-dirty.Top), mem, uintptr(dirty.Left), uintptr(dirty.Top), 0x00CC0020)
 }
 
 func (f *form) paintWindow(hdc uintptr) {
@@ -189,7 +214,9 @@ func (f *form) paintHome(hdc uintptr, clientW, clientH int) {
 	if f.checkingPrereq {
 		status = "环境状态：检查中"
 	} else if f.prereqChecked {
-		if f.prereqCode == 0 {
+		if f.prereqReport == nil {
+			status, color = "环境状态：未取得有效检测报告，请查看日志", modernTheme.danger
+		} else if f.prereqCode == 0 {
 			status, color = "环境状态：检查通过", modernTheme.success
 			if f.prereqWarnings {
 				status, color = "环境状态：检查完成，有提示，详情见日志", modernTheme.warn
@@ -200,6 +227,9 @@ func (f *form) paintHome(hdc uintptr, clientW, clientH int) {
 	}
 	topStatus := f.homeActionRect(0, clientW, clientH).Bottom + int32(f.px(16))
 	drawText(hdc, status, rectT{Left: int32(left), Top: topStatus, Right: int32(right), Bottom: topStatus + int32(f.px(30))}, color, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	if f.prereqChecked || f.checkingPrereq {
+		drawText(hdc, dependencySummary(f.prereqReport, f.checkingPrereq), rectT{Left: int32(left), Top: topStatus + int32(f.px(30)), Right: int32(right), Bottom: topStatus + int32(f.px(56))}, modernTheme.text, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	}
 }
 
 func (f *form) paintStatCard(hdc uintptr, r rectT, card statCard) {
@@ -293,7 +323,9 @@ func (f *form) paintPlaceholderPage(hdc uintptr, clientW, clientH int) {
 	case pageConfig:
 		// Native editor and toolbar occupy this surface.
 	case pageSettings:
-		// Native settings form and configuration tabs.
+		if f.settingsRecognition {
+			f.paintDependencyStates(hdc, r)
+		}
 	case pageTaskDetail:
 		f.paintTaskDetailPage(hdc, r)
 	case pageHelp:
@@ -301,6 +333,20 @@ func (f *form) paintPlaceholderPage(hdc uintptr, clientW, clientH int) {
 	default:
 		cards := pageCards(f.page, f.currentOptions(), f.exeDir, f.templates, summary, f.isRunning())
 		f.paintInfoCards(hdc, r, cards)
+	}
+}
+
+func (f *form) paintDependencyStates(hdc uintptr, bounds rectT) {
+	left, top := bounds.Left+int32(f.px(30)), bounds.Top+int32(f.px(56+214))
+	right := bounds.Right - int32(f.px(30))
+	drawText(hdc, "第三方工具", rectT{Left: left, Top: top, Right: right, Bottom: top + int32(f.px(22))}, modernTheme.text, f.statusFontOrDefault(), dtLeft|dtVCenter|dtSingleLine)
+	for i, row := range dependencyStates(f.prereqReport, f.checkingPrereq) {
+		y := top + int32(f.px(24+i*28))
+		drawText(hdc, row.Name, rectT{Left: left, Top: y, Right: left + int32(f.px(210)), Bottom: y + int32(f.px(24))}, modernTheme.text, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+		badge := rectT{Left: left + int32(f.px(216)), Top: y, Right: left + int32(f.px(354)), Bottom: y + int32(f.px(24))}
+		roundRect(hdc, badge, modernTheme.surfaceAlt, modernTheme.border, f.px(4))
+		drawText(hdc, row.Status, badge, statColor(row.Kind), f.font, dtCenter|dtVCenter|dtSingleLine)
+		drawText(hdc, row.Detail, rectT{Left: badge.Right + int32(f.px(12)), Top: y, Right: right, Bottom: badge.Bottom}, modernTheme.muted, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 	}
 }
 
