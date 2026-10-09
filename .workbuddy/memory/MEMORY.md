@@ -36,7 +36,13 @@
   需要 Windows 命令时改用原生终端工具。
 - PowerShell 工具**不回显 stdout**（结果写文件再 Read）；含中文的 `.ps1` 必须 **UTF-8 with BOM**，
   `.md` 保持**无 BOM + LF**。
-- 环境：Win10 build 26200 / i7-13700H / PowerShell 5.1；未安装任何 OCR 引擎。
+- ⚠️ **沙箱里 `.ps1` 无法整文件执行**，且 **PowerShell 工具不能启动任何原生进程**
+  （`& '...\7z.exe' i` → 「无法在管道中间运行文档」；`Start-Process powershell.exe` 被安全策略拦截；
+  `reg.exe` 在黑名单里）。验证"要调外部 exe 的脚本"只能三件套：
+  ① `[Parser]::ParseFile` 纯静态语法校验；② 把**纯函数原样内联**进 PowerShell 跑；
+  ③ **原生部分改用 Bash 工具**（Bash 能正常跑 `7z.exe` / `AutoTrigger.exe`）。
+- 环境：Win10 build 26200 / i7-13700H / PowerShell 5.1；**本机原本未安装 OCR 引擎**；
+  7-Zip 在 `D:\software\7-Zip`（26.00，靠 `PATH` 而非注册表被工具发现）。
 
 ## 当前文档状态（v2.17）
 - `schema_version: 2.8`；已定案：判定宽松（DC19）、单实例串行 + 单文件 600s（DC20）、
@@ -63,3 +69,20 @@
   不是 `WM_CTLCOLOREDIT` —— 与 STATIC 标签共用"透明背景"会导致滚动时**文字重影**（C44）；
   ② 多行 EDIT **只在 CRLF 处折行**，日志用纯 `\n` 会不换行 → 写入前须 `normalizeCRLF` 归一
   （含跨块 `\r` 边界），追加后 `EM_SCROLLCARET` 滚到末行（C45）。
+
+## 部署与前置事实（写安装/部署脚本前必看）
+- **一键部署脚本**：`scripts/install-windows.ps1`（PS 2.0 兼容 + UTF-8 BOM）与
+  `scripts/install-windows.bat`（双击入口、纯 ASCII）。四步 = 7-Zip 发现/安装 → OCR 释放 →
+  写最小增量 `config.json` → `--check-prereq` 复核；退出码 0 就绪 / 4 缺 7-Zip / 5 缺 OCR / 1 出错。
+  `tools/package` 会把整个 `scripts/` 复制进交付包，故新脚本自动随包分发。
+- **7-Zip 离线包的双重身份**：`third_party\7zip\7z2603-x64.exe` 既是安装器也是 7z 自解压包。
+  `x` 开它 = 得到**便携版**（不碰注册表）；`/S /D=<目录>` = 释放完整便携版并**改写注册表**
+  （`HKLM`/`HKCU\SOFTWARE\7-Zip\Path`、`Path64` + `HKLM\...\Uninstall\7-Zip` 全字段）。
+  实测 `/S /D=<可写目录>` **不需要管理员**。⇒ **不要在开发机上随手试装**，会污染注册表且还原需提权。
+- **OCR 自动发现路径只有两处**：`C:\tools\<引擎名>\<exe>` 与 `D:\tools\<引擎名>\<exe>`
+  （外加 `PATH`、`C:\Program Files\...`、Tesseract）。引擎名 = `PaddleOCR-json` / `RapidOCR-json`。
+  另：`ocr.engine_path: "auto"` 才能保住 **CPU 无 AVX 时自动切到 `rapidocr_json`** 的回落能力；
+  写死路径会让回落指到错误的 exe ⇒ 默认部署**两个引擎 + `engine_path: "auto"`**。
+- ⚠️ **待处理**：本机 `HKLM\SOFTWARE\7-Zip\Path`/`Path64` 与 `HKLM\...\Uninstall\7-Zip` 已被
+  一次实测改写为已删除的临时目录（`...\Temp\sfxtest\`），**需管理员提权改回 `D:\software\7-Zip\`**；
+  HKCU 已还原。详见 `2026-10-09.md`。

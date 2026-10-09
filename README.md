@@ -12,6 +12,19 @@
 
 从**已有终端、管道或带任意参数**调用时**不会弹窗**，仍走命令行（行为与旧版本一致）。界面只用系统 DLL，不引入任何第三方 GUI 库，产物仍是单个静态 exe；非 Windows 平台不提供界面，会提示改用命令行。
 
+## 安装前置（7-Zip / OCR）
+
+工具本体免安装，但**解压压缩包**需要外部 **7-Zip**（默认最低 24.09），**GUI 自动化的文字识别**需要外部 **OCR 引擎**（PaddleOCR-json / RapidOCR-json）。交付包 `scripts\` 下带一键脚本，直接把 `third_party\` 里的离线物料装好并写好 `config.json`：
+
+```powershell
+# 双击也行；建议以管理员身份运行
+.\scripts\install-windows.bat
+# 或先看它会做什么（不做任何改动）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -Check
+```
+
+脚本会：① 复用系统已有的 `7z.exe`（没有才用 `third_party\7zip\7z*-x64.exe` 静默安装）；② 把 `third_party\ocr\*.7z` 释放到 `C:\tools\PaddleOCR-json` 与 `C:\tools\RapidOCR-json`；③ 在 exe 同目录写**最小增量** `config.json`（覆盖前自动备份）；④ 用 `--check-prereq` 复核。退出码 `0` 就绪 / `4` 缺 7-Zip / `5` 缺 OCR。参数、权限说明与手工步骤见 `DEPLOY.md`。
+
 ## 使用
 
 ```powershell

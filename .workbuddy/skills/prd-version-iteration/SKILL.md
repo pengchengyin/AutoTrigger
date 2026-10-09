@@ -136,6 +136,37 @@ git add -A && git commit -m "docs: PRD 升级 vX.(Y+1)，<一句话主题>
   `Add-Type -MemberDefinition`（运行时编译 .NET）被安全策略**拦截**，枚举窗口请改用 `MainWindowTitle`。
 - **验证 exe 冒烟要在干净临时目录做**（如 `/tmp/captest`），否则当前目录里既有的产物会干扰
   "是否留下垃圾文件"的判断。
+- ⚠️ **沙箱里 `.ps1` 无法整文件执行**，且 **PowerShell 工具不能启动任何原生进程**：
+  `& 'D:\...\7z.exe' i` 报「无法在管道中间运行文档」；`Start-Process powershell.exe`（shell 目标）
+  与 `reg.exe` 分别被安全策略**直接拦截**。所以"脚本里要调外部 exe"的验证只能三件套：
+  1. `[System.Management.Automation.Language.Parser]::ParseFile($f,[ref]$toks,[ref]$errs)` 做**纯静态语法校验**；
+  2. 把脚本里的**纯函数原样内联**到 PowerShell 工具里跑（版本比较、JSON 转义、路径发现等）；
+  3. **原生部分改用 Bash 工具**验证（Bash 能正常跑 `7z.exe`、`AutoTrigger.exe` 并拿到退出码与输出）。
+
+## 离线前置部署坑（写安装/部署脚本前必看）
+
+- **7-Zip 离线包是"双身份"**：`third_party\7zip\7z2603-x64.exe` 既能当安装器，本身又是 7z 自解压包。
+  - `7z.exe x 7z2603-x64.exe` → 直接得到**便携版**（`7z.exe` + `7z.dll` + `Lang\`），**不碰注册表**。
+  - `7z2603-x64.exe /S /D=<目录>` → 释放**完整便携版**到指定目录，**实测不需要管理员**；
+    但**会改写注册表**：`HKLM`/`HKCU\SOFTWARE\7-Zip` 的 `Path`、`Path64`，以及
+    `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\7-Zip` 的
+    `DisplayName/DisplayVersion/DisplayIcon/InstallLocation/UninstallString/QuietUninstallString/VersionMinor`。
+  - ⇒ **绝不要在开发机上"随手试装"**：一旦 `/D=` 指向临时目录，注册表就指向那里；HKCU 可自行改回，
+    **HKLM 还原需要管理员**（非管理员 `Set-ItemProperty` 报「不允许所请求的注册表访问权」，
+    而 `reg.exe` 在黑名单里无法旁路）。要在开发机上试装，先用 `/S /D=` 指向**最终**目录。
+- **OCR 引擎的自动发现路径只有两处**：`C:\tools\<引擎名>\<exe>` 与 `D:\tools\<引擎名>\<exe>`
+  （引擎名 = `PaddleOCR-json` / `RapidOCR-json`；另外还有 `PATH`、`C:\Program Files\...`、Tesseract）。
+  部署到这两处之外时**必须**在 `config.json` 里写死 `ocr.engine_path`。
+- **`ocr.engine_path` 尽量留 `"auto"`**：工具在 **CPU 无 AVX** 时会把引擎自动切到 `rapidocr_json`；
+  路径写死会让这个回落指到错误的 exe。⇒ 默认策略 = **两个引擎都部署 + `engine_path: "auto"`**，
+  两种情况都能命中；只部署一个引擎时，"有没有 AVX"就成了能不能用 OCR 的唯一变量。
+- **离线压缩包布局**：`PaddleOCR-json_v1.4.1_windows_x64.7z` / `RapidOCR-json_v0.2.0.7z` 内层都是
+  **单层根目录**（`PaddleOCR-json_v1.4.1\`、`RapidOCR-json_v0.2.0\`），exe 在根目录里、`models\` 在旁边。
+  解压后要**压平一层**再放到 `<OCRRoot>\PaddleOCR-json\`，否则 exe 会被埋一层、工具找不到。
+  解压只需 `x "<archive>" -y`：**把 7z 的工作目录设成 staging 目录**即可，避开 `-o` 带空格的引号问题。
+- **验证部署是否真的成立**：`--check-prereq --json` 会**真的启动 OCR 并识别一次**，
+  返回 `ocr_engine_path` / `ocr_engine_status`（`ok` 才算真可用）；
+  配置是否被接受则用 `--config <生成的 config.json> --dump-config` 反查（未列字段应保持默认、无未知字段告警）。
 
 ## 界面实现坑（`internal/ui`，改动前必看）
 

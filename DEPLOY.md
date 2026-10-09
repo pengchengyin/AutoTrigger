@@ -12,7 +12,9 @@ config.example.json
 result.schema.json
 manifest.json
 docs/
-scripts/
+scripts/install-windows.bat
+scripts/install-windows.ps1
+scripts/verify-ocr.ps1
 resources/
 third_party/7zip/7z2603-x64.exe
 third_party/ocr/PaddleOCR-json_v1.4.1_windows_x64.7z
@@ -21,12 +23,63 @@ third_party/ocr/RapidOCR-json_v0.2.0.7z
 
 `manifest.json` 记录文件 SHA-256、长度、版本、物料是否齐备和模板未验收状态。分发前用 Get-FileHash 核对。离线物料不得只提供下载网址；打包器的正式模式会拒绝缺少第三方离线包或真实模板的交付。
 
-## 镜像准备
+## 一键部署（推荐）
+
+交付包的 `scripts\` 下带有一键安装脚本，把第三方离线物料变成"开箱即用"：
+
+```text
+scripts\install-windows.bat     ← 双击入口（转发给 .ps1，结束时保留窗口便于看结论与退出码）
+scripts\install-windows.ps1     ← 实际逻辑（也可直接带参数调用）
+```
+
+脚本做四件事：
+
+| 步骤 | 动作 |
+|---|---|
+| 1 | **7-Zip**：先复用系统上已有的 `7z.exe`（`-SevenZipExe` → `config.json` → 注册表 → `PATH` → 常见安装目录 → 交付包内便携目录）；确实没有才用 `third_party\7zip\7z*-x64.exe` 静默安装 `/S /D=<目录>` |
+| 2 | **OCR**：用上一步得到的 `7z.exe` 把 `third_party\ocr\*.7z` 释放到 `<OCRRoot>\PaddleOCR-json` 与 `<OCRRoot>\RapidOCR-json`（保留 `models` 与 DLL，并压平压缩包内的单层根目录） |
+| 3 | **config.json**：在 `AutoTrigger.exe` 同目录写**最小增量**配置（显式 `archive.sevenzip_path`；`ocr.engine_path` 保持 `auto`），覆盖前自动备份为 `config.json.bak-<时间戳>` |
+| 4 | **自检**：调 `AutoTrigger.exe --check-prereq --json` 复核，结论与退出码与工具本体同源 |
+
+```powershell
+# 推荐：以管理员身份运行（这样 7-Zip 可以装到 C:\Program Files\7-Zip）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
+
+# 先看它会做什么，不做任何改动
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -Check
+```
+
+**权限**：非管理员也能跑通——脚本会把 7-Zip 装到交付包内的 `third_party\7zip\7-Zip\`、把 OCR 释放到用户可写目录。但**7-Zip 的安装包会把它自身的安装路径写进注册表**（`HKLM`/`HKCU` 的 `SOFTWARE\7-Zip` 与卸载项），这是该安装器的固有行为，不是脚本附加的。若不想动注册表，可自行解压 `third_party\7zip\7z*-x64.exe`（它本身就是 7z 自解压包，解开即得便携版），再用 `-SevenZipExe` 指向解出来的 `7z.exe`。
+
+**参数与默认值**：
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `-Root` | 自动探测（脚本上级目录 → 脚本目录 → 上级目录\dist） | 含 `AutoTrigger.exe` 的交付根目录 |
+| `-SevenZipExe` | 空 | 指定已有 `7z.exe`，跳过发现与安装 |
+| `-SevenZipDir` | 管理员 → `C:\Program Files\7-Zip`；否则 → `<Root>\third_party\7zip\7-Zip` | 7-Zip 安装目标目录 |
+| `-OCRRoot` | `C:\tools` | OCR 释放根目录 |
+| `-Engine` | `auto`（两个引擎都装） | `auto` / `both` / `paddleocr_json` / `rapidocr_json` / `none` |
+| `-ConfigPath` | `<Root>\config.json` | 写出的配置文件路径 |
+| `-SkipSevenZip` / `-SkipOCR` / `-NoConfig` | 关 | 分别跳过对应步骤 |
+| `-Force` | 关 | 目标已存在也重新释放（OCR 目标目录先清空） |
+| `-Check` / `-DryRun` | 关 | 只探测 / 只演示，不落盘任何改动 |
+| `-Json` | 关 | 结构化结果走 stdout，人类可读报告走 stderr（对齐 F10.1 三通道约定） |
+
+退出码：`0` 前置就绪 / `4` 缺 7-Zip / `5` 缺 OCR（要求部署但未就绪）/ `1` 其他错误。比工具本体默认更严格——工具在 `ocr.require_ocr: false` 时 OCR 缺失也返回 0，本脚本要求"要装就必须装好"，便于镜像构建阶段做卡点。
+
+**为什么默认把两个 OCR 引擎都装上**：工具的 `ocr.engine_path: "auto"` 只在 `C:\tools\<引擎名>\` 与 `D:\tools\<引擎名>\` 下查找。CPU **有** AVX 时用 `PaddleOCR-json.exe`；**没有** AVX 时工具会把引擎自动切到 `rapidocr_json` 并去找 `RapidOCR-json.exe`。两个都装、`engine_path` 留 `auto`，两种情况都能命中。若把 `-OCRRoot` 指到别处，脚本就只装选定的那一个并把 `engine_path` 写死——代价是失去 AVX 自动回落能力，脚本会就此给出警告。
+
+## 手工部署（等价步骤）
+
+下述步骤就是脚本内部所做的事，适合必须手工核对每一环、或不希望工具代劳的场合。
+
+### 镜像准备
 
 目标 Windows 7 SP1 x64 或更新系统。准备可交互桌面、管理员运行权限、可写 TEMP 和样本/结果目录。镜像管理员按测试口径配置 UAC 与 AV/EDR 排除目录；工具不修改这些配置，也不替用户关闭系统保护。不能从无交互桌面的服务会话保证 GUI 安装。
 
 1. 核对交付包 manifest 的 SHA-256。
-2. 以管理员身份安装离线 7-Zip，示例：`third_party\7zip\7z2603-x64.exe /S`。程序仅提示此操作，不自动执行。最低版本默认 24.09；低版本告警但继续。
+2. 安装离线 7-Zip：以管理员身份执行 `third_party\7zip\7z2603-x64.exe /S`，装到默认目录 `C:\Program Files\7-Zip`；也可用 `/S /D=<目录>` 指定安装目录（实测**不需要管理员**），或直接用 7-Zip 解开该 exe 得到便携版。最低版本默认 24.09；低版本告警但继续。（工具本体只提示此操作、不自动执行；`scripts\install-windows.ps1` 会代劳。）
 3. 使用 7-Zip 将 PaddleOCR-json 包完整解压到 `C:\tools\PaddleOCR-json`，保留 exe 同目录的 DLL、models 和配置。不要只复制 OCR exe。
 4. CPU 没有启用 AVX 时改用 RapidOCR-json，将其完整解压到 `C:\tools\RapidOCR-json`。发行包有自带模型配置时，应按发行包启动说明确认；运行 `scripts\verify-ocr.ps1` 做端到端验证。
 5. 仅当 OCR 实际启动提示缺少 VC++ 时，由镜像管理员安装适用于该 Win7 镜像的离线运行库。当前交付不默认包含 VC++，工具不会下载。
@@ -46,6 +99,11 @@ third_party/ocr/RapidOCR-json_v0.2.0.7z
   }
 }
 ```
+
+> OCR 装在工具自带的搜索目录（`C:\tools\<引擎名>\` 或 `D:\tools\<引擎名>\`）时，
+> 建议写 `"engine_path": "auto"` 而**不要**写死路径：CPU 未启用 AVX 时工具会自动把引擎
+> 切到 `rapidocr_json`，写死路径会让这个回落指到错误的 exe 上。`scripts\install-windows.ps1`
+> 默认就是写 `auto` + 同时部署两个引擎。
 
 运行 `AutoTrigger.exe --dump-config` 可导出所有实际默认值；`config.example.json` 为该命令生成的完整模板。关键范围如下：
 
