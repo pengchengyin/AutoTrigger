@@ -178,7 +178,7 @@ func merge(v reflect.Value, raw map[string]json.RawMessage, prefix string, warni
 		path := prefix + k
 		i, ok := fields[k]
 		if !ok {
-			*warnings = append(*warnings, "unknown config key: "+path)
+			*warnings = append(*warnings, "配置中出现未知字段（已忽略，请核对拼写或删除）："+path)
 			continue
 		}
 		f := v.Field(i)

@@ -38,10 +38,10 @@ func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, ma
 	admin, _, _ := syscall.NewLazyDLL("shell32.dll").NewProc("IsUserAnAdmin").Call()
 	meta := map[string]interface{}{"os_version": v.String(), "service_pack": v.ServicePack, "cpu_avx": avx, "cpu_avx2": avx2, "dpi_awareness": awareness, "administrator": admin != 0, "architecture": "amd64"}
 	if v.Major < 6 || (v.Major == 6 && v.Minor < 1) || (v.Major == 6 && v.Minor == 1 && v.ServicePack < 1) {
-		report.Issues = append(report.Issues, "Windows 7 SP1 x64 or later is required")
+		report.Issues = append(report.Issues, "系统版本过低：需要 Windows 7 SP1 x64 或更高版本")
 	}
 	if admin == 0 {
-		report.Issues = append(report.Issues, "administrator privileges recommended for installation and HKLM evidence")
+		report.Issues = append(report.Issues, "建议以管理员身份运行：安装动作与 HKLM 采证在标准权限下可能不完整")
 	}
 	candidates := []string{}
 	if c.Archive.SevenZipPath != "auto" {
@@ -86,13 +86,13 @@ func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, ma
 		report.MountBackendStatus = "ok"
 	} else {
 		report.MountBackendStatus = "unsupported"
-		report.Issues = append(report.Issues, "Win7: use ISO extraction; optional WinCDEmu adapter remains unvalidated")
+		report.Issues = append(report.Issues, "Win7 环境：光盘映像请走解压轨；可选的 WinCDEmu 挂载适配器尚未验证")
 	}
 	if c.OCR.Enabled && c.OCR.Engine != "none" {
 		engine := c.OCR.Engine
 		names := map[string]string{"paddleocr_json": "PaddleOCR-json.exe", "rapidocr_json": "RapidOCR-json.exe", "umi_ocr": "Umi-OCR.exe", "tesseract": "tesseract.exe"}
 		if engine == "paddleocr_json" && !avx {
-			report.Issues = append(report.Issues, "CPU lacks OS-enabled AVX: switching to RapidOCR-json when available")
+			report.Issues = append(report.Issues, "CPU 未启用 AVX：若部署了 RapidOCR-json 将优先使用它")
 			engine = "rapidocr_json"
 		}
 		exe := names[engine]
@@ -133,11 +133,11 @@ func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, ma
 			} else {
 				e.Stop()
 				report.OCREngineStatus = "startup_failed"
-				report.Issues = append(report.Issues, "OCR capability check failed: "+err.Error())
+				report.Issues = append(report.Issues, "OCR 能力自检失败："+err.Error())
 			}
 		}
 		if report.OCREngineStatus != "ok" {
-			report.Issues = append(report.Issues, "OCR unavailable: deploy third_party\\ocr\\PaddleOCR-json or RapidOCR-json; falling back to UIA/Win32 + templates; bypass with --no-ocr")
+			report.Issues = append(report.Issues, "未检测到可用 OCR 引擎：请部署 third_party\\ocr\\PaddleOCR-json 或 RapidOCR-json；当前退回 UIA/Win32 + 模板；可用 --no-ocr 显式跳过")
 		}
 	}
 	report.OK = (!c.Archive.RequireSevenZip || report.ArchiveBackend != nil) && (!c.OCR.RequireOCR || !c.OCR.Enabled || report.OCREngineStatus == "ok")

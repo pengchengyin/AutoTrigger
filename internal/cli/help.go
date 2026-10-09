@@ -93,3 +93,24 @@ func helpRequested(args []string) bool {
 func printHelp(w io.Writer) {
 	fmt.Fprintf(w, "AutoTrigger — Windows 任意文件自动安装/触发工具  (v%s)\n\n%s", Version, helpText)
 }
+
+// 退出码的中文说明，与 helpText 的「退出码」段保持一致。
+// 日志汇总与图形界面状态栏共用，避免两处口径漂移（F19.1 / F20.6）。
+var exitText = map[int]string{
+	0:   "处理完成（具体结果见结果 JSON）",
+	1:   "工具运行期异常或当前平台不支持",
+	2:   "参数或输入非法",
+	3:   "配置或资源错误",
+	4:   "输入需要 7-Zip 但未部署",
+	5:   "要求 OCR 但引擎不可用",
+	6:   "已有实例正在运行（单实例锁被占用）",
+	130: "已按请求中止",
+}
+
+// ExitText 返回退出码的中文说明。
+func ExitText(code int) string {
+	if t, ok := exitText[code]; ok {
+		return t
+	}
+	return fmt.Sprintf("未知退出码 %d", code)
+}

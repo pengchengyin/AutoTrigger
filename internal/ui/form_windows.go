@@ -4,6 +4,7 @@ package ui
 
 import (
 	"autotrigger/internal/cli"
+	"autotrigger/pkg/schema"
 	"context"
 	"fmt"
 	"os"
@@ -32,6 +33,7 @@ const (
 	idEditConfig
 	idLblTimeout
 	idTimeout
+	idTimeoutUnit
 	idLblLogLevel
 	idLogLevel
 	idLblOptions
@@ -66,6 +68,15 @@ const (
 // 甚至拒绝写入的情况，因此超过上限时保留后半段并重建控件内容。
 const maxLogBytes = 160 << 10
 
+// 状态行的语义档位，决定文字颜色与提示措辞（F20.6）。
+const (
+	statusKindInfo = "info"
+	statusKindRun  = "run"
+	statusKindOK   = "ok"
+	statusKindWarn = "warn"
+	statusKindFail = "fail"
+)
+
 var configDialogFilter = []string{
 	"JSON 配置文件 (*.json)", "*.json",
 	"所有文件 (*.*)", "*.*",
@@ -73,17 +84,18 @@ var configDialogFilter = []string{
 }
 
 type form struct {
-	deps      cli.Dependencies
-	hwnd      uintptr
-	instance  uintptr
-	font      uintptr
-	scale     float64
-	className *uint16
-	title     string
-	exePath   string
-	exeDir    string
-	opts      Options
-	ctrls     map[int]uintptr
+	deps       cli.Dependencies
+	hwnd       uintptr
+	instance   uintptr
+	font       uintptr
+	statusFont uintptr
+	scale      float64
+	className  *uint16
+	title      string
+	exePath    string
+	exeDir     string
+	opts       Options
+	ctrls      map[int]uintptr
 
 	mu         sync.Mutex
 	logBuf     []byte
@@ -95,6 +107,10 @@ type form struct {
 	cancel     context.CancelFunc
 	exitCode   int
 	resultPath string
+
+	// 以下字段只在界面线程读写。
+	statusKind string
+	logPrevCR  bool
 }
 
 func newForm(deps cli.Dependencies) *form {
@@ -107,16 +123,18 @@ func newForm(deps cli.Dependencies) *form {
 		exeDir = filepath.Dir(exe)
 	}
 	f := &form{
-		deps:      deps,
-		ctrls:     map[int]uintptr{},
-		scale:     dpiScale(),
-		exePath:   exe,
-		exeDir:    exeDir,
-		className: utf16Ptr("AutoTriggerMainWindow"),
-		title:     fmt.Sprintf("AutoTrigger 图形界面 — 任意文件自动安装/触发工具  v%s", cli.Version),
-		opts:      NewOptions(exeDir),
+		deps:       deps,
+		ctrls:      map[int]uintptr{},
+		scale:      dpiScale(),
+		exePath:    exe,
+		exeDir:     exeDir,
+		className:  utf16Ptr("AutoTriggerMainWindow"),
+		title:      fmt.Sprintf("AutoTrigger 图形界面 — 任意文件自动安装/触发工具  v%s", cli.Version),
+		opts:       NewOptions(exeDir),
+		statusKind: statusKindInfo,
 	}
 	f.font = uiFont()
+	f.statusFont = uiFontBold()
 	return f
 }
 
@@ -213,6 +231,41 @@ func (f *form) check(id int, text string, checked bool) {
 	}
 }
 
+// combo 创建只读下拉框（CBS_DROPDOWNLIST）并填入选项。
+// 用下拉而非文本框，是为了让"日志级别""超时单位"这类有限取值**只能选、不能拼错**。
+func (f *form) combo(id int, items []string, sel int) {
+	h := f.addControl(id, "COMBOBOX", "", wsChild|wsVisible|wsTabStop|wsVScroll|cbsDropDownList, 0)
+	if h == 0 {
+		return
+	}
+	for _, item := range items {
+		p := utf16Ptr(item)
+		send(h, cbAddString, 0, uintptr(unsafe.Pointer(p)))
+	}
+	f.setComboSel(id, sel)
+}
+
+// setComboSel 选中下拉框的第 sel 项（越界时钳到第一项）。
+func (f *form) setComboSel(id, sel int) {
+	h := f.ctrls[id]
+	if h == 0 {
+		return
+	}
+	if sel < 0 {
+		sel = 0
+	}
+	send(h, cbSetCurSel, uintptr(sel), 0)
+}
+
+// comboIndex 返回下拉框当前选中项下标；未选中返回 -1。
+func (f *form) comboIndex(id int) int {
+	h := f.ctrls[id]
+	if h == 0 {
+		return -1
+	}
+	return int(int32(uint32(send(h, cbGetCurSel, 0, 0))))
+}
+
 func (f *form) createControls() {
 	f.label(idLblInput, "样本文件/目录")
 	f.edit(idInput, "")
@@ -229,10 +282,11 @@ func (f *form) createControls() {
 	f.button(idMakeConfig, "生成默认")
 	f.button(idEditConfig, "编辑")
 
-	f.label(idLblTimeout, "超时(秒)")
+	f.label(idLblTimeout, "超时")
 	f.edit(idTimeout, "")
+	f.combo(idTimeoutUnit, TimeoutUnitLabels, int(UITimeoutDefaultUnit))
 	f.label(idLblLogLevel, "日志级别")
-	f.edit(idLogLevel, "")
+	f.combo(idLogLevel, LogLevelLabels, LogLevelIndex(DefaultLogLevel))
 
 	f.label(idLblOptions, "选项")
 	f.check(idRecursive, "递归子目录", false)
@@ -258,14 +312,21 @@ func (f *form) createControls() {
 		send(h, emSetLimit, 0x7FFFFFFE, 0)
 	}
 	f.label(idStatus, "就绪。")
+	// 状态行用加粗放大字体：安装成功/失败要一眼可见（F20.6）。
+	if h, ok := f.ctrls[idStatus]; ok && h != 0 && f.statusFont != 0 {
+		send(h, wmSetFont, f.statusFont, 1)
+	}
 }
 
 func (f *form) applyDefaults() {
 	setWindowTextRaw(f.ctrls[idInput], f.opts.Input)
 	setWindowTextRaw(f.ctrls[idOutput], f.opts.Output)
 	setWindowTextRaw(f.ctrls[idConfig], f.opts.Config)
-	setWindowTextRaw(f.ctrls[idTimeout], strconv.Itoa(f.opts.TimeoutSec))
-	setWindowTextRaw(f.ctrls[idLogLevel], f.opts.LogLevel)
+	// 超时按「数值 + 单位」回填：能被 60 整除时用分钟显示（300 秒 → 5 分钟）。
+	value, unit := SplitTimeout(f.opts.TimeoutSec)
+	setWindowTextRaw(f.ctrls[idTimeout], strconv.Itoa(value))
+	f.setComboSel(idTimeoutUnit, int(unit))
+	f.setComboSel(idLogLevel, LogLevelIndex(f.opts.LogLevel))
 	f.refreshCommand()
 	f.updateButtons()
 	if f.opts.Config == "" {
@@ -294,6 +355,12 @@ func (f *form) place(id, x, y, w, h int) {
 		h = f.px(16)
 	}
 	procMoveWindow.Call(h2, uintptr(x), uintptr(y), uintptr(w), uintptr(h), 1)
+}
+
+// comboDropH 返回下拉框控件的总高度：单行高度 + 展开列表高度。
+// MoveWindow 给的高度决定下拉列表能显示几项，给足行数可避免列表出现滚动条。
+func (f *form) comboDropH(rowH, items int) int {
+	return rowH + items*f.px(18) + f.px(4)
 }
 
 func (f *form) clientSize() (int, int) {
@@ -341,16 +408,21 @@ func (f *form) layout() {
 	f.place(idEditConfig, right-b3, y, b3, rowH)
 	y += rowH + gapY
 
-	// 4) 超时 / 日志级别 / 选项
+	// 4) 超时（数值 + 单位下拉）/ 日志级别（下拉）
 	x := mx
-	lblTimeoutW, timeoutW := f.px(64), f.px(56)
+	lblTimeoutW, timeoutW, unitW := f.px(48), f.px(52), f.px(76)
 	f.place(idLblTimeout, x, y+f.px(4), lblTimeoutW, rowH)
 	f.place(idTimeout, x+lblTimeoutW, y, timeoutW, rowH)
-	x += lblTimeoutW + timeoutW + f.px(18)
-	lblLevelW, levelW := f.px(66), f.px(72)
+	x += lblTimeoutW + timeoutW + f.px(4)
+	f.place(idTimeoutUnit, x, y, unitW, f.comboDropH(rowH, len(TimeoutUnitLabels)))
+	x += unitW + f.px(24)
+	lblLevelW, levelW := f.px(66), f.px(160)
 	f.place(idLblLogLevel, x, y+f.px(4), lblLevelW, rowH)
-	f.place(idLogLevel, x+lblLevelW, y, levelW, rowH)
-	x += lblLevelW + levelW + f.px(22)
+	f.place(idLogLevel, x+lblLevelW, y, levelW, f.comboDropH(rowH, len(LogLevelLabels)))
+	y += rowH + gapY
+
+	// 5) 选项（独占一行：勾选框文本较长，与下拉框挤在同一行在 800px 最小宽度下会重叠）
+	x = mx
 	lblOptW := f.px(40)
 	f.place(idLblOptions, x, y+f.px(4), lblOptW, rowH)
 	x += lblOptW
@@ -365,7 +437,7 @@ func (f *form) layout() {
 	}
 	y += rowH + gapY
 
-	// 5) 操作按钮
+	// 6) 操作按钮
 	x = mx
 	for _, item := range []struct {
 		id int
@@ -376,15 +448,15 @@ func (f *form) layout() {
 	}
 	y += rowH + gapY
 
-	// 6) 等价命令行
+	// 7) 等价命令行
 	copyW := f.px(72)
 	f.place(idLblCommand, mx, y+f.px(4), labelW, rowH)
 	f.place(idCommand, mx+labelW, y, right-(mx+labelW)-copyW-gapX, rowH)
 	f.place(idCopyCommand, right-copyW, y, copyW, rowH)
 	y += rowH + gapY
 
-	// 7) 日志 + 状态
-	statusH := f.px(20)
+	// 8) 日志 + 状态
+	statusH := f.px(28)
 	f.place(idLblLog, mx, y, labelW, f.px(18))
 	logTop := y + f.px(20)
 	logH := clientH - my - statusH - logTop - f.px(8)
@@ -423,17 +495,55 @@ func (f *form) wndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.P
 	return f.handle(hwnd, msg, wparam, lparam)
 }
 
-// ctlColorScheme 返回子控件在 WM_CTLCOLOR* 下应使用的背景模式、文字色与画刷色。
+// ctlRole 标识某个子控件在 WM_CTLCOLOR* 里属于哪一类，决定背景与文字色。
+type ctlRole int
+
+const (
+	roleLabel ctlRole = iota
+	roleLog
+	roleStatus
+)
+
+// ctlColorScheme 返回子控件在 WM_CTLCOLOR* 下应使用的背景模式与画刷色。
 //
 // 关键坑：**只读 EDIT（日志区）向父窗口发送的是 WM_CTLCOLORSTATIC，而不是
 // WM_CTLCOLOREDIT**。若把它和 STATIC 标签一视同仁（透明背景 + 3D 面色画刷），
 // 控件在绘制文字前不再擦除背景，滚动或追加日志时旧字形会残留并与新文本叠加，
 // 实测表现为日志区“文字重影、互相覆盖”。故日志区单列一档：白底 + 不透明背景。
-func ctlColorScheme(isLog bool) (bkMode, textColorIdx, brushIdx uintptr) {
-	if isLog {
-		return opaqueBk, colorWindowText, colorWindow
+func ctlColorScheme(role ctlRole) (bkMode, brushIdx uintptr) {
+	if role == roleLog {
+		return opaqueBk, colorWindow
 	}
-	return transparentBk, colorBtnText, color3DFace
+	return transparentBk, color3DFace
+}
+
+// ctlTextColor 返回子控件的文字色：普通标签/按钮用系统色，状态行按语义着色。
+func ctlTextColor(role ctlRole, statusKind string) uintptr {
+	switch role {
+	case roleLog:
+		v, _, _ := procGetSysColor.Call(colorWindowText)
+		return v
+	case roleStatus:
+		return statusColors(statusKind)
+	default:
+		v, _, _ := procGetSysColor.Call(colorBtnText)
+		return v
+	}
+}
+
+// ctlRoleOf 由子控件句柄判断它在配色上属于哪一类。
+func (f *form) ctlRoleOf(lparam unsafe.Pointer) ctlRole {
+	if lparam == nil {
+		return roleLabel
+	}
+	switch child := uintptr(lparam); {
+	case child != 0 && child == f.ctrls[idLog]:
+		return roleLog
+	case child != 0 && child == f.ctrls[idStatus]:
+		return roleStatus
+	default:
+		return roleLabel
+	}
 }
 
 func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Pointer) (result uintptr) {
@@ -464,12 +574,12 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 		f.onCommand(int(uint16(wparam&0xFFFF)), int(uint16((wparam>>16)&0xFFFF)))
 		return 0
 	case wmCtlColorStatic, wmCtlColorBtn:
-		// 只读多行 EDIT（日志区）发送的也是 WM_CTLCOLORSTATIC，必须与 STATIC 标签区分。
-		isLog := lparam != nil && uintptr(lparam) == f.ctrls[idLog]
-		bkMode, textColorIdx, brushIdx := ctlColorScheme(isLog)
-		textColor, _, _ := procGetSysColor.Call(textColorIdx)
+		// 只读多行 EDIT（日志区）发送的也是 WM_CTLCOLORSTATIC，必须与 STATIC 标签区分；
+		// 状态行同理，需要按语义给文字色（成功绿 / 失败红）。
+		role := f.ctlRoleOf(lparam)
+		bkMode, brushIdx := ctlColorScheme(role)
 		procSetBkMode.Call(wparam, bkMode)
-		procSetTextColor.Call(wparam, textColor)
+		procSetTextColor.Call(wparam, ctlTextColor(role, f.statusKind))
 		return sysColorBrush(brushIdx)
 	case wmCtlColorEdit:
 		return sysColorBrush(colorWindow)
@@ -480,6 +590,13 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 
 func (f *form) onCommand(id, code int) {
 	switch {
+	case code == cbnSelChange && (id == idLogLevel || id == idTimeoutUnit):
+		// 下拉框选择变化：刷新等价命令行预览（不改动其它状态）。
+		f.refreshCommand()
+		return
+	case code == enChange && id == idTimeout:
+		f.refreshCommand()
+		return
 	case code == bnClicked:
 		switch id {
 		case idBrowseFile:
@@ -545,19 +662,26 @@ func (f *form) onClose() uintptr {
 // ---------------------------------------------------------------- 参数与命令预览
 
 func (f *form) collect() (Options, error) {
-	timeout := DefaultTimeoutSec
-	if raw := strings.TrimSpace(windowText(f.ctrls[idTimeout])); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil {
-			return Options{}, fmt.Errorf("超时秒数必须是整数（当前为 %q）", raw)
-		}
-		timeout = n
+	raw := strings.TrimSpace(windowText(f.ctrls[idTimeout]))
+	if raw == "" {
+		return Options{}, fmt.Errorf("超时数值不能为空（填 0 表示不限）")
 	}
-	level := strings.TrimSpace(windowText(f.ctrls[idLogLevel]))
-	switch level {
-	case "", "debug", "info", "warn", "error":
-	default:
-		return Options{}, fmt.Errorf("日志级别只能是 debug / info / warn / error（当前为 %q）", level)
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return Options{}, fmt.Errorf("超时数值必须是整数（当前为 %q）", raw)
+	}
+	unit := TimeoutUnit(f.comboIndex(idTimeoutUnit))
+	if unit != UnitMinutes && unit != UnitSeconds {
+		unit = UnitMinutes
+	}
+	timeout, err := TimeoutSeconds(value, unit)
+	if err != nil {
+		return Options{}, err
+	}
+	// 下拉框只能选，取不到时回落到默认级别，避免出现空级别导致命令行缺参。
+	level := DefaultLogLevel
+	if i := f.comboIndex(idLogLevel); i >= 0 && i < len(LogLevelValues) {
+		level = LogLevelValues[i]
 	}
 	return Options{
 		Input:      strings.TrimSpace(windowText(f.ctrls[idInput])),
@@ -742,6 +866,7 @@ func (f *form) launch(label string, args []string, aux bool) {
 	f.updateButtons()
 
 	display := filepath.Base(f.exePath) + " " + strings.Join(quoteEach(args), " ")
+	f.setStatusKind("正在执行："+label+" …", statusKindRun)
 	fmt.Fprintf(f.logSink(), "\n=== %s ===\n$ %s\n", label, display)
 
 	go func() {
@@ -760,30 +885,57 @@ func (f *form) launch(label string, args []string, aux bool) {
 func (f *form) onRunDone(code int) {
 	f.mu.Lock()
 	aux := f.aux
+	resultPath := f.resultPath
 	f.mu.Unlock()
 	f.updateButtons()
 	f.flushLog()
 	if aux {
-		f.setStatus(fmt.Sprintf("检查完成（退出码 %d）。", code))
+		// 前置检查/校验配置这类附属命令没有"安装结果"，不渲染结果横幅，
+		// 只按退出码给出档位（0 通过，其余按退出码含义说明）。
+		if code == 0 {
+			f.setStatusKind("√ 检查完成（结果见上方日志）", statusKindOK)
+		} else {
+			f.setStatusKind("× "+cli.ExitText(code)+"（退出码 "+strconv.Itoa(code)+"）", statusKindFail)
+		}
 		return
 	}
-	switch code {
-	case 0:
-		f.setStatus("运行完成（退出码 0）。可点「打开结果目录」查看结果 JSON 与日志。")
-	case 130:
-		f.setStatus("任务已中止（退出码 130）。")
-	case 4:
-		f.setStatus("未检测到 7-Zip（退出码 4）：请先部署离线包，或勾选「跳过压缩包」。")
-	case 5:
-		f.setStatus("OCR 不可用且被要求必需（退出码 5）：请部署 OCR 引擎或去掉「必需」配置。")
-	case 6:
-		f.setStatus("已有实例在运行（退出码 6）：请等待其结束后重试。")
-	case 2:
-		f.setStatus("参数或路径非法（退出码 2）：详见日志。")
-	case 3:
-		f.setStatus("配置解析失败（退出码 3）：详见日志。")
+	summary, ok := ReadResultSummary(resultPath)
+	var ref *ResultSummary
+	if ok {
+		ref = &summary
+	}
+	lines, outcome := ResultBanner(code, ref, resultPath)
+	f.appendLog([]byte(strings.Join(lines, "\n")))
+	f.flushLog()
+	kind, text := finishStatus(code, outcome)
+	f.setStatusKind(text, kind)
+}
+
+// finishStatus 把退出码与总体结论翻译成状态行的配色档位与文案。
+//
+// 这是"安装成功/失败要明显"的落点（F20.6）：成功用绿、失败用红、中止或部分成功用橙，
+// 文案写中文，不再让使用者去解读退出码。
+func finishStatus(code int, outcome string) (kind, text string) {
+	switch {
+	case code == 130:
+		return statusKindWarn, "! 已中止（结果已写出，可查看结果 JSON）"
+	case code != 0:
+		return statusKindFail, "× " + cli.ExitText(code) + "（退出码 " + strconv.Itoa(code) + "）"
+	}
+	switch outcome {
+	case schema.OutcomeOK:
+		return statusKindOK, "√ 安装成功"
+	case schema.OutcomePartial:
+		return statusKindWarn, "! 部分成功：有个别样本失败或超时，详见结果 JSON"
+	case schema.OutcomeFailed:
+		return statusKindFail, "× 安装失败：详见结果 JSON 与日志"
+	case schema.OutcomeSkipped:
+		return statusKindWarn, "! 已跳过：没有可执行的安装动作"
+	case "":
+		// 结果 JSON 读不到（例如输出到 stdout 或路径被改到别处）：只说工具状态，不编造结论。
+		return statusKindWarn, "! 运行结束，但未读到结果文件，请查看运行日志"
 	default:
-		f.setStatus(fmt.Sprintf("运行结束（退出码 %d）：详见日志。", code))
+		return statusKindWarn, "! 没有可处理的样本"
 	}
 }
 
@@ -880,14 +1032,17 @@ func (f *form) flushLog() {
 	f.mu.Unlock()
 	if reset {
 		setWindowTextRaw(h, "")
+		f.logPrevCR = false
 	}
 	if chunk == "" {
 		return
 	}
+	// 多行 EDIT 只认 CRLF：纯 LF 不换行，日志会挤成一团。
+	chunk, f.logPrevCR = normalizeCRLF(chunk, f.logPrevCR)
 	f.appendToEdit(h, chunk)
 }
 
-// appendToEdit 把文本追加到多行只读编辑控件末尾。
+// appendToEdit 把文本追加到多行只读编辑控件末尾，并把视图滚到尾部。
 // 只读编辑控件在部分系统上会忽略 EM_REPLACESEL，故先临时解除只读。
 func (f *form) appendToEdit(h uintptr, s string) {
 	send(h, emSetReadOnly, 0, 0)
@@ -895,10 +1050,27 @@ func (f *form) appendToEdit(h uintptr, s string) {
 	p := utf16Ptr(s)
 	send(h, emReplaceSel, 0, uintptr(unsafe.Pointer(p)))
 	send(h, emSetReadOnly, 1, 0)
+	// 追加后跟随尾部，否则新日志可能落在可视区之外。
+	send(h, emScrollCaret, 0, 0)
 }
 
 func (f *form) setStatus(s string) {
-	setWindowTextRaw(f.ctrls[idStatus], s)
+	f.setStatusKind(s, statusKindInfo)
+}
+
+// setStatusKind 更新状态行文本与语义配色（成功绿 / 失败红 / 中止橙 / 运行中蓝）。
+// 颜色由窗口过程在 WM_CTLCOLORSTATIC 里按下标给出，这里只需改状态 + 触发重绘。
+func (f *form) setStatusKind(s, kind string) {
+	if kind == "" {
+		kind = statusKindInfo
+	}
+	f.statusKind = kind
+	h := f.ctrls[idStatus]
+	if h == 0 {
+		return
+	}
+	setWindowTextRaw(h, s)
+	procInvalidateRect.Call(h, 0, 1)
 }
 
 func quoteEach(args []string) []string {

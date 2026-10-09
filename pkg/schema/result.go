@@ -1,11 +1,118 @@
 // Package schema defines the stable, platform-neutral integration contract.
 package schema
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 const Version = "2.8"
 
 var Statuses = []string{"install_completed", "install_unverified", "install_partial", "already_installed", "triggered", "killed_on_timeout", "failed", "skipped"}
+
+// 结果状态的中文标签。仅用于人类可读展示（界面状态栏、日志横幅）；
+// 机器可读取值始终是 Statuses 里的英文标识，展示层不得改写（F10.2 / F20.3）。
+var statusText = map[string]string{
+	"install_completed":  "安装成功",
+	"install_unverified": "安装成功（未验证）",
+	"install_partial":    "部分完成",
+	"already_installed":  "已安装（无需安装）",
+	"triggered":          "已触发（未确认安装）",
+	"killed_on_timeout":  "超时终止",
+	"failed":             "失败",
+	"skipped":            "跳过",
+}
+
+// StatusText 返回状态的中文标签；未知状态原样返回。
+func StatusText(status string) string {
+	if t, ok := statusText[status]; ok {
+		return t
+	}
+	return status
+}
+
+// 汇总桶（summary.by_status 的键）的中文标签。
+var bucketText = map[string]string{
+	"installed":         "安装成功",
+	"unverified":        "安装未验证",
+	"partial":           "部分完成",
+	"already_installed": "已安装",
+	"triggered":         "已触发",
+	"timeout":           "超时终止",
+	"failed":            "失败",
+	"skipped":           "跳过",
+}
+
+// BucketText 返回汇总桶的中文标签；未知桶原样返回。
+func BucketText(bucket string) string {
+	if t, ok := bucketText[bucket]; ok {
+		return t
+	}
+	return bucket
+}
+
+// BucketOrder 是汇总桶的展示顺序：先成功、再待确认、最后失败与跳过，便于扫读。
+var BucketOrder = []string{"installed", "unverified", "partial", "already_installed", "triggered", "timeout", "failed", "skipped"}
+
+// SummaryLine 把汇总桶拼成一行中文统计，例如「样本总数 3｜安装成功 2｜失败 1」。
+// 只列非零项，避免"安装成功 0"这类噪音；界面结果横幅与 CLI 日志汇总共用同一口径。
+func SummaryLine(byStatus map[string]int, total int) string {
+	parts := []string{"样本总数 " + strconv.Itoa(total)}
+	for _, k := range BucketOrder {
+		if n := byStatus[k]; n > 0 {
+			parts = append(parts, BucketText(k)+" "+strconv.Itoa(n))
+		}
+	}
+	return strings.Join(parts, "｜")
+}
+
+// 总体结论档位。界面据此用颜色与大号文字给出显式提示（F20.6）。
+const (
+	OutcomeEmpty   = "empty"
+	OutcomeOK      = "ok"
+	OutcomePartial = "partial"
+	OutcomeFailed  = "failed"
+	OutcomeSkipped = "skipped"
+)
+
+var outcomeText = map[string]string{
+	OutcomeEmpty:   "没有可处理的样本",
+	OutcomeOK:      "安装成功",
+	OutcomePartial: "部分成功",
+	OutcomeFailed:  "安装失败",
+	OutcomeSkipped: "已跳过",
+}
+
+// OutcomeText 返回总体结论的中文标签。
+func OutcomeText(outcome string) string {
+	if t, ok := outcomeText[outcome]; ok {
+		return t
+	}
+	return outcome
+}
+
+// OverallOutcome 由汇总桶推导总体结论。
+// 口径：出现失败或超时即不算全胜；仅部分完成也不算成功；只剩"已安装 / 已触发 / 跳过"时按可接受处理。
+func OverallOutcome(s Summary) string {
+	if s.Total == 0 {
+		return OutcomeEmpty
+	}
+	installed := s.ByStatus["installed"] + s.ByStatus["unverified"]
+	partial := s.ByStatus["partial"]
+	bad := s.ByStatus["failed"] + s.ByStatus["timeout"]
+	done := s.ByStatus["already_installed"] + s.ByStatus["triggered"]
+	switch {
+	case bad > 0 && installed == 0 && partial == 0 && done == 0:
+		return OutcomeFailed
+	case bad > 0 || partial > 0:
+		return OutcomePartial
+	case installed > 0 || done > 0:
+		return OutcomeOK
+	default:
+		return OutcomeSkipped
+	}
+}
 
 type Error struct {
 	Code    int    `json:"code"`

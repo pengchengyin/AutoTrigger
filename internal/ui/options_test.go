@@ -128,8 +128,29 @@ func TestNewOptionsDefaultsMatchCLI(t *testing.T) {
 	if o.Output != filepath.Join(dir, DefaultResultName) {
 		t.Fatalf("默认结果路径异常：%q", o.Output)
 	}
-	if !o.Lock || o.TimeoutSec != DefaultTimeoutSec || o.LogLevel != DefaultLogLevel {
+	if !o.Lock || o.LogLevel != DefaultLogLevel {
 		t.Fatalf("默认值与 CLI 不一致：%+v", o)
+	}
+	// 界面的超时预填是 5 分钟（300 秒），**刻意不同于 CLI 的 600 秒**（C45）：
+	// 现场更常用 5 分钟起步。因为 300 != 600，界面会显式下发 --timeout 300，
+	// 命令预览与实际参数一致，不存在静默分叉（F20.3 的例外说明）。
+	wantTimeout, err := TimeoutSeconds(UITimeoutDefaultValue, UITimeoutDefaultUnit)
+	if err != nil {
+		t.Fatalf("TimeoutSeconds: %v", err)
+	}
+	if o.TimeoutSec != wantTimeout || o.TimeoutSec != 300 {
+		t.Fatalf("界面默认超时应为 5 分钟（300 秒），实得 %d", o.TimeoutSec)
+	}
+	// 界面默认超时 300 秒与 CLI 默认 600 秒不同，因此必须显式下发 --timeout 300。
+	withInput := o
+	withInput.Input = "sample.exe"
+	args, err := withInput.Args()
+	if err != nil {
+		t.Fatalf("Args: %v", err)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--timeout 300") {
+		t.Fatalf("界面默认超时偏离 CLI 默认值时必须显式下发 --timeout 300：%s", joined)
 	}
 
 	// 配置文件存在时才预填
@@ -139,5 +160,103 @@ func TestNewOptionsDefaultsMatchCLI(t *testing.T) {
 	o = NewOptions(dir)
 	if o.Config != ConfigPath(dir) {
 		t.Fatalf("应预填已存在的配置文件：%q", o.Config)
+	}
+}
+
+// 超时「数值 + 单位」换算：错一位就会把 5 分钟变成 5 秒。
+func TestTimeoutSeconds(t *testing.T) {
+	cases := []struct {
+		value int
+		unit  TimeoutUnit
+		want  int
+	}{
+		{5, UnitMinutes, 300},
+		{10, UnitMinutes, 600},
+		{0, UnitMinutes, 0}, // 0 表示不限（F9）
+		{90, UnitSeconds, 90},
+		{0, UnitSeconds, 0},
+	}
+	for _, c := range cases {
+		got, err := TimeoutSeconds(c.value, c.unit)
+		if err != nil {
+			t.Fatalf("TimeoutSeconds(%d, %d): %v", c.value, c.unit, err)
+		}
+		if got != c.want {
+			t.Errorf("TimeoutSeconds(%d, %d) = %d，期望 %d", c.value, c.unit, got, c.want)
+		}
+	}
+	if _, err := TimeoutSeconds(-1, UnitMinutes); err == nil {
+		t.Error("负数超时应报错")
+	}
+}
+
+// SplitTimeout 把秒数拆回输入框显示，能被 60 整除时优先显示分钟。
+func TestSplitTimeout(t *testing.T) {
+	cases := []struct {
+		sec      int
+		wantVal  int
+		wantUnit TimeoutUnit
+	}{
+		{300, 5, UnitMinutes},
+		{600, 10, UnitMinutes},
+		{90, 90, UnitSeconds},
+		{0, 0, UnitSeconds},
+	}
+	for _, c := range cases {
+		value, unit := SplitTimeout(c.sec)
+		if value != c.wantVal || unit != c.wantUnit {
+			t.Errorf("SplitTimeout(%d) = (%d, %d)，期望 (%d, %d)", c.sec, value, unit, c.wantVal, c.wantUnit)
+		}
+	}
+}
+
+// 结束横幅是"安装成功 / 失败"的显式提示（F20.6），文案与统计都固定下来。
+func TestResultBannerStatesOutcome(t *testing.T) {
+	s := &ResultSummary{Total: 3, ByStatus: map[string]int{"installed": 2, "failed": 1}, Path: `D:\out\r.json`}
+	lines, outcome := ResultBanner(0, s, `D:\out\r.json`)
+	body := strings.Join(lines, "\n")
+	if outcome != "partial" {
+		t.Fatalf("2 成功 1 失败应为部分成功，实得 %q", outcome)
+	}
+	for _, want := range []string{"部分成功", "样本总数 3", "安装成功 2", "失败 1", `D:\out\r.json`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("横幅缺少 %q：\n%s", want, body)
+		}
+	}
+
+	lines, outcome = ResultBanner(0, &ResultSummary{Total: 1, ByStatus: map[string]int{"installed": 1}}, "")
+	if outcome != "ok" || !strings.Contains(strings.Join(lines, "\n"), "安装成功") {
+		t.Fatalf("全成功应给出成功结论，实得 %q：%v", outcome, lines)
+	}
+
+	// 读不到结果 JSON 时按退出码兜底，不得编造安装结论
+	lines, outcome = ResultBanner(4, nil, "")
+	if strings.Join(lines, "\n") == "" || !strings.Contains(strings.Join(lines, "\n"), "7-Zip") {
+		t.Fatalf("缺少结果文件时应按退出码给出说明：%v", lines)
+	}
+	if len(lines) == 0 || strings.Contains(strings.Join(lines, "\n"), "安装成功") {
+		t.Fatalf("读不到结果时不得给出安装结论：%v", lines)
+	}
+}
+
+// ReadResultSummary 只读 summary 段；路径异常/文件不存在时返回 ok=false。
+func TestReadResultSummary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "result.json")
+	body := `{"schema_version":"2.8","summary":{"total":2,"by_status":{"installed":1,"timeout":1}},"results":[]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, ok := ReadResultSummary(path)
+	if !ok {
+		t.Fatal("应能解析出 summary")
+	}
+	if s.Total != 2 || s.ByStatus["installed"] != 1 || s.ByStatus["timeout"] != 1 {
+		t.Fatalf("summary 解析结果异常：%+v", s)
+	}
+	for _, bad := range []string{"", "-", filepath.Join(dir, "不存在.json")} {
+		if _, ok := ReadResultSummary(bad); ok {
+			t.Errorf("路径 %q 不应解析成功", bad)
+		}
 	}
 }

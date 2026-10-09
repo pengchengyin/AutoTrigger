@@ -1,6 +1,6 @@
 # AutoTrigger 自动安装工具
 
-依据《自动安装工具prd-v2.15.md》实现的 Windows 离线工具。工具本体是 Go 1.20.14、CGO 关闭的单一 `AutoTrigger.exe`，同时提供命令行与图形界面，Windows 7 SP1 x64 是构建目标。当前版本 `0.1.0`，结果 Schema `2.8`，资源包 `0.1.0`。
+依据《自动安装工具prd-v2.16.md》实现的 Windows 离线工具。工具本体是 Go 1.20.14、CGO 关闭的单一 `AutoTrigger.exe`，同时提供命令行与图形界面，Windows 7 SP1 x64 是构建目标。当前版本 `0.1.0`，结果 Schema `2.8`，资源包 `0.1.0`。
 
 ## 图形界面
 

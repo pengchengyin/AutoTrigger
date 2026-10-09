@@ -45,6 +45,7 @@ var (
 	procSetFocus              = user32.NewProc("SetFocus")
 	procGetClientRect         = user32.NewProc("GetClientRect")
 	procMoveWindow            = user32.NewProc("MoveWindow")
+	procInvalidateRect        = user32.NewProc("InvalidateRect")
 	procLoadCursorW           = user32.NewProc("LoadCursorW")
 	procGetSysColor           = user32.NewProc("GetSysColor")
 	procGetSysColorBrush      = user32.NewProc("GetSysColorBrush")
@@ -92,6 +93,7 @@ const (
 
 	idcArrow       = 32512
 	defaultGUIFont = 17 // GetStockObject(DEFAULT_GUI_FONT)
+	fwBold         = 700
 
 	colorWindow            = 5
 	colorWindowText        = 8
@@ -125,6 +127,9 @@ const (
 	bsAutoCheckBox = 0x00000003
 
 	ssLeftNoWordWrap = 0x0000000C
+
+	// 下拉框：CBS_DROPDOWNLIST 只允许从列表里选，不接受手输（避免拼错级别名）。
+	cbsDropDownList = 0x0003
 )
 
 // 消息
@@ -145,6 +150,9 @@ const (
 	bnClicked = 0
 	enChange  = 1
 
+	// CBN_SELCHANGE：下拉框选择变化（数值与 BN_CLICKED 不同，需单独判断）。
+	cbnSelChange = 1
+
 	bmGetCheck    = 0x00F0
 	bmSetCheck    = 0x00F1
 	bstChecked    = 1
@@ -152,6 +160,12 @@ const (
 	emReplaceSel  = 0x00C2
 	emSetReadOnly = 0x00CF
 	emSetLimit    = 0x00C5
+	emScrollCaret = 0x00B7
+
+	// 下拉框消息
+	cbAddString = 0x0143
+	cbGetCurSel = 0x0147
+	cbSetCurSel = 0x014E
 
 	// WM_APP 起的自定义消息：仅用于"后台线程 → 界面线程"的单向通知，
 	// 界面线程在窗口过程内取数据并刷新控件（跨线程不直接操作窗口）。
@@ -399,6 +413,62 @@ func sysColorBrush(index uintptr) uintptr {
 	return r
 }
 
+// rgb 把 0~255 的分量拼成 Win32 COLORREF（0x00BBGGRR，红在低字节）。
+func rgb(r, g, b uintptr) uintptr { return r | g<<8 | b<<16 }
+
+// 状态行的语义色：成功绿、失败红、中止/待确认橙、运行中蓝、就绪黑。
+// 纯函数，便于单测（状态行是"安装成没成"最直接的提示，见 F20.6）。
+func statusColors(kind string) uintptr {
+	switch kind {
+	case statusKindOK:
+		return rgb(0, 122, 0)
+	case statusKindFail:
+		return rgb(196, 0, 0)
+	case statusKindWarn:
+		return rgb(178, 96, 0)
+	case statusKindRun:
+		return rgb(0, 84, 166)
+	default:
+		return rgb(0, 0, 0)
+	}
+}
+
+// normalizeCRLF 把 LF 换行转成 Win32 多行 EDIT 需要的 CRLF。
+//
+// 这是"日志换行"的关键：多行编辑控件只把 CRLF 当换行，**纯 LF 不换行**
+// （显示为空白或方框），日志会挤成一大团。prevCR 记录上一段是否以 CR 结尾，
+// 避免同一对 CRLF 被切到两段时拼成 CR CR LF。
+// 按字节处理是安全的：UTF-8 多字节序列里不会出现 0x0D / 0x0A。
+func normalizeCRLF(s string, prevCR bool) (string, bool) {
+	if s == "" {
+		// 空段不消费上一段的 CR：CR 与 LF 可能被切到相邻两段。
+		return s, prevCR
+	}
+	if !strings.ContainsAny(s, "\r\n") {
+		// 段内没有换行符，说明上一段尾部的 CR 后面跟的是普通字符，配对结束。
+		return s, false
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '\r':
+			b.WriteByte('\r')
+			prevCR = true
+		case '\n':
+			if !prevCR {
+				b.WriteByte('\r')
+			}
+			b.WriteByte('\n')
+			prevCR = false
+		default:
+			b.WriteByte(c)
+			prevCR = false
+		}
+	}
+	return b.String(), prevCR
+}
+
 // flushableLen 返回缓冲区中可以安全交给控件的前缀长度。
 // 只截到完整 UTF-8 边界，避免把被写入操作切开的多字节字符渲染成乱码。
 func flushableLen(b []byte) int {
@@ -474,18 +544,41 @@ func dpiScale() float64 {
 	return float64(dpi) / 96.0
 }
 
-// uiFont 返回系统界面字体（随 DPI 得到合适字号），失败时退回默认 GUI 字体。
-func uiFont() uintptr {
+// uiLogFont 返回系统界面字体描述（NONCLIENTMETRICS.MessageFont），失败时 ok=false。
+func uiLogFont() (logFontW, bool) {
 	var ncm nonClientMetricsW
 	ncm.Size = uint32(unsafe.Sizeof(ncm))
 	r, _, _ := procSystemParametersInfo.Call(spiGetNonClientMetrics, uintptr(ncm.Size), uintptr(unsafe.Pointer(&ncm)), 0)
-	if r != 0 && saneLogFont(&ncm.MessageFont) {
-		if font, _, _ := procCreateFontIndirectW.Call(uintptr(unsafe.Pointer(&ncm.MessageFont))); font != 0 {
+	if r == 0 || !saneLogFont(&ncm.MessageFont) {
+		return logFontW{}, false
+	}
+	return ncm.MessageFont, true
+}
+
+// uiFont 返回系统界面字体（随 DPI 得到合适字号），失败时退回默认 GUI 字体。
+func uiFont() uintptr {
+	if lf, ok := uiLogFont(); ok {
+		if font, _, _ := procCreateFontIndirectW.Call(uintptr(unsafe.Pointer(&lf))); font != 0 {
 			return font
 		}
 	}
 	font, _, _ := procGetStockObject.Call(defaultGUIFont)
 	return font
+}
+
+// uiFontBold 由界面字体派生一个"加粗 + 放大 25%"的字体，专供状态行使用 ——
+// 安装成功/失败要一眼能看见。系统字体不可信时返回 0，调用方按默认字体处理。
+func uiFontBold() uintptr {
+	lf, ok := uiLogFont()
+	if !ok {
+		return 0
+	}
+	lf.Weight = fwBold
+	lf.Height = lf.Height * 5 / 4
+	if font, _, _ := procCreateFontIndirectW.Call(uintptr(unsafe.Pointer(&lf))); font != 0 {
+		return font
+	}
+	return 0
 }
 
 // saneLogFont 校验系统返回的字体描述是否可信。

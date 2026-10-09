@@ -199,6 +199,10 @@ type Lock interface {
 type PrereqManager interface {
 	Check(context.Context, config.Config) (schema.Prereq, map[string]interface{}, error)
 }
+
+// Logger 是日志出口。除通用 Log 外提供 Stage —— 阶段日志统一带 `【阶段】` 前缀，
+// 保证"安装到哪一步"在界面与日志文件里都可读且格式一致。
 type Logger interface {
 	Log(string, string, ...interface{})
+	Stage(string, string, string, ...interface{})
 }

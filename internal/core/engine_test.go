@@ -118,6 +118,8 @@ type fakeLogger struct{}
 
 func (fakeLogger) Log(string, string, ...interface{}) {}
 
+func (fakeLogger) Stage(string, string, string, ...interface{}) {}
+
 type fakeArchive struct {
 	entries                 []ports.ArchiveEntry
 	err                     error

@@ -4,6 +4,7 @@ import (
 	"autotrigger/internal/archive"
 	"autotrigger/internal/core/layout"
 	"autotrigger/internal/core/ports"
+	"autotrigger/internal/logging"
 	"autotrigger/pkg/schema"
 	"context"
 	"errors"
@@ -27,6 +28,9 @@ func (e *Engine) container(ctx context.Context, f schema.FileResult, depth int, 
 	analysis := schema.NewLayout("archive", e.Config.ISO.MotWPolicy)
 	if iso {
 		analysis.InputKind = "iso"
+		e.Log.Stage(logging.LevelInfo, logging.StageExtract, "识别为光盘映像（ISO），按策略 %s 处理：%s", e.Config.ISO.Strategy, f.FilePath)
+	} else {
+		e.Log.Stage(logging.LevelInfo, logging.StageExtract, "识别为压缩包，开始解压处理：%s", f.FilePath)
 	}
 	mounted := false
 	keep := false
@@ -45,7 +49,7 @@ func (e *Engine) container(ctx context.Context, f schema.FileResult, depth int, 
 			}
 			analysis.DismountStatus = status
 			if status == "failed" {
-				e.Log.Log("warn", "dismount_failed: %s", f.FilePath)
+				e.Log.Stage(logging.LevelWarn, logging.StageCleanup, "卸载镜像盘失败（重试 %d 次后仍失败，请手工确认盘符）：%s", e.Config.ISO.DismountRetry, f.FilePath)
 			}
 		}
 		f.PlatformMeta["layout_analysis"] = analysis
@@ -80,11 +84,12 @@ func (e *Engine) container(ctx context.Context, f schema.FileResult, depth int, 
 		if err != nil {
 			return err
 		}
-		e.Log.Log("info", "archive preflight %s: %d entries, %d excluded", f.FilePath, len(pre.Entries), len(pre.Excluded))
+		e.Log.Stage(logging.LevelInfo, logging.StageExtract, "预检归档文件：%s，可执行条目 %d 个，已排除 %d 个（卸载/修复/更新/调试类绝不执行）", f.FilePath, len(pre.Entries), len(pre.Excluded))
 		root, err = e.tempDir()
 		if err != nil {
 			return err
 		}
+		e.Log.Stage(logging.LevelInfo, logging.StageExtract, "开始解压到临时目录：%s", root)
 		if err = e.Extractor.Extract(ctx, f.FilePath, root, e.Config.Archive.MaxExtractSizeBytes); err != nil {
 			return err
 		}
@@ -104,6 +109,7 @@ func (e *Engine) container(ctx context.Context, f schema.FileResult, depth int, 
 		}
 		mounted = true
 		root = drive
+		e.Log.Stage(logging.LevelInfo, logging.StageExtract, "已挂载映像到盘符 %s（挂载轨），退出时按策略卸载", drive)
 		analysis.MountDrive = &drive
 		analysis.DismountStatus = "pending"
 		strategy := "mount"
@@ -198,7 +204,7 @@ func (e *Engine) container(ctx context.Context, f schema.FileResult, depth int, 
 	}
 	if !mounted && !keep {
 		if err = os.RemoveAll(root); err != nil {
-			e.Log.Log("warn", "cleanup %s: %v", root, err)
+			e.Log.Stage(logging.LevelWarn, logging.StageCleanup, "解压目录清理失败：%s（%v）", root, err)
 		}
 	}
 	f.PlatformMeta["layout_analysis"] = analysis

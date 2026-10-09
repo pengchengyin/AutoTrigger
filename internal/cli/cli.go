@@ -120,6 +120,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 	if p := argumentValue(args, "output"); p != "" {
 		resultPath = p
 	}
+	var logger *logging.Logger
 	finish := func(exit int, err error) int {
 		if rawInput := argumentValue(args, "input"); rawInput != "" {
 			sample, _ := filepath.Abs(rawInput)
@@ -130,7 +131,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		}
 		if err != nil {
 			result.Error = &schema.Error{Code: exit, Message: err.Error()}
-			fmt.Fprintf(stderr, "[error] %v\n", err)
+			// 日志已建立时走统一日志出口：带时间戳与中文级别，**且会写进日志文件**，
+			// 保证"失败原因"在日志里查得到；早期错误（如参数解析失败）仍直接写 stderr。
+			if logger != nil {
+				logger.Stage(logging.LevelError, logging.StageResult, "工具错误：%v", err)
+			} else {
+				fmt.Fprintf(stderr, "[error] %v\n", err)
+			}
 		}
 		now := time.Now()
 		result.FinishedAt = &now
@@ -289,11 +296,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		return finish(1, err)
 	}
 	defer logFile.Close()
-	logger := &logging.Logger{Out: io.MultiWriter(stderr, logFile), Level: cfg.Output.LogLevel}
+	logger = &logging.Logger{Out: io.MultiWriter(stderr, logFile), Level: cfg.Output.LogLevel}
 	for _, w := range append(warnings, library.Warnings...) {
-		logger.Log("warn", "%s", w)
+		logger.Stage(logging.LevelWarn, logging.StageTask, "配置提示：%s", w)
 	}
-	logger.Log("info", "result=%s log=%s task=%s", resultPath, logPath, id)
+	logger.Stage(logging.LevelInfo, logging.StageTask, "任务开始：task_id=%s，工具版本 %s，资源包 %s", id, Version, resources.Version)
+	logger.Stage(logging.LevelInfo, logging.StageTask, "结果文件：%s", resultPath)
+	logger.Stage(logging.LevelInfo, logging.StageTask, "日志文件：%s", logPath)
 	if !opts.CheckPrereq && !opts.Capabilities {
 		if opts.Input == "" {
 			return finish(2, fmt.Errorf("--input is required"))
@@ -312,7 +321,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		return finish(1, err)
 	}
 	for _, issue := range result.Prereq.Issues {
-		logger.Log("warn", "%s", issue)
+		logger.Stage(logging.LevelWarn, logging.StageTask, "环境提示：%s", issue)
 	}
 	if opts.Capabilities {
 		return writeInfo(stdout, capabilities(cfg, result, library), opts.Pretty, stderr)
@@ -321,7 +330,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		if opts.JSON {
 			writeInfo(stdout, result.Prereq, opts.Pretty, stderr)
 		} else {
-			logger.Log("info", "prereq ok=%t archive=%s OCR=%s", result.Prereq.OK, result.Prereq.ArchiveBackendStatus, result.Prereq.OCREngineStatus)
+			selfCheck := "未通过"
+			if result.Prereq.OK {
+				selfCheck = "通过"
+			}
+			logger.Stage(logging.LevelInfo, logging.StageTask, "环境自检：总体 %s（7-Zip=%s，OCR=%s）", selfCheck, result.Prereq.ArchiveBackendStatus, result.Prereq.OCREngineStatus)
 		}
 		if cfg.Archive.RequireSevenZip && result.Prereq.ArchiveBackend == nil {
 			return 4
@@ -394,13 +407,24 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		exit = 4
 		err = fmt.Errorf("7-Zip unavailable for archive input; deploy offline package or use --no-archive")
 	}
+	logRunSummary(logger, &result, exit, time.Since(result.StartedAt))
 	exit = finish(exit, err)
 	if journal != nil {
 		if closeErr := journal.Close(exit == 0 && !cfg.Output.KeepJournalOnSuccess); closeErr != nil {
-			logger.Log("warn", "journal cleanup: %v", closeErr)
+			logger.Stage(logging.LevelWarn, logging.StageCleanup, "journal 清理失败：%v", closeErr)
 		}
 	}
 	return exit
+}
+
+// logRunSummary 在日志末尾输出中文汇总，让"装了几个、成没成"一眼可见。
+// 与图形界面结束横幅同口径（F20.6）：总耗时、退出码、各状态计数、总体结论。
+func logRunSummary(logger *logging.Logger, result *schema.Result, exit int, elapsed time.Duration) {
+	s := result.Summary
+	logger.Stage(logging.LevelInfo, logging.StageResult, "本次运行结束：总耗时 %.1f 秒，退出码 %d（%s）", elapsed.Seconds(), exit, ExitText(exit))
+	// 结论先于计数：先给判断，再给依据，避免"安装成功 0…总体结论 安装成功"这类误读。
+	logger.Stage(logging.LevelInfo, logging.StageResult, "总体结论：%s", schema.OutcomeText(schema.OverallOutcome(s)))
+	logger.Stage(logging.LevelInfo, logging.StageResult, "样本统计：%s", schema.SummaryLine(s.ByStatus, s.Total))
 }
 
 func writeInfo(stdout io.Writer, v interface{}, pretty bool, stderr io.Writer) int {

@@ -90,7 +90,7 @@ func (Evidence) Snapshot(ctx context.Context, c config.Verify) (*ports.Baseline,
 	if err == nil && len(events) > 0 {
 		watermark = events[0].RecordID
 	} else if err != nil {
-		warnings = append(warnings, "MsiInstaller event snapshot: "+err.Error())
+		warnings = append(warnings, "MSI 安装事件快照采集失败："+err.Error())
 	}
 	return &ports.Baseline{Registry: reg, Dirs: dirs, EventWatermark: watermark, CapturedAt: time.Now(), Truncated: truncated, Warnings: warnings}, nil
 }

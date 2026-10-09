@@ -47,6 +47,6 @@ func (Adapter) CloseWindow(ports.Window) error                 { return ports.Er
 func (Adapter) Close() error                                   { return nil }
 func (Adapter) Check(context.Context, config.Config) (schema.Prereq, map[string]interface{}, error) {
 	r := schema.EmptyPrereq()
-	r.Issues = append(r.Issues, "execution is available only on Windows; this platform is a compile-time stub")
+	r.Issues = append(r.Issues, "本平台仅有编译占位实现：实际执行能力只在 Windows 提供")
 	return r, map[string]interface{}{}, ports.ErrUnsupported
 }

@@ -5,6 +5,7 @@ import (
 	"autotrigger/internal/config"
 	"autotrigger/internal/core/layout"
 	"autotrigger/internal/core/ports"
+	"autotrigger/internal/logging"
 	"autotrigger/internal/resources"
 	"autotrigger/internal/verify"
 	"autotrigger/pkg/schema"
@@ -52,7 +53,7 @@ func (e *Engine) Run(ctx context.Context, input string) error {
 	defer func() {
 		for _, dir := range e.temps {
 			if err := os.RemoveAll(dir); err != nil {
-				e.Log.Log("warn", "temporary directory cleanup %s: %v", dir, err)
+				e.Log.Stage(logging.LevelWarn, logging.StageCleanup, "临时目录清理失败：%s（%v）", dir, err)
 			}
 		}
 	}()
@@ -65,15 +66,18 @@ func (e *Engine) Run(ctx context.Context, input string) error {
 		if err != nil {
 			return err
 		}
+		e.Log.Stage(logging.LevelInfo, logging.StageTask, "开始处理目录：%s（递归=%t，共发现 %d 个文件）", input, e.Recursive, len(entries))
 		e.packageRun(ctx, input, entries, 0, &e.Result.LayoutAnalysis)
 	} else {
+		e.Log.Stage(logging.LevelInfo, logging.StageTask, "开始处理样本：%s（%s）", input, humanSize(s.Size()))
 		e.add(e.file(ctx, input, "single_file", 0, map[string]bool{}))
 	}
 	if ctx.Err() != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
+			e.Log.Stage(logging.LevelWarn, logging.StageTask, "收到中止请求：停止启动新的尝试，已完成部分照常采证并写出结果")
 			return context.Canceled
 		}
-		e.Log.Log("warn", "task timeout reached; pending samples were skipped")
+		e.Log.Stage(logging.LevelWarn, logging.StageTask, "任务总时长已达上限（task_timeout_sec=%d 秒）：剩余样本不再处理", e.Config.TaskTimeoutSec)
 	}
 	return e.Err
 }
@@ -85,7 +89,7 @@ func (e *Engine) add(f schema.FileResult) {
 			e.Err = err
 		}
 	}
-	e.Log.Log("info", "%s: %s", f.FilePath, f.FinalStatus)
+	e.Log.Stage(logging.LevelInfo, logging.StageResult, "%s → %s%s", f.FilePath, schema.StatusText(f.FinalStatus), noteSuffix(f.Notes))
 }
 func (e *Engine) ignored(path string) bool {
 	for _, p := range e.IgnorePaths {
@@ -109,6 +113,7 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 		e.Err = fmt.Errorf("package analysis: %w", err)
 		return false
 	}
+	e.Log.Stage(logging.LevelInfo, logging.StageEntry, "结构分析完成：候选入口 %d 个，排除 %d 个（排除项见结果 JSON 的 layout_analysis）", len(candidates), len(l.Excluded))
 	l.InputKind = analysis.InputKind
 	if l.InputKind == "file" {
 		l.InputKind = "directory"
@@ -130,6 +135,7 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 			f.DetectedType = c.Type.Kind
 			f.SelectionReason = c.Reason
 			f.Notes = "excluded_blacklist: " + c.Matched
+			e.Log.Stage(logging.LevelInfo, logging.StageEntry, "排除（命中禁执行清单 %s）：%s", c.Matched, c.Path)
 			e.add(f)
 			continue
 		}
@@ -169,14 +175,17 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 			f.DetectedType = c.Type.Kind
 			f.SelectionReason = reason
 			f.Notes = skip
+			e.Log.Stage(logging.LevelInfo, logging.StageEntry, "跳过（%s）：%s", skipText(skip), c.Path)
 			e.add(f)
 			continue
 		}
+		e.Log.Stage(logging.LevelInfo, logging.StageEntry, "选用入口：%s（优先级 P%d，判定依据 %s）", c.Path, c.Priority, c.Reason)
 		f := e.file(ctx, c.Path, reason, depth, map[string]bool{})
 		e.add(f)
 		if f.FinalStatus == "install_completed" && c.Priority != 3 && e.Config.PackageLayout.Enabled && e.Config.PackageLayout.Mode == "smart" {
 			converged = true
 			analysis.ConvergedAt = schema.String(c.Relative)
+			e.Log.Stage(logging.LevelInfo, logging.StageEntry, "已达成安装成功，按「成功即收敛」策略停止执行本包后续候选")
 		}
 	}
 	return converged
@@ -199,6 +208,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 	f.FileSizeBytes = s.Size()
 	if s.Size() == 0 {
 		f.Notes = "empty_file"
+		e.Log.Stage(logging.LevelWarn, logging.StageDetect, "跳过空文件（0 字节）：%s", path)
 		return f
 	}
 	fileCtx := ctx
@@ -215,6 +225,10 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 	}
 	f.DetectedType = ft.Kind
 	f.ExtensionDisguised = ft.Disguised
+	e.Log.Stage(logging.LevelInfo, logging.StageDetect, "识别结果：%s → %s（%s）", path, ft.Kind, humanSize(s.Size()))
+	if ft.Disguised {
+		e.Log.Stage(logging.LevelWarn, logging.StageDetect, "扩展名与真实类型不符（疑似伪装），按真实类型 %s 处理：%s", ft.Kind, path)
+	}
 	hash, err := hashFile(fileCtx, path)
 	if err != nil {
 		f.FinalStatus = "failed"
@@ -264,6 +278,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 			return child
 		}
 	}
+	e.Log.Stage(logging.LevelInfo, logging.StageVerify, "采集安装前基线快照（注册表卸载项 / 监控目录 / 文件关联），用于判定本次安装是否真的生效：%s", path)
 	base, err := e.Evidence.Snapshot(fileCtx, e.Config.Verify)
 	if err != nil {
 		f.FinalStatus = "failed"
@@ -276,7 +291,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		f.PlatformMeta["baseline"] = base
 	}
 	for _, w := range base.Warnings {
-		e.Log.Log("warn", "baseline %s: %s", path, w)
+		e.Log.Stage(logging.LevelWarn, logging.StageVerify, "基线采集告警（%s）：%s", path, w)
 	}
 	temp, err := e.tempDir()
 	if err != nil {
@@ -316,6 +331,11 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 			}
 		}
 	}
+	methods := make([]string, 0, len(commands))
+	for _, cmd := range commands {
+		methods = append(methods, cmd.Method)
+	}
+	e.Log.Stage(logging.LevelInfo, logging.StageRun, "准备按 %d 种方式依次尝试安装：%s", len(commands), strings.Join(methods, "、"))
 	if e.GUI != nil {
 		e.GUI.Reset()
 	}
@@ -337,6 +357,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 				break
 			}
 		}
+		e.Log.Stage(logging.LevelInfo, logging.StageRun, "第 %d/%d 次尝试：方法=%s，命令=%s", i+1, len(commands), cmd.Method, commandText(cmd))
 		a, ev, startedAttempt, timeoutAttempt, reboot, network := e.attempt(fileCtx, cmd, base, triggerPath)
 		f.Attempts = append(f.Attempts, a)
 		everStarted = everStarted || startedAttempt
@@ -358,6 +379,14 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		f.FinalStatus = d.Status
 		f.InstallConfidence = d.Confidence
 		f.EvidenceConflicts = d.Conflicts
+		confidence := "未知"
+		if d.Confidence != nil {
+			confidence = *d.Confidence
+		}
+		e.Log.Stage(logging.LevelInfo, logging.StageVerify, "第 %d/%d 次尝试判定：%s（置信度 %s）", i+1, len(commands), schema.StatusText(d.Status), confidence)
+		for _, c := range d.Conflicts {
+			e.Log.Stage(logging.LevelWarn, logging.StageVerify, "证据冲突（%s）：%s", c.ID, c.Detail)
+		}
 		if d.Status == "install_completed" || e.DumpDir != "" {
 			break
 		}
@@ -365,9 +394,11 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 	if len(f.Attempts) == 0 {
 		f.FinalStatus = "failed"
 		f.Notes = "no attempts completed before file deadline"
+		e.Log.Stage(logging.LevelWarn, logging.StageRun, "未能在单文件时限内完成任何一次尝试（timeout_sec=%d）：%s", e.Config.TimeoutSec, path)
 	}
 	if timedout && f.FinalStatus == "install_completed" {
 		f.Notes = "terminated on timeout; installation evidence still collected"
+		e.Log.Stage(logging.LevelWarn, logging.StageRun, "安装进程因超时被终止，但仍采集到安装证据：%s", path)
 	}
 	return f
 }
@@ -388,6 +419,46 @@ func commandText(c ports.Command) string {
 	}
 	return strings.Join(args, " ")
 }
+
+// noteSuffix 把备注拼成日志尾巴，便于一眼看出"为什么是这个结论"。
+func noteSuffix(note string) string {
+	if strings.TrimSpace(note) == "" {
+		return ""
+	}
+	return "（" + note + "）"
+}
+
+// skipText 把跳过原因翻译成中文说明（结果 JSON 里仍保留英文原值）。
+func skipText(skip string) string {
+	switch skip {
+	case "skipped_after_success":
+		return "本包已安装成功，后续候选不再执行"
+	case "task_timeout":
+		return "任务总时长已到上限"
+	case "interrupted":
+		return "已收到中止请求"
+	case "phase1_entry_limit":
+		return "超过阶段 1 入口数量上限且未启用兜底枚举"
+	case "fallback_disabled":
+		return "未启用兜底枚举（package_layout.fallback_to_brute=false）"
+	default:
+		return skip
+	}
+}
+
+// humanSize 把字节数格式化成人可读的大小（如 1.2 MB）。
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit && exp < 4; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTP"[exp])
+}
 func (e *Engine) tempDir() (string, error) {
 	root := config.ExpandEnv(e.Config.Archive.TempRoot)
 	if root != "" {
@@ -397,7 +468,7 @@ func (e *Engine) tempDir() (string, error) {
 	}
 	dir, err := os.MkdirTemp(root, "AT-")
 	if err != nil && root == "" {
-		e.Log.Log("warn", "TEMP unavailable, falling back to executable directory")
+		e.Log.Stage(logging.LevelWarn, logging.StageCleanup, "系统临时目录不可用，回退到 exe 同目录建临时工作区")
 		exe, _ := os.Executable()
 		dir, err = os.MkdirTemp(filepath.Dir(exe), "AT-")
 	}

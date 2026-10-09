@@ -3,6 +3,7 @@ package core
 import (
 	"autotrigger/internal/activity"
 	"autotrigger/internal/core/ports"
+	"autotrigger/internal/logging"
 	"autotrigger/internal/verify"
 	"autotrigger/pkg/schema"
 	"context"
@@ -19,11 +20,12 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	if err != nil {
 		a.Error = schema.String(err.Error())
 		a.DurationSec = time.Since(start).Seconds()
+		e.Log.Stage(logging.LevelWarn, logging.StageRun, "无法启动安装进程（方法=%s）：%v", cmd.Method, err)
 		return a, obs, false, false, false, false
 	}
 	defer p.Close()
 	defer p.KillTree()
-	e.Log.Log("info", "attempt %s pid=%d file=%s", cmd.Method, p.PID(), path)
+	e.Log.Stage(logging.LevelInfo, logging.StageRun, "已启动安装进程：方法=%s，PID=%d", cmd.Method, p.PID())
 	m := activity.New(start, e.Config)
 	m.Last.PIDs = []int{p.PID()}
 	tick := time.NewTicker(time.Duration(e.Config.GUI.PollIntervalMS) * time.Millisecond)
@@ -43,7 +45,7 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 		mode, err := p.Terminate(cleanupCtx)
 		cancel()
 		if err != nil {
-			e.Log.Log("warn", "process termination %s: %v", path, err)
+			e.Log.Stage(logging.LevelWarn, logging.StageRun, "安装进程未正常退出，已强制结束进程树（%s）：%v", path, err)
 			p.KillTree()
 		}
 		a.TerminationMode = mode
@@ -71,7 +73,7 @@ loop:
 			finish("deadline_or_interrupt")
 			break loop
 		case <-heartbeat.C:
-			e.Log.Log("info", "progress file=%s elapsed=%.1fs idle=%.1fs last_signal=%s", path, time.Since(start).Seconds(), time.Since(m.LastProgress).Seconds(), m.Signal)
+			e.Log.Stage(logging.LevelInfo, logging.StageRun, "安装进行中：已用时 %.0f 秒，静默 %.0f 秒，最近信号=%s", time.Since(start).Seconds(), time.Since(m.LastProgress).Seconds(), m.Signal)
 		case <-tick.C:
 			progress, err := p.Activity()
 			if err != nil {
@@ -90,9 +92,12 @@ loop:
 			if e.GUI != nil && e.Config.GUI.Enabled && e.DumpDir == "" {
 				update, err := e.GUI.Step(ctx, progress.PIDs)
 				if err != nil {
-					e.Log.Log("debug", "GUI: %v", err)
+					e.Log.Stage(logging.LevelDebug, logging.StageGUI, "界面识别/点击未产生动作：%v", err)
 				} else {
 					a.GUIActions = append(a.GUIActions, update.Actions...)
+					for _, act := range update.Actions {
+						e.Log.Stage(logging.LevelInfo, logging.StageGUI, "自动点击：%s（识别来源 %s，窗口 %q）", act.ControlText, act.Source, act.Window)
+					}
 					if len(update.Actions) > 0 {
 						extra = "gui_action"
 					}
@@ -133,6 +138,11 @@ loop:
 			a.Error = schema.String(exit.Err.Error())
 		}
 	}
+	if a.ExitCode != nil {
+		e.Log.Stage(logging.LevelInfo, logging.StageRun, "本轮尝试结束：%s，退出码=%d，耗时 %.1f 秒", attemptResultText(a.Result), *a.ExitCode, a.DurationSec)
+	} else {
+		e.Log.Stage(logging.LevelInfo, logging.StageRun, "本轮尝试结束：%s，耗时 %.1f 秒", attemptResultText(a.Result), a.DurationSec)
+	}
 	if cmd.LogPath != "" {
 		a.Command += fmt.Sprintf(" [log=%s]", cmd.LogPath)
 		if data, err := os.ReadFile(cmd.LogPath); err == nil {
@@ -166,5 +176,22 @@ loop:
 	}
 	a.InstallEvidence = obs.Evidence
 	a.ArtifactCheck = obs.Artifact
+	if reboot {
+		e.Log.Stage(logging.LevelWarn, logging.StageGUI, "安装程序提示需要重启才能完成，按配置停止后续尝试")
+	}
 	return a, obs, true, timedout, reboot || obs.RequiresReboot, network
+}
+
+// attemptResultText 把尝试结果翻译成中文说明（结果 JSON 里仍保留英文原值）。
+func attemptResultText(result string) string {
+	switch result {
+	case "exited":
+		return "安装进程已自行退出"
+	case "killed_on_timeout":
+		return "超时被强制终止"
+	case "failed":
+		return "长时间无活动，判定为无有效安装行为"
+	default:
+		return result
+	}
 }

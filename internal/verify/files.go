@@ -79,13 +79,13 @@ func Files(ctx context.Context, c config.Verify) (map[string]ports.DirState, boo
 	for _, root := range c.WatchDirs {
 		expanded := config.ExpandEnv(root)
 		if strings.Contains(expanded, "%") {
-			warnings = append(warnings, "unresolved watch directory: "+root)
+			warnings = append(warnings, "无法解析监控目录（含未展开的环境变量）："+root)
 			continue
 		}
 		walk(expanded, 0)
 	}
 	if truncated {
-		warnings = append(warnings, "filesystem snapshot reached entry or 450ms budget; negative file-count evidence disabled")
+		warnings = append(warnings, "文件系统快照达到条目数或 450ms 预算上限：负向文件计数证据已禁用")
 	}
 	return out, truncated, warnings
 }

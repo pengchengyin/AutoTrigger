@@ -107,7 +107,7 @@ func Load(c config.GUI, root string) (*Library, error) {
 		}
 	}
 	if len(l.Entries) == 0 {
-		l.Warnings = append(l.Warnings, "no real installer templates available; UIA/Win32 and OCR remain enabled")
+		l.Warnings = append(l.Warnings, "内置图像模板为空：仍会使用 UIA/Win32 与 OCR 识别；如需更高命中率，请按 D17 补齐模板")
 	}
 	return l, nil
 }
