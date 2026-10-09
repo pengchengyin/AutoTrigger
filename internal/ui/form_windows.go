@@ -1654,6 +1654,12 @@ func (f *form) validateConfigEditor() {
 
 func (f *form) auxArgs(extra ...string) []string {
 	args := append([]string{}, extra...)
+	if path := strings.TrimSpace(windowText(f.ctrls[idConfig])); path != "" {
+		args = append(args, "--config", path)
+	}
+	if f.isChecked(idNoOCR) {
+		args = append(args, "--no-ocr")
+	}
 	// 附属命令不改动交付目录：日志写到临时目录。
 	args = append(args, "--log-file", filepath.Join(os.TempDir(), "autotrigger-ui-aux.log"))
 	args = append(args, "--output", "-")

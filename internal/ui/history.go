@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -48,6 +49,44 @@ func saveHistory(dir string, records []taskRecord) error {
 		return err
 	}
 	return os.Rename(path+".tmp", path)
+}
+
+// Merge under a file lock so another GUI's older snapshot cannot erase tasks.
+func mergeHistory(dir string, updates []taskRecord) ([]taskRecord, error) {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+	unlock, err := acquireHistoryLock(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	records, err := loadHistory(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, update := range updates {
+		found := false
+		for i, current := range records {
+			sameResult := update.Result != "" && update.Result != "-" && strings.EqualFold(filepath.Clean(current.Result), filepath.Clean(update.Result))
+			if current.ID == update.ID || sameResult {
+				// An unfinished snapshot must not replace a completed task.
+				if current.ExitCode == nil || update.ExitCode != nil {
+					records[i] = update
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			records = append(records, update)
+		}
+	}
+	sort.SliceStable(records, func(i, j int) bool { return records[i].Created.After(records[j].Created) })
+	if err = saveHistory(dir, records); err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
 func recordFromResult(path, name string) (taskRecord, error) {

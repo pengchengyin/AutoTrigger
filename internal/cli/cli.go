@@ -51,6 +51,7 @@ type Options struct {
 	NoOCR              bool
 	RequireOCR         bool
 	CheckPrereq        bool
+	NoDeployDeps       bool
 	DumpConfig         bool
 	Capabilities       bool
 	Version            bool
@@ -95,6 +96,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 	fs.BoolVar(&opts.NoOCR, "no-ocr", false, "disable OCR")
 	fs.BoolVar(&opts.RequireOCR, "require-ocr", false, "fail if OCR is unavailable")
 	fs.BoolVar(&opts.CheckPrereq, "check-prereq", false, "check offline prerequisites")
+	fs.BoolVar(&opts.NoDeployDeps, "no-deploy-deps", false, "check prerequisites without installing offline dependencies")
 	fs.BoolVar(&opts.DumpConfig, "dump-config", false, "emit effective configuration JSON")
 	fs.BoolVar(&opts.Capabilities, "capabilities", false, "emit capability JSON")
 	fs.BoolVar(&opts.Version, "version", false, "emit version JSON")
@@ -311,7 +313,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 			return finish(2, fmt.Errorf("input: %w", err))
 		}
 	}
-	result.Prereq, result.PlatformMeta, err = deps.Prereqs.Check(ctx, cfg)
+	if checker, ok := deps.Prereqs.(interface {
+		CheckOnly(context.Context, config.Config) (schema.Prereq, map[string]interface{}, error)
+	}); (opts.NoDeployDeps || opts.Capabilities) && ok {
+		result.Prereq, result.PlatformMeta, err = checker.CheckOnly(ctx, cfg)
+	} else {
+		result.Prereq, result.PlatformMeta, err = deps.Prereqs.Check(ctx, cfg)
+	}
 	if deps.OCR != nil {
 		if engine := deps.OCR(); engine != nil {
 			defer engine.Stop()
@@ -321,7 +329,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		return finish(1, err)
 	}
 	for _, issue := range result.Prereq.Issues {
-		logger.Stage(logging.LevelWarn, logging.StageTask, "环境提示：%s", issue)
+		level := logging.LevelWarn
+		if strings.HasPrefix(issue, "已自动部署 ") {
+			level = logging.LevelInfo
+		}
+		logger.Stage(level, logging.StageTask, "环境提示：%s", issue)
 	}
 	if opts.Capabilities {
 		return writeInfo(stdout, capabilities(cfg, result, library), opts.Pretty, stderr)

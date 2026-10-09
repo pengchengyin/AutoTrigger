@@ -11,6 +11,7 @@ import (
 	"autotrigger/internal/resources"
 	"autotrigger/pkg/schema"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -42,6 +43,12 @@ func TestWindowsVisualClicks(t *testing.T) {
 	if err := f.create(); err != nil {
 		t.Fatal(err)
 	}
+	configPath := filepath.Join(f.exeDir, "check-config.json")
+	setWindowTextRaw(f.ctrls[idConfig], configPath)
+	if args := strings.Join(f.auxArgs("--check-prereq"), " "); !strings.Contains(args, "--config "+configPath) {
+		t.Fatal("environment check ignored selected settings config")
+	}
+	setWindowTextRaw(f.ctrls[idConfig], "")
 	defer user32.NewProc("DestroyWindow").Call(f.hwnd)
 	f.show()
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -233,42 +240,47 @@ func TestWindowsVisualClicks(t *testing.T) {
 	if err := os.WriteFile(sample, []byte("UI negative-path test"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	f.beginNewTask()
-	setWindowTextRaw(f.ctrls[idInput], sample)
-	setWindowTextRaw(f.ctrls[idTaskName], "不会执行安装的失败回归测试")
-	before := len(f.history)
-	send(f.ctrls[idRun], 0xF5, 0, 0)
-	deadline = time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		var message msgT
-		for {
-			available, _, _ := user32.NewProc("PeekMessageW").Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0, 1)
-			if available == 0 {
+	for iteration := 0; iteration < 2; iteration++ {
+		f.beginNewTask()
+		setWindowTextRaw(f.ctrls[idInput], sample)
+		setWindowTextRaw(f.ctrls[idTaskName], fmt.Sprintf("不会执行安装的失败回归测试 %d", iteration+1))
+		before := len(f.history)
+		send(f.ctrls[idRun], 0xF5, 0, 0)
+		deadline = time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			var message msgT
+			for {
+				available, _, _ := user32.NewProc("PeekMessageW").Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0, 1)
+				if available == 0 {
+					break
+				}
+				procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
+				procDispatchMessageW.Call(uintptr(unsafe.Pointer(&message)))
+			}
+			if len(f.history) > before && f.history[0].ExitCode != nil {
 				break
 			}
-			procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
-			procDispatchMessageW.Call(uintptr(unsafe.Pointer(&message)))
+			time.Sleep(15 * time.Millisecond)
 		}
-		if len(f.history) > before && f.history[0].ExitCode != nil {
-			break
+		if len(f.history) != before+1 || f.history[0].ExitCode == nil || *f.history[0].ExitCode == 0 {
+			t.Fatal("CLI failure did not update task history")
 		}
-		time.Sleep(15 * time.Millisecond)
-	}
-	if len(f.history) != before+1 || f.history[0].ExitCode == nil || *f.history[0].ExitCode == 0 {
-		t.Fatal("CLI failure did not update task history")
-	}
-	if snap, ok := readResultSnapshot(f.history[0].Result); !ok || snapshotOutcome(snap) != schema.OutcomeFailed {
-		t.Fatal("CLI failure result missing or misclassified")
-	}
-	if f.history[0].Config != windowText(f.ctrls[idConfig]) {
-		t.Fatal("task did not inherit saved CLI config")
-	}
-	if f.history[0].Result == sentinelPath {
-		t.Fatal("task reused previous result file")
-	}
-	stored, err := loadHistory(f.historyDir)
-	if err != nil || len(stored) != len(f.history) {
-		t.Fatal("completed task history not persisted")
+		if snap, ok := readResultSnapshot(f.history[0].Result); !ok || snapshotOutcome(snap) != schema.OutcomeFailed {
+			t.Fatal("CLI failure result missing or misclassified")
+		}
+		if f.history[0].Config != windowText(f.ctrls[idConfig]) {
+			t.Fatal("task did not inherit saved CLI config")
+		}
+		if f.history[0].Result == sentinelPath {
+			t.Fatal("task reused previous result file")
+		}
+		stored, err := loadHistory(f.historyDir)
+		if err != nil || len(stored) != len(f.history) {
+			t.Fatal("completed task history not persisted")
+		}
+		if len(stored) > 1 && stored[0].Result == stored[1].Result {
+			t.Fatal("consecutive tasks reused result file")
+		}
 	}
 	f.setPage(pageTask)
 	for row, record := range f.historyView {

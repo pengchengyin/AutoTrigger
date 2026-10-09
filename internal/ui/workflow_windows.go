@@ -308,9 +308,12 @@ func (f *form) addHistory(record taskRecord) {
 }
 
 func (f *form) persistHistory() {
-	if err := saveHistory(f.historyDir, f.history); err != nil {
+	records, err := mergeHistory(f.historyDir, f.history)
+	if err != nil {
 		f.appendLog([]byte("[警告] 任务记录保存失败：" + err.Error() + "\n"))
 		f.setStatusKind("任务记录保存失败："+err.Error(), statusKindWarn)
+	} else {
+		f.history = records
 	}
 	f.refreshTaskList()
 }
@@ -463,8 +466,8 @@ func (f *form) showHelpTopic(index int) {
 		"快速开始\r\n\r\n1. 打开设置，确认结果保存位置、超时和 OCR 引擎，点击保存设置。\r\n2. 在首页点击检查环境，查看缺少的依赖。\r\n3. 点击新建任务，选择文件或文件夹，填写便于辨认的名称。\r\n4. 点击运行。执行参数自动沿用设置。\r\n5. 在任务配置列表选择任务，点击查看详情。",
 		"任务与历史\r\n\r\n任务配置页面展示本机执行记录。可以按名称、文件路径或任务 ID 搜索。\r\n\r\n选择记录后点击查看详情，或双击记录。详情读取该任务对应的结果文件。\r\n\r\n导入结果可将已有 CLI 结果 JSON 加入列表。请保留结果文件，删除或移动后无法读取详情。\r\n\r\n新建任务只需要选择文件或文件夹，超时、OCR 和日志级别等参数在设置中统一配置。",
 		"如何理解结果\r\n\r\n安装成功：找到支持安装完成的证据。\r\n安装成功（未验证）：现有证据不足以完全确认，请人工检查。\r\n部分完成：部分步骤或文件成功，仍有未完成内容。\r\n已安装：检测到现有安装，不需要再次安装。\r\n已触发：程序已启动，但不能确认安装完成。\r\n失败或超时：任务未按要求完成，详情和日志中可查看原因。\r\n\r\n任务结束或退出码为 0，不代表所有文件均安装成功。",
-		"环境与依赖\r\n\r\n本工具需要 Windows 7 SP1 64 位或更新的 Windows。\r\n\r\n处理压缩包需要外部 7-Zip。OCR 自动识别需要对应的外部 OCR 引擎。检查环境会报告缺失项，不会自动安装它们。\r\n\r\n检查完成但有提示时，请查看日志中的警告。OCR 缺失不一定使环境检查返回失败。\r\n\r\n安装和部分系统信息读取可能需要管理员权限。请根据任务需求决定是否以管理员身份运行。",
-		fmt.Sprintf("关于 AutoTrigger\r\n\r\nWindows 任意文件自动安装 / 触发工具\r\n版本：%s\r\n\r\n开发语言：Go\r\n界面：Windows 原生控件\r\n支持离线运行。依赖工具需提前准备。\r\n\r\n图形界面与命令行共用执行逻辑和配置格式。设置保存为 config.json，高级配置可以查看、导入或导出同一份 JSON。\r\n\r\n任务记录位置：%s", cli.Version, f.historyDir),
+		"环境与依赖\r\n\r\n本工具需要 Windows 7 SP1 64 位或更新的 Windows。\r\n\r\n点击检查环境后，已有的 7-Zip 和 OCR 会直接复用；缺失时会使用工具同级 third_party 中的离线包，自动部署到工具目录。请保留完整离线包。不会联网下载。\r\n\r\nOCR 压缩包需要完整解压，程序会保留模型和 DLL，再启动引擎验证识别能力。缺包、目录不可写或自检失败时，请查看日志中的修复提示。\r\n\r\n7-Zip 安装器可能要求 UAC 批准。其他运行库不会自动安装。只读检查可运行 --check-prereq --no-deploy-deps。",
+		fmt.Sprintf("关于 AutoTrigger\r\n\r\nWindows 任意文件自动安装 / 触发工具\r\n版本：%s\r\n\r\n开发语言：Go\r\n界面：Windows 原生控件\r\n支持离线运行。缺失的 7-Zip 与 OCR 可从同级离线包自动部署。\r\n\r\n图形界面与命令行共用执行逻辑和配置格式。设置保存为 config.json，高级配置可以查看、导入或导出同一份 JSON。\r\n\r\n任务记录位置：%s", cli.Version, f.historyDir),
 	}
 	if index < 0 || index >= len(topics) {
 		return

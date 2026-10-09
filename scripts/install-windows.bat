@@ -9,9 +9,8 @@ rem
 rem  Usage:  install-windows.bat [any install-windows.ps1 parameters]
 rem  Example: install-windows.bat -Check -Json
 rem
-rem  Recommended: right-click -> "Run as administrator", so that 7-Zip can be
-rem  installed to C:\Program Files\7-Zip. Without elevation the script still
-rem  works: it falls back to <delivery>\third_party\7zip\7-Zip.
+rem  Dependencies default to tool-local third_party directories.
+rem  Windows may still request UAC approval for the 7-Zip installer.
 rem ---------------------------------------------------------------------------
 setlocal
 

@@ -31,6 +31,14 @@ type Prereqs struct {
 }
 
 func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, map[string]interface{}, error) {
+	return p.check(ctx, c, true)
+}
+
+func (p *Prereqs) CheckOnly(ctx context.Context, c config.Config) (schema.Prereq, map[string]interface{}, error) {
+	return p.check(ctx, c, false)
+}
+
+func (p *Prereqs) check(ctx context.Context, c config.Config, deploy bool) (schema.Prereq, map[string]interface{}, error) {
 	report := schema.EmptyPrereq()
 	v := winver.Current()
 	avx, avx2 := winver.AVX()
@@ -47,6 +55,7 @@ func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, ma
 	if c.Archive.SevenZipPath != "auto" {
 		candidates = append(candidates, c.Archive.SevenZipPath)
 	} else {
+		candidates = append(candidates, filepath.Join("third_party", "7zip", "7-Zip", "7z.exe"))
 		for _, key := range []string{"SOFTWARE\\7-Zip", "SOFTWARE\\WOW6432Node\\7-Zip"} {
 			h, err := regOpen(syscall.HKEY_LOCAL_MACHINE, key)
 			if err == nil {
@@ -59,7 +68,17 @@ func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, ma
 		}
 		candidates = append(candidates, `C:\Program Files\7-Zip\7z.exe`, `C:\Program Files (x86)\7-Zip\7z.exe`)
 	}
-	if path := findExecutable(candidates, p.ExeDir); path != "" {
+	zipPath := findExecutable(candidates, p.ExeDir)
+	if zipPath == "" && deploy && (c.Archive.RequireSevenZip || (c.OCR.Enabled && c.OCR.Engine != "none")) {
+		var err error
+		zipPath, err = p.deploySevenZip(ctx)
+		if err != nil {
+			report.Issues = append(report.Issues, "7-Zip 自动部署失败："+err.Error())
+		} else {
+			report.Issues = append(report.Issues, "已自动部署 7-Zip 到工具目录："+zipPath)
+		}
+	}
+	if path := zipPath; path != "" {
 		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		result, err := procutil.Run(probeCtx, p.Runner, ports.Command{Program: path, Args: []string{"i"}})
 		cancel()
@@ -100,13 +119,27 @@ func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, ma
 		if c.OCR.EnginePath != "auto" {
 			paths = append(paths, c.OCR.EnginePath)
 		} else {
+			stem := strings.TrimSuffix(exe, ".exe")
+			paths = append(paths, filepath.Join("third_party", "ocr", stem, exe), filepath.Join("third_party", "ocr", exe))
 			if path, err := exec.LookPath(exe); err == nil {
 				paths = append(paths, path)
 			}
-			stem := strings.TrimSuffix(exe, ".exe")
 			paths = append(paths, filepath.Join(`C:\tools`, stem, exe), filepath.Join(`D:\tools`, stem, exe), filepath.Join(`C:\Program Files`, stem, exe), filepath.Join(`C:\Program Files\Tesseract-OCR`, exe))
 		}
 		path := findExecutable(paths, p.ExeDir)
+		if path == "" && deploy && (engine == "paddleocr_json" || engine == "rapidocr_json") {
+			if report.ArchiveBackend == nil {
+				report.Issues = append(report.Issues, "无法自动部署 OCR：需要先准备可用的 7-Zip")
+			} else {
+				var err error
+				path, err = p.deployOCR(ctx, engine, *report.ArchiveBackend, c.Archive.MaxExtractSizeBytes)
+				if err != nil {
+					report.Issues = append(report.Issues, "OCR 自动部署失败："+err.Error())
+				} else {
+					report.Issues = append(report.Issues, "已自动部署 OCR 到工具目录："+path)
+				}
+			}
+		}
 		report.OCREngine = engine
 		report.OCREngineStatus = "missing"
 		if path != "" || engine == "umi_ocr" {
@@ -137,6 +170,10 @@ func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, ma
 			}
 		}
 		if report.OCREngineStatus != "ok" {
+			archives, _ := filepath.Glob(filepath.Join(p.ExeDir, "third_party", "ocr", "*.7z"))
+			if path == "" && len(archives) > 0 {
+				report.Issues = append(report.Issues, "检测到 OCR 离线压缩包，但压缩包不能直接运行。请先完整解压（保留模型和 DLL），再在设置中选择引擎 exe，或解压到工具同级 third_party\\ocr\\PaddleOCR-json（或 RapidOCR-json）目录。")
+			}
 			report.Issues = append(report.Issues, "未检测到可用 OCR 引擎：请部署 third_party\\ocr\\PaddleOCR-json 或 RapidOCR-json；当前退回 UIA/Win32 + 模板；可用 --no-ocr 显式跳过")
 		}
 	}

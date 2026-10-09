@@ -19,6 +19,35 @@ func stubDeps() Dependencies {
 	a := stub.Adapter{}
 	return Dependencies{Runner: a, Trigger: func(config.Config, resources.Pack) ports.InstallerTrigger { return a }, Opener: a, Mounter: a, Evidence: a, NativeGUI: a, Lock: a, Prereqs: a}
 }
+
+type checkModeProbe struct{ readOnly bool }
+
+func (p *checkModeProbe) Check(context.Context, config.Config) (schema.Prereq, map[string]interface{}, error) {
+	p.readOnly = false
+	r := schema.EmptyPrereq()
+	r.ArchiveBackend = schema.String("test-7z.exe")
+	return r, nil, nil
+}
+func (p *checkModeProbe) CheckOnly(ctx context.Context, c config.Config) (schema.Prereq, map[string]interface{}, error) {
+	r, meta, err := p.Check(ctx, c)
+	p.readOnly = true
+	return r, meta, err
+}
+func TestPrereqDeploymentCanBeDisabled(t *testing.T) {
+	for _, readOnly := range []bool{false, true} {
+		probe := &checkModeProbe{}
+		deps := stubDeps()
+		deps.Prereqs = probe
+		args := []string{"--check-prereq", "--json", "--output=-", "--log-file", filepath.Join(t.TempDir(), "check.log")}
+		if readOnly {
+			args = append(args, "--no-deploy-deps")
+		}
+		var stdout, stderr bytes.Buffer
+		if code := Run(context.Background(), args, &stdout, &stderr, deps); code != 0 || probe.readOnly != readOnly || !json.Valid(stdout.Bytes()) {
+			t.Fatalf("readonly=%v got=%v code=%d stderr=%s", readOnly, probe.readOnly, code, stderr.String())
+		}
+	}
+}
 func TestInformationStdoutIsOneJSONDocument(t *testing.T) {
 	for _, args := range [][]string{{"--dump-config"}, {"--version"}, {"--dump-config", "--timeout=0"}} {
 		var stdout, stderr bytes.Buffer

@@ -31,11 +31,10 @@
     直接指定已有的 7z.exe，跳过发现与安装。
 
 .PARAMETER SevenZipDir
-    安装 7-Zip 的目标目录。缺省：管理员用 `C:\Program Files\7-Zip`；否则用
-    `<Root>\third_party\7zip\7-Zip`（免管理员，且整包可搬移）。
+    安装 7-Zip 的目标目录。缺省 `<Root>\third_party\7zip\7-Zip`。
 
 .PARAMETER OCRRoot
-    OCR 引擎释放根目录，缺省 `C:\tools`；最终目录为 `<OCRRoot>\PaddleOCR-json` 等。
+    OCR 引擎释放根目录，缺省 `<Root>\third_party\ocr`；最终目录为 `<OCRRoot>\PaddleOCR-json` 等。
 
 .PARAMETER Engine
     要释放的 OCR 引擎：auto/both（缺省，两个都装）、paddleocr_json、rapidocr_json、none。
@@ -87,7 +86,7 @@ param(
     [string]$Root,
     [string]$SevenZipExe,
     [string]$SevenZipDir,
-    [string]$OCRRoot = 'C:\tools',
+    [string]$OCRRoot,
     [ValidateSet('auto', 'both', 'paddleocr_json', 'rapidocr_json', 'none')]
     [string]$Engine = 'auto',
     [string]$ConfigPath,
@@ -359,8 +358,7 @@ function Step-SevenZip([string]$RootPath, [string]$MinVersion) {
     $admin = Test-Admin
     $target = $SevenZipDir
     if (-not $target) {
-        if ($admin) { $target = 'C:\Program Files\7-Zip' }
-        else { $target = Join-Path $RootPath 'third_party\7zip\7-Zip' }
+        $target = Join-Path $RootPath 'third_party\7zip\7-Zip'
     }
     $commandLine = '/S /D=' + $target
     Out-Do ('静默安装 7-Zip：' + $pkg)
@@ -424,7 +422,7 @@ function Step-OCR([string]$RootPath, [string]$SevenZip) {
             # 自定义目录：engine_path 只能写死一个，回落无从谈起，故只装选定的那个
             [void]$want.Add($paddle)
             Out-Warn ('OCR 目标目录 ' + $OCRRoot + ' 不在工具自带搜索路径内：只安装 PaddleOCR-json；' +
-                      'CPU 若未启用 AVX，请改用 -OCRRoot C:\tools（默认）或 -Engine rapidocr_json')
+                      'CPU 若未启用 AVX，请使用默认工具同级目录或 -Engine rapidocr_json')
         }
     } elseif ($Engine -eq 'paddleocr_json') {
         [void]$want.Add($paddle)
@@ -487,12 +485,11 @@ function Step-OCR([string]$RootPath, [string]$SevenZip) {
 
 # ---------------------------------------------------------------- [3] config.json
 
-# 工具自带的 OCR 搜索路径只有 C:\tools\<名>\ 与 D:\tools\<名>\；
-# OCR 释放到这两处才可以写 engine_path="auto"（从而保留"无 AVX 自动回落"的能力）。
+# 工具同级目录及常见路径可保持 engine_path="auto"。
 function Test-AutoOCRDir([string]$Dir) {
     if (-not $Dir) { return $false }
     $d = $Dir.TrimEnd('\')
-    foreach ($a in @('C:\tools', 'D:\tools')) { if ($d -ieq $a) { return $true } }
+    foreach ($a in @('C:\tools', 'D:\tools', (Join-Path $root 'third_party\ocr'))) { if ($d -ieq $a) { return $true } }
     return $false
 }
 
@@ -515,9 +512,9 @@ function Step-Config([string]$RootPath, [string]$EngineName) {
     if ($EngineName) {
         $enginePathValue = 'auto'
         if (-not (Test-AutoOCRDir $OCRRoot)) {
-            # 非工具默认搜索目录：必须写死路径，否则工具按 C:\tools / D:\tools 找不到
+            # 自定义目录需要写入显式路径。
             if ($script:EnginePaths.ContainsKey($EngineName)) { $enginePathValue = $script:EnginePaths[$EngineName] }
-            Out-Warn ('OCR 释放到 ' + $OCRRoot + '（不是工具自带的 C:\tools / D:\tools）：将在 config.json 里写死 engine_path；' +
+            Out-Warn ('OCR 释放到自定义目录 ' + $OCRRoot + '：将在 config.json 里写死 engine_path；' +
                       '副作用是 CPU 无 AVX 时不能再自动回落到 RapidOCR，请自行把 ocr.engine 改成 rapidocr_json')
         }
         [void]$block.Add('  "ocr": { "enabled": true, "engine": ' + (Esc-Json $EngineName) + ', "engine_path": ' + (Esc-Json $enginePathValue) + ', "require_ocr": false }')
@@ -578,7 +575,7 @@ function Step-Verify([string]$RootPath) {
         # 拿不到退出码/输出，而 & 的 $LASTEXITCODE 稳定可靠（AutoTrigger 不需要提权启动）。
         Push-Location $scratch
         try {
-            & $exe '--check-prereq' '--json' > $outFile 2> $errFile
+            & $exe '--check-prereq' '--no-deploy-deps' '--json' > $outFile 2> $errFile
             $code = $LASTEXITCODE
         } finally { Pop-Location }
         if (Test-Path $outFile) { $raw = [System.IO.File]::ReadAllText($outFile) }
@@ -626,6 +623,7 @@ if (-not $root) {
     Out-Fail '没找到 AutoTrigger.exe：请用 -Root 指定交付根目录（或把脚本放在交付包的 scripts\ 下运行）'
     $exit = 1
 } else {
+    if (-not $OCRRoot) { $OCRRoot = Join-Path $root 'third_party\ocr' }
     $exe = Join-Path $root 'AutoTrigger.exe'
     Out-Log ('交付根目录：' + $root)
     $minVersion = Get-ToolMinVersion $root $exe

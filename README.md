@@ -23,7 +23,7 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -Check
 ```
 
-脚本会：① 复用系统已有的 `7z.exe`（没有才用 `third_party\7zip\7z*-x64.exe` 静默安装）；② 把 `third_party\ocr\*.7z` 释放到 `C:\tools\PaddleOCR-json` 与 `C:\tools\RapidOCR-json`；③ 在 exe 同目录写**最小增量** `config.json`（覆盖前自动备份）；④ 用 `--check-prereq` 复核。退出码 `0` 就绪 / `4` 缺 7-Zip / `5` 缺 OCR。参数、权限说明与手工步骤见 `DEPLOY.md`。
+脚本会：① 复用已有 `7z.exe`（没有才用离线包安装到工具同级 `third_party\7zip\7-Zip`）；② 把 OCR 离线包释放到工具同级 `third_party\ocr\PaddleOCR-json` 与 `RapidOCR-json`；③ 写最小增量配置（覆盖前备份）；④ 只读复核。脚本可选，日常 GUI 检查环境已能自动部署缺失依赖。退出码 `0` 就绪 / `4` 缺 7-Zip / `5` 缺 OCR，详见 `DEPLOY.md`。
 
 ## 使用
 
@@ -41,7 +41,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 
 `--output -` 的 stdout 只有一个 JSON 文档。日志、进度和依赖提示写 stderr 与日志文件。PowerShell 5.1 重定向可能将 stdout 转为 UTF-16；第三方集成推荐 `--output result.json`，结果文件始终为 UTF-8 无 BOM。
 
-首次部署按 [DEPLOY.md](DEPLOY.md) 准备 7-Zip 和 OCR。程序只检查前置，不代装、不下载。`--no-archive` 跳过压缩包和映像，`--no-ocr` 关闭 OCR。
+首次使用点击“检查环境”或执行 `--check-prereq`：程序复用已有 7-Zip 和 OCR；缺失时使用同级 `third_party` 离线包静默部署到工具目录，再做能力自检，不联网下载。`--no-deploy-deps` 仅检测，不部署；`--no-archive` 跳过压缩包和映像，`--no-ocr` 关闭 OCR。详情见 [DEPLOY.md](DEPLOY.md)。
 
 ## 安装行为
 

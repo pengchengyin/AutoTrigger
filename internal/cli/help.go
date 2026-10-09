@@ -30,7 +30,8 @@ const helpText = `用法:
   --config <路径>           指定配置文件（显式指定时取代同目录 config.json）
 
 前置与能力:
-  --check-prereq            检查离线前置（7-Zip / OCR）后退出
+  --check-prereq            检查并部署缺失的离线前置（7-Zip / OCR）后退出
+  --no-deploy-deps          仅检查，不安装或解压依赖
   --capabilities            输出机器可读能力清单
   --version                 输出版本与 schema 版本
 

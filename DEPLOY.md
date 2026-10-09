@@ -42,7 +42,7 @@ scripts\install-windows.ps1     ← 实际逻辑（也可直接带参数调用�
 | 4 | **自检**：调 `AutoTrigger.exe --check-prereq --json` 复核，结论与退出码与工具本体同源 |
 
 ```powershell
-# 推荐：以管理员身份运行（这样 7-Zip 可以装到 C:\Program Files\7-Zip）
+# 默认部署到工具目录；安装器可能仍要求 UAC 批准
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 
 # 先看它会做什么，不做任何改动
@@ -57,8 +57,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 |---|---|---|
 | `-Root` | 自动探测（脚本上级目录 → 脚本目录 → 上级目录\dist） | 含 `AutoTrigger.exe` 的交付根目录 |
 | `-SevenZipExe` | 空 | 指定已有 `7z.exe`，跳过发现与安装 |
-| `-SevenZipDir` | 管理员 → `C:\Program Files\7-Zip`；否则 → `<Root>\third_party\7zip\7-Zip` | 7-Zip 安装目标目录 |
-| `-OCRRoot` | `C:\tools` | OCR 释放根目录 |
+| `-SevenZipDir` | `<Root>\third_party\7zip\7-Zip` | 7-Zip 安装目标目录 |
+| `-OCRRoot` | `<Root>\third_party\ocr` | OCR 释放根目录 |
 | `-Engine` | `auto`（两个引擎都装） | `auto` / `both` / `paddleocr_json` / `rapidocr_json` / `none` |
 | `-ConfigPath` | `<Root>\config.json` | 写出的配置文件路径 |
 | `-SkipSevenZip` / `-SkipOCR` / `-NoConfig` | 关 | 分别跳过对应步骤 |
@@ -68,7 +68,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 
 退出码：`0` 前置就绪 / `4` 缺 7-Zip / `5` 缺 OCR（要求部署但未就绪）/ `1` 其他错误。比工具本体默认更严格——工具在 `ocr.require_ocr: false` 时 OCR 缺失也返回 0，本脚本要求"要装就必须装好"，便于镜像构建阶段做卡点。
 
-**为什么默认把两个 OCR 引擎都装上**：工具的 `ocr.engine_path: "auto"` 只在 `C:\tools\<引擎名>\` 与 `D:\tools\<引擎名>\` 下查找。CPU **有** AVX 时用 `PaddleOCR-json.exe`；**没有** AVX 时工具会把引擎自动切到 `rapidocr_json` 并去找 `RapidOCR-json.exe`。两个都装、`engine_path` 留 `auto`，两种情况都能命中。若把 `-OCRRoot` 指到别处，脚本就只装选定的那一个并把 `engine_path` 写死——代价是失去 AVX 自动回落能力，脚本会就此给出警告。
+**自动部署与脚本用途**：日常使用无需先运行脚本。GUI“检查环境”、CLI `--check-prereq` 及执行前检查均会从同级离线物料部署缺失的 7-Zip 和当前 CPU 所需的 OCR 引擎。`--check-prereq --no-deploy-deps` 仅检测；`--capabilities` 不部署。程序不会覆盖已有配置、联网下载或自动安装 VC++ 运行库；工具目录不可写、物料缺失、能力自检失败均明确提示。7-Zip 安装器可能写注册表或弹出 UAC。
+
+脚本仍保留用于镜像批量准备、`-Check` / `-DryRun`、指定目录和 `-Force` 修复。脚本默认把两个 OCR 引擎解压到工具同级 `third_party\ocr`，`engine_path` 保持 `auto`，兼容不同 CPU；程序自动部署只释放本机需要的一个引擎。自定义 OCR 目录仍需配置显式路径。
 
 ## 手工部署（等价步骤）
 
@@ -79,7 +81,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 目标 Windows 7 SP1 x64 或更新系统。准备可交互桌面、管理员运行权限、可写 TEMP 和样本/结果目录。镜像管理员按测试口径配置 UAC 与 AV/EDR 排除目录；工具不修改这些配置，也不替用户关闭系统保护。不能从无交互桌面的服务会话保证 GUI 安装。
 
 1. 核对交付包 manifest 的 SHA-256。
-2. 安装离线 7-Zip：以管理员身份执行 `third_party\7zip\7z2603-x64.exe /S`，装到默认目录 `C:\Program Files\7-Zip`；也可用 `/S /D=<目录>` 指定安装目录（实测**不需要管理员**），或直接用 7-Zip 解开该 exe 得到便携版。最低版本默认 24.09；低版本告警但继续。（工具本体只提示此操作、不自动执行；`scripts\install-windows.ps1` 会代劳。）
+2. 安装离线 7-Zip：默认可交由工具自动部署到 `third_party\7zip\7-Zip`；手工执行时用 `/S /D=<工具目录>\third_party\7zip\7-Zip`。最低版本默认 24.09；低版本告警但继续。安装器可能要求 UAC，便携版也可直接配置 `archive.sevenzip_path`。
 3. 使用 7-Zip 将 PaddleOCR-json 包完整解压到 `C:\tools\PaddleOCR-json`，保留 exe 同目录的 DLL、models 和配置。不要只复制 OCR exe。
 4. CPU 没有启用 AVX 时改用 RapidOCR-json，将其完整解压到 `C:\tools\RapidOCR-json`。发行包有自带模型配置时，应按发行包启动说明确认；运行 `scripts\verify-ocr.ps1` 做端到端验证。
 5. 仅当 OCR 实际启动提示缺少 VC++ 时，由镜像管理员安装适用于该 Win7 镜像的离线运行库。当前交付不默认包含 VC++，工具不会下载。
@@ -100,7 +102,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 }
 ```
 
-> OCR 装在工具自带的搜索目录（`C:\tools\<引擎名>\` 或 `D:\tools\<引擎名>\`）时，
+> OCR 装在工具同级 `third_party\ocr\<引擎名>\` 或常见 `C:\tools\<引擎名>\` / `D:\tools\<引擎名>\` 时，
 > 建议写 `"engine_path": "auto"` 而**不要**写死路径：CPU 未启用 AVX 时工具会自动把引擎
 > 切到 `rapidocr_json`，写死路径会让这个回落指到错误的 exe 上。`scripts\install-windows.ps1`
 > 默认就是写 `auto` + 同时部署两个引擎。
