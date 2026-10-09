@@ -426,6 +426,10 @@ func statusColors(kind string) uintptr {
 		return rgb(196, 0, 0)
 	case statusKindWarn:
 		return rgb(178, 96, 0)
+	case statusKindUnverified:
+		// 青绿：既区别于"确定成功"的绿，也区别于"部分成功/告警"的橙，
+		// 让"有安装动作但证据不足"这一档能被单独识别（F20.6）。
+		return rgb(0, 122, 122)
 	case statusKindRun:
 		return rgb(0, 84, 166)
 	default:

@@ -229,6 +229,17 @@ func TestResultBannerStatesOutcome(t *testing.T) {
 		t.Fatalf("全成功应给出成功结论，实得 %q：%v", outcome, lines)
 	}
 
+	// 只有"未验证"成功时必须自成档：结论行不得冒充"安装成功"，
+	// 否则会与统计行的"安装未验证 1"口径打架（F20.6）。
+	lines, outcome = ResultBanner(0, &ResultSummary{Total: 1, ByStatus: map[string]int{"unverified": 1}}, "")
+	body = strings.Join(lines, "\n")
+	if outcome != "unverified" {
+		t.Fatalf("仅未验证成功应给出 unverified 结论，实得 %q", outcome)
+	}
+	if !strings.Contains(body, "安装成功（未验证）") || !strings.Contains(body, "安装未验证 1") {
+		t.Fatalf("未验证档的结论行与统计行应措辞一致：\n%s", body)
+	}
+
 	// 读不到结果 JSON 时按退出码兜底，不得编造安装结论
 	lines, outcome = ResultBanner(4, nil, "")
 	if strings.Join(lines, "\n") == "" || !strings.Contains(strings.Join(lines, "\n"), "7-Zip") {

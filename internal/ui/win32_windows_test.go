@@ -117,7 +117,7 @@ func TestStatusColors(t *testing.T) {
 		t.Fatalf("COLORREF 布局应为 0x00BBGGRR，实得 %#x", got)
 	}
 	seen := map[uintptr]string{}
-	for _, k := range []string{statusKindOK, statusKindFail, statusKindWarn, statusKindRun} {
+	for _, k := range []string{statusKindOK, statusKindUnverified, statusKindFail, statusKindWarn, statusKindRun} {
 		c := statusColors(k)
 		if other, dup := seen[c]; dup {
 			t.Fatalf("状态档位 %s 与 %s 用了同一个颜色 %#x，成功/失败必须一眼可分", k, other, c)

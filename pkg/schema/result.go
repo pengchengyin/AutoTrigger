@@ -69,19 +69,21 @@ func SummaryLine(byStatus map[string]int, total int) string {
 
 // 总体结论档位。界面据此用颜色与大号文字给出显式提示（F20.6）。
 const (
-	OutcomeEmpty   = "empty"
-	OutcomeOK      = "ok"
-	OutcomePartial = "partial"
-	OutcomeFailed  = "failed"
-	OutcomeSkipped = "skipped"
+	OutcomeEmpty      = "empty"
+	OutcomeOK         = "ok"
+	OutcomeUnverified = "unverified"
+	OutcomePartial    = "partial"
+	OutcomeFailed     = "failed"
+	OutcomeSkipped    = "skipped"
 )
 
 var outcomeText = map[string]string{
-	OutcomeEmpty:   "没有可处理的样本",
-	OutcomeOK:      "安装成功",
-	OutcomePartial: "部分成功",
-	OutcomeFailed:  "安装失败",
-	OutcomeSkipped: "已跳过",
+	OutcomeEmpty:      "没有可处理的样本",
+	OutcomeOK:         "安装成功",
+	OutcomeUnverified: "安装成功（未验证）",
+	OutcomePartial:    "部分成功",
+	OutcomeFailed:     "安装失败",
+	OutcomeSkipped:    "已跳过",
 }
 
 // OutcomeText 返回总体结论的中文标签。
@@ -94,20 +96,30 @@ func OutcomeText(outcome string) string {
 
 // OverallOutcome 由汇总桶推导总体结论。
 // 口径：出现失败或超时即不算全胜；仅部分完成也不算成功；只剩"已安装 / 已触发 / 跳过"时按可接受处理。
+//
+// 注意 `installed` 与 `unverified` 刻意分档（F20.6）：前者是"证据充分判成功"，
+// 后者只是"有安装动作但证据不足"。若不分档，日志会出现"总体结论：安装成功"与
+// "安装未验证 1"两种措辞并列，使用者读到会怀疑口径不一致。
 func OverallOutcome(s Summary) string {
 	if s.Total == 0 {
 		return OutcomeEmpty
 	}
-	installed := s.ByStatus["installed"] + s.ByStatus["unverified"]
+	installed := s.ByStatus["installed"]
+	unverified := s.ByStatus["unverified"]
 	partial := s.ByStatus["partial"]
 	bad := s.ByStatus["failed"] + s.ByStatus["timeout"]
 	done := s.ByStatus["already_installed"] + s.ByStatus["triggered"]
 	switch {
-	case bad > 0 && installed == 0 && partial == 0 && done == 0:
+	case bad > 0 && installed == 0 && unverified == 0 && partial == 0 && done == 0:
 		return OutcomeFailed
 	case bad > 0 || partial > 0:
 		return OutcomePartial
-	case installed > 0 || done > 0:
+	case installed > 0:
+		return OutcomeOK
+	case unverified > 0:
+		// 只有"未验证"成功：结论措辞与统计行保持一致，不冒充"安装成功"。
+		return OutcomeUnverified
+	case done > 0:
 		return OutcomeOK
 	default:
 		return OutcomeSkipped

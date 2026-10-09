@@ -70,11 +70,12 @@ const maxLogBytes = 160 << 10
 
 // 状态行的语义档位，决定文字颜色与提示措辞（F20.6）。
 const (
-	statusKindInfo = "info"
-	statusKindRun  = "run"
-	statusKindOK   = "ok"
-	statusKindWarn = "warn"
-	statusKindFail = "fail"
+	statusKindInfo       = "info"
+	statusKindRun        = "run"
+	statusKindOK         = "ok"
+	statusKindUnverified = "unverified"
+	statusKindWarn       = "warn"
+	statusKindFail       = "fail"
 )
 
 var configDialogFilter = []string{
@@ -925,6 +926,8 @@ func finishStatus(code int, outcome string) (kind, text string) {
 	switch outcome {
 	case schema.OutcomeOK:
 		return statusKindOK, "√ 安装成功"
+	case schema.OutcomeUnverified:
+		return statusKindUnverified, "! 安装成功（未验证）：有安装动作但证据不足，详见结果 JSON"
 	case schema.OutcomePartial:
 		return statusKindWarn, "! 部分成功：有个别样本失败或超时，详见结果 JSON"
 	case schema.OutcomeFailed:

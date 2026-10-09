@@ -421,7 +421,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 // 与图形界面结束横幅同口径（F20.6）：总耗时、退出码、各状态计数、总体结论。
 func logRunSummary(logger *logging.Logger, result *schema.Result, exit int, elapsed time.Duration) {
 	s := result.Summary
-	logger.Stage(logging.LevelInfo, logging.StageResult, "本次运行结束：总耗时 %.1f 秒，退出码 %d（%s）", elapsed.Seconds(), exit, ExitText(exit))
+	logger.Stage(logging.LevelInfo, logging.StageResult, "本次运行结束：总耗时 %.1f 秒，退出码 %d —— %s", elapsed.Seconds(), exit, ExitText(exit))
 	// 结论先于计数：先给判断，再给依据，避免"安装成功 0…总体结论 安装成功"这类误读。
 	logger.Stage(logging.LevelInfo, logging.StageResult, "总体结论：%s", schema.OutcomeText(schema.OverallOutcome(s)))
 	logger.Stage(logging.LevelInfo, logging.StageResult, "样本统计：%s", schema.SummaryLine(s.ByStatus, s.Total))
