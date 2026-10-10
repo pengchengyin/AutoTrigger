@@ -883,6 +883,8 @@ F15 的 **S/A/B 分级、基线快照、反证据、冲突仲裁属于"方法"�
 
 #### F13 参数探测与多轮尝试机制
 
+2026-10-10 D20c 修正：补齐通用 `-s` 参数，默认 `max_attempts_per_file` 调整为 9，覆盖八种静默参数与最后一次无参数运行。旧配置显式上限仍优先且不自动改写；上限不足时仅取前 N-1 静默参数并保留无参数兜底。
+
 静默参数映射表（可外部覆盖）：
 
 | 安装器类型 | 参数 |
@@ -1606,7 +1608,7 @@ MotW 直接影响 SmartScreen：带 MotW 的未签名安装器可能被"Windows 
     "launch_check": false
   },
   "resources": { "template_pack": "merged", "builtin_template_variants": 180, "external_template_entries": 0 },
-  "limits": { "max_attempts_per_file": 8, "timeout_sec": 600, "idle_timeout_sec": 60, "task_timeout_sec": 0 }
+  "limits": { "max_attempts_per_file": 9, "timeout_sec": 600, "idle_timeout_sec": 60, "task_timeout_sec": 0 }
 }
 ```
 
@@ -1937,7 +1939,7 @@ masters/                         # 模板母版（人工维护，见 D17）；�
   "activity_io_epsilon_bytes": 65536,
   "concurrency": 1,
   "attempt_interval_sec": 2,
-  "max_attempts_per_file": 8,
+  "max_attempts_per_file": 9,
   "archive": {
     "max_depth": 3,
     "max_extract_size_bytes": 2147483648,

@@ -118,7 +118,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 | `timeout_sec` / `task_timeout_sec` | 600 / 0，0 表示不限 |
 | `startup_timeout_sec` / `idle_timeout_sec` | 30 / 60，正整数秒 |
 | `concurrency` | 本期仅 1 |
-| `max_attempts_per_file` / `attempt_interval_sec` | 8 / 2，正整数 / 非负秒 |
+| `max_attempts_per_file` / `attempt_interval_sec` | 9 / 2，正整数 / 非负秒；旧配置显式写 8 时仍保持上限 8，完整参数轮询需改为至少 9 |
 | `archive.max_depth` / `max_extract_size_bytes` | 3 / 2 GiB；预检加实际解压监控 |
 | `iso.strategy` | extract_first、extract_only、mount_first、mount_only |
 | `iso.allow_os_media` / `allow_media_disc` | 均 false |

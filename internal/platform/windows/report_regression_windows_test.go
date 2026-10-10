@@ -52,6 +52,20 @@ func TestD08RelocatedUnicodeShortcut(t *testing.T) {
 	}
 }
 
+func TestD20SilentParametersIncludeShortSAndRespectLimit(t *testing.T) {
+	c := config.Defaults()
+	trigger := Trigger{Config: c, Pack: resources.Pack{Mode: "builtin"}}
+	commands, err := trigger.Commands("setup.exe", ports.FileType{Kind: "pe_executable"}, t.TempDir())
+	if err != nil || len(commands) != 9 || len(commands[7].Args) != 1 || commands[7].Args[0] != "-s" || commands[8].Method != "no_param_run" {
+		t.Fatalf("%+v %v", commands, err)
+	}
+	trigger.Config.MaxAttemptsPerFile = 8
+	commands, err = trigger.Commands("setup.exe", ports.FileType{Kind: "pe_executable"}, t.TempDir())
+	if err != nil || len(commands) != 8 || commands[7].Method != "no_param_run" {
+		t.Fatalf("%+v %v", commands, err)
+	}
+}
+
 func TestD12UTF16BatchRunsWithoutChangingOriginal(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "script.bat")

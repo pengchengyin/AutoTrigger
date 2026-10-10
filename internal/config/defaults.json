@@ -2,7 +2,7 @@
   "timeout_sec": 600, "startup_timeout_sec": 30, "idle_timeout_sec": 60,
   "task_timeout_sec": 0, "progress_interval_sec": 30,
   "activity_cpu_epsilon_ms": 200, "activity_io_epsilon_bytes": 65536,
-  "concurrency": 1, "attempt_interval_sec": 2, "max_attempts_per_file": 8,
+  "concurrency": 1, "attempt_interval_sec": 2, "max_attempts_per_file": 9,
   "archive": {"max_depth":3,"max_extract_size_bytes":2147483648,"sevenzip_path":"auto","require_sevenzip":true,"min_version":"24.09","temp_root":""},
   "iso": {"strategy":"extract_first","allow_os_media":false,"allow_media_disc":false,"autorun_as_p0":true,"media_kinds_file":"media_kinds.json","mount_tool_path":"auto","mount_timeout_ms":15000,"dismount_retry":3,"keep_mounted_until_verified":true,"keep_extracted_on_success":false,"motw_policy":"native"},
   "package_layout":{"enabled":true,"mode":"smart","entry_patterns_file":"install_entries.json","exclude_patterns_file":"exclude_entries.json","prefer_shallowest":true,"prefer_arch_match":true,"readme_hints":true,"max_entries_phase1":10,"fallback_to_brute":true},
