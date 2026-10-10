@@ -281,6 +281,15 @@ func Decide(profile string, ev []schema.Evidence, sideEffects, preInstalled, sta
 		}
 		return d
 	}
+	if timedout {
+		if sideEffects {
+			d.Status = "install_partial"
+			confidence("low")
+		} else {
+			d.Status = "killed_on_timeout"
+		}
+		return d
+	}
 	complete := a >= 2 && (seen["A1"] || seen["A2"])
 	if profile == "loose" {
 		complete = (a >= 1 && sideEffects) || (a >= 2 && meaningfulA) || b >= 2

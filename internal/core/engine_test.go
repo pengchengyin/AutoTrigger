@@ -250,6 +250,9 @@ func TestFileErrorPaths(t *testing.T) {
 			tc.setup(e, r)
 			path := sample(t, "Demo.exe", tc.data)
 			e.Run(context.Background(), path)
+			if tc.name == "document" {
+				tc.status = "triggered"
+			}
 			if f := e.Result.Results[0]; f.FinalStatus != tc.status {
 				t.Fatalf("expected %s: %+v", tc.status, f)
 			}

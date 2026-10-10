@@ -387,6 +387,18 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		everStarted = everStarted || startedAttempt
 		timedout = timedout || timeoutAttempt
 		f.RequiresReboot = f.RequiresReboot || reboot
+		if cmd.Method == "document_host" {
+			f.PlatformMeta["host_program"] = cmd.Program
+			f.FinalStatus = "failed"
+			if startedAttempt && a.ExitCode != nil && *a.ExitCode == 0 {
+				f.FinalStatus = "triggered"
+			}
+			if timeoutAttempt {
+				f.FinalStatus = "killed_on_timeout"
+			}
+			f.InstallConfidence = nil
+			break
+		}
 		if network {
 			f.PlatformMeta["requires_network"] = true
 		}

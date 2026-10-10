@@ -1,6 +1,7 @@
 package core
 
 import (
+	"autotrigger/internal/core/ports"
 	"context"
 	"os"
 	"path/filepath"
@@ -19,6 +20,18 @@ func TestD01DirectBlacklistedInputsNeverStart(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestD05DocumentHostCannotGenerateInstallationEvidence(t *testing.T) {
+	e, r := engineFor(t)
+	r.installAt = 1
+	e.Opener = fakeOpener{association: true}
+	e.Run(context.Background(), sample(t, "sample.pdf", []byte("%PDF")))
+	f := e.Result.Results[0]
+	if f.FinalStatus != "triggered" || f.InstallConfidence != nil || len(f.Attempts[0].InstallEvidence) != 0 {
+		t.Fatal(f)
+	}
+	_, _, _, _, _, _ = e.attempt(context.Background(), ports.Command{Program: "reader.exe", Method: "document_host"}, nil, "sample.pdf")
 }
 
 func TestD03OrdinaryDirectoryDoesNotConverge(t *testing.T) {
