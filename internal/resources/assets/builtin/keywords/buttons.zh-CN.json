@@ -1,10 +1,10 @@
 [
  {"id":"zh_install","pattern":"安装|立即安装|开始安装|一键安装","action":"install"},
- {"id":"zh_accept","pattern":"我接受|我接受协议|我接受许可协议|我同意|同意|接受","action":"accept"},
+ {"id":"zh_accept","pattern":"我接受|我接受协议|我接受许可协议|我接受此协议|我同意|我同意此协议|我同意协议|我同意许可协议|同意|接受","action":"accept"},
  {"id":"zh_next","pattern":"下一步|继续","action":"next"},
  {"id":"zh_finish","pattern":"完成|安装完成","action":"finish"},
  {"id":"zh_ok","pattern":"确定|是","action":"ok"},
- {"id":"zh_deny","pattern":"取消|退出|否|卸载|反安装|移除|重启|立即重启|修复|更新","action":"deny"},
+ {"id":"zh_deny","pattern":"取消|退出|否|卸载|反安装|移除|重启|立即重启|修复|更新|我拒绝此协议|我不同意此协议|我不接受此协议","action":"deny"},
  {"id":"zh_fail","pattern":"安装失败|无法安装|回滚|失败","action":"failure"},
  {"id":"zh_network","pattern":"正在下载|下载组件|连接服务器|需要联网","action":"network"},
  {"id":"zh_reboot","pattern":"需要重启|需要重新启动","action":"reboot"}

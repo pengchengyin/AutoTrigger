@@ -39,6 +39,29 @@ func TestAgreementSelectionAdvancesToNext(t *testing.T) {
 	}
 }
 
+func TestNotepad3ChineseLicensePage(t *testing.T) {
+	n := &native{controls: []ports.Control{
+		{ID: "agree", Text: "我同意此协议(&A)", Role: "radio", Enabled: true},
+		{ID: "decline", Text: "我拒绝此协议(&D)", Role: "radio", Enabled: true, Checked: true},
+		{ID: "next", Text: "下一步(&N)", Role: "button", Enabled: false},
+	}}
+	a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+	if err := a.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if a.semantic(n.controls[1].Text) != "deny" {
+		t.Fatal("declining license was not forbidden")
+	}
+	if _, err := a.Step(context.Background(), []int{1}); err != nil || len(n.clicked) != 1 || n.clicked[0].ID != "agree" {
+		t.Fatalf("license agreement not selected: %v, %+v", err, n.clicked)
+	}
+	n.controls[0].Checked, n.controls[1].Checked, n.controls[2].Enabled = true, false, true
+	a.states[1].lastClick = time.Now().Add(-time.Second)
+	if _, err := a.Step(context.Background(), []int{1}); err != nil || len(n.clicked) != 2 || n.clicked[1].ID != "next" {
+		t.Fatalf("license next not clicked: %v, %+v", err, n.clicked)
+	}
+}
+
 func (n *native) Windows([]int) ([]ports.Window, error) {
 	return []ports.Window{{Handle: 1, Title: "Setup", Bounds: ports.Rect{Left: 0, Top: 0, Right: 500, Bottom: 300}, DPI: 96}}, nil
 }
