@@ -21,6 +21,17 @@ func TestD01DirectBlacklistedInputsNeverStart(t *testing.T) {
 	}
 }
 
+func TestD17NonInstallationDoesNotCollectGlobalBaseline(t *testing.T) {
+	e, r := engineFor(t)
+	e.Evidence = fakeEvidence{runner: r, fail: true}
+	e.Opener = fakeOpener{association: true}
+	e.Run(context.Background(), sample(t, "script.cmd", []byte("echo test")))
+	f := e.Result.Results[0]
+	if f.FinalStatus != "triggered" || f.BaselineDigest != nil {
+		t.Fatal(f)
+	}
+}
+
 func TestD15HelpDocumentsAreNotGlobalBlacklist(t *testing.T) {
 	for _, name := range []string{"manual.pdf", "help.chm", "manual.hlp"} {
 		e, r := engineFor(t)

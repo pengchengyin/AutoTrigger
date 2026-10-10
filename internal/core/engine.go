@@ -320,14 +320,25 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		f.FinalStatus, f.Notes = "failed", "untriggerable"
 		return f
 	}
-	e.Log.Stage(logging.LevelInfo, logging.StageVerify, "采集安装前基线快照（注册表卸载项 / 监控目录 / 文件关联），用于判定本次安装是否真的生效：%s", path)
-	base, err := e.Evidence.Snapshot(fileCtx, e.Config.Verify)
+	if ft.Kind == "document" && !e.Opener.HasAssociation(triggerPath) {
+		f.Notes = "no_host_app"
+		return f
+	}
+	ext := strings.ToLower(filepath.Ext(triggerPath))
+	nonInstallSample := ft.Kind == "document" || ft.Kind == "unknown" || ft.Kind == "script" || ext == ".com" || ext == ".scr"
+	base := &ports.Baseline{Registry: map[string]ports.UninstallEntry{}, Dirs: map[string]ports.DirState{}}
+	if !nonInstallSample {
+		e.Log.Stage(logging.LevelInfo, logging.StageVerify, "采集安装前基线快照（注册表卸载项 / 监控目录 / 文件关联），用于判定本次安装是否真的生效：%s", path)
+		base, err = e.Evidence.Snapshot(fileCtx, e.Config.Verify)
+	}
 	if err != nil {
 		f.FinalStatus = "failed"
 		f.Notes = "baseline unavailable: " + err.Error()
 		return f
 	}
-	f.BaselineDigest = schema.String(verify.Digest(base))
+	if !nonInstallSample {
+		f.BaselineDigest = schema.String(verify.Digest(base))
+	}
 	f.PreInstalled = verify.PreInstalled(triggerPath, base)
 	if e.Config.Verify.WriteBaseline {
 		f.PlatformMeta["baseline"] = base
