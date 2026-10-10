@@ -34,6 +34,7 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	defer p.KillTree()
 	e.Log.Stage(logging.LevelInfo, logging.StageRun, "已启动安装进程：方法=%s，PID=%d", cmd.Method, p.PID())
 	m := activity.New(start, e.Config)
+	m.PassiveHost = cmd.Method == "document_host"
 	m.Last.PIDs = []int{p.PID()}
 	tick := time.NewTicker(time.Duration(e.Config.GUI.PollIntervalMS) * time.Millisecond)
 	defer tick.Stop()
@@ -80,7 +81,7 @@ loop:
 			finish("deadline_or_interrupt")
 			break loop
 		case <-heartbeat.C:
-			e.Log.Stage(logging.LevelInfo, logging.StageRun, "安装进行中：已用时 %.0f 秒，静默 %.0f 秒，最近信号=%s", time.Since(start).Seconds(), time.Since(m.LastProgress).Seconds(), m.Signal)
+			e.Log.Stage(logging.LevelInfo, logging.StageRun, "执行等待中：已用时 %.0f 秒，无进展 %.0f 秒，最近信号=%s，监控PID=%v（活动信号不代表安装成功）", time.Since(start).Seconds(), time.Since(m.LastProgress).Seconds(), m.Signal, m.Last.PIDs)
 		case <-tick.C:
 			progress, err := p.Activity()
 			if err != nil {
@@ -123,7 +124,9 @@ loop:
 				}
 				lastSnapshot = time.Now()
 			}
-			progress.Signature = filesystemSignature
+			if cmd.Method != "document_host" {
+				progress.Signature = filesystemSignature
+			}
 			m.Update(time.Now(), progress, extra)
 			if reboot {
 				finish("requires_reboot")

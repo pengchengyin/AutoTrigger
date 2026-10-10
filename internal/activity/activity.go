@@ -15,7 +15,9 @@ type Monitor struct {
 	Resets       int
 	Seen         bool
 	Signal       string
-	cfg          config.Config
+	// Passive hosts may redraw or poll forever without advancing the opened document.
+	PassiveHost bool
+	cfg         config.Config
 }
 
 func New(now time.Time, c config.Config) *Monitor {
@@ -23,10 +25,10 @@ func New(now time.Time, c config.Config) *Monitor {
 }
 func (m *Monitor) Update(now time.Time, a ports.Activity, extra string) bool {
 	signal := ""
-	if a.CPUTimeMS > m.Last.CPUTimeMS && a.CPUTimeMS-m.Last.CPUTimeMS >= uint64(m.cfg.ActivityCPUEpsilonMS) {
+	if (!m.PassiveHost || !m.Seen) && a.CPUTimeMS > m.Last.CPUTimeMS && a.CPUTimeMS-m.Last.CPUTimeMS >= uint64(m.cfg.ActivityCPUEpsilonMS) {
 		signal = "cpu"
 	}
-	if a.IOBytes > m.Last.IOBytes && a.IOBytes-m.Last.IOBytes >= m.cfg.ActivityIOEpsilonBytes {
+	if (!m.PassiveHost || !m.Seen) && a.IOBytes > m.Last.IOBytes && a.IOBytes-m.Last.IOBytes >= m.cfg.ActivityIOEpsilonBytes {
 		signal = "io"
 	}
 	if fmt.Sprint(a.PIDs) != fmt.Sprint(m.Last.PIDs) {

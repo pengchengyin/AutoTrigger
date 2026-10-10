@@ -271,7 +271,7 @@ func (p *process) Activity() (ports.Activity, error) {
 		var io [6]uint64
 		ok, _, _ = kernel32.NewProc("GetProcessIoCounters").Call(uintptr(h), uintptr(unsafe.Pointer(&io[0])))
 		if ok != 0 {
-			a.IOBytes += io[3] + io[4] + io[5]
+			a.IOBytes += io[3] + io[4]
 		}
 		syscall.CloseHandle(h)
 	}

@@ -26,3 +26,20 @@ func TestStartupAndIdle(t *testing.T) {
 		t.Fatal("GUI progress did not reset idle")
 	}
 }
+
+func TestD04PassiveHostCPUCannotKeepIdleAlive(t *testing.T) {
+	c := config.Defaults()
+	now := time.Now()
+	m := New(now, c)
+	m.PassiveHost = true
+	for i := 1; i <= 70; i++ {
+		m.Update(now.Add(time.Duration(i)*time.Second), ports.Activity{PIDs: []int{1}, CPUTimeMS: uint64(i) * 500, IOBytes: uint64(i) * 100000}, "")
+	}
+	if m.Timeout(now.Add(70*time.Second)) != "idle_timeout" {
+		t.Fatalf("passive host kept alive: %+v", m)
+	}
+	m.Update(now.Add(71*time.Second), m.Last, "gui_change")
+	if m.Timeout(now.Add(72*time.Second)) != "" {
+		t.Fatal("actual GUI change must reset idle")
+	}
+}
