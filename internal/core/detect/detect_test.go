@@ -31,3 +31,14 @@ func TestMagicPrecedence(t *testing.T) {
 		t.Fatal(ft)
 	}
 }
+
+func TestD09ExecutableSuffixRequiresMagic(t *testing.T) {
+	for _, name := range []string{"text.exe", "text.dll", "text.scr", "text.com", "noextension"} {
+		path := filepath.Join(t.TempDir(), name)
+		os.WriteFile(path, []byte("not an executable"), 0600)
+		ft, err := (Detector{}).Detect(path)
+		if err != nil || ft.Kind != "unknown" {
+			t.Fatalf("%s %+v %v", name, ft, err)
+		}
+	}
+}

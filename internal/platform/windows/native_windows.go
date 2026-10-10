@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -172,7 +173,14 @@ func (Runner) Start(ctx context.Context, c ports.Command) (ports.Process, error)
 		return nil, err
 	}
 	p := &process{job: syscall.Handle(job), done: make(chan ports.Exit, 1), out: &Buffer{}, errout: &Buffer{}}
-	cmd := exec.Command(c.Program, c.Args...)
+	program := c.Program
+	if filepath.Ext(program) == "" && filepath.IsAbs(program) {
+		if info, err := os.Stat(program); err == nil && !info.IsDir() {
+			// A trailing dot prevents Go's PATHEXT lookup; Win32 normalizes it away.
+			program += "."
+		}
+	}
+	cmd := exec.Command(program, c.Args...)
 	cmd.Dir = c.Dir
 	cmd.Stdin = c.Stdin
 	cmd.Stdout = c.Stdout

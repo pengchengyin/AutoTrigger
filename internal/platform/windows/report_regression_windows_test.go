@@ -3,11 +3,15 @@
 package windows
 
 import (
+	"autotrigger/internal/core/ports"
+	"autotrigger/internal/procutil"
+	"context"
 	"encoding/binary"
 	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestD08RelocatedUnicodeShortcut(t *testing.T) {
@@ -43,5 +47,23 @@ func TestD08RelocatedUnicodeShortcut(t *testing.T) {
 	os.WriteFile(link, b[:30], 0600)
 	if _, err = shortcutRelative(link); err == nil {
 		t.Fatal("truncated link accepted")
+	}
+}
+
+func TestD09ExtensionlessPEUsesExactExistingPath(t *testing.T) {
+	exe, _ := os.Executable()
+	b, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "无扩展名文件")
+	if err = os.WriteFile(path, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	x, err := procutil.Run(ctx, Runner{}, ports.Command{Program: path, Args: []string{"-test.run=^$"}})
+	if err != nil || x.Code != 0 {
+		t.Fatalf("%+v %v", x, err)
 	}
 }

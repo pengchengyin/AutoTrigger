@@ -68,6 +68,9 @@ func (Detector) Detect(path string) (ports.FileType, error) {
 	if kind != "" {
 		ft.Disguised = ft.Kind != kind
 		ft.Kind = kind
+	} else if ft.Kind == "pe_executable" || ft.Kind == "pe_dll" {
+		ft.Kind = "unknown"
+		ft.Disguised = true
 	}
 	return ft, nil
 }
