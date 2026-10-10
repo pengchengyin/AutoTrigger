@@ -564,6 +564,8 @@ F15 的 **S/A/B 分级、基线快照、反证据、冲突仲裁属于"方法"�
 
 #### F7 文档类触发
 
+2026-10-10 D08 修正：快捷方式的旧绝对目标失效时优先解析保存的 RelativePath，基准为 `.lnk` 所在目录，不是工具工作目录；保留 COM 参数解析并重新识别目标类型，所有目标仍经过禁执行校验。
+
 2026-10-10 D05 修正：宿主正常执行记 `triggered`，失败或超时如实记录，`install_confidence` 为 null，不采集安装证据、不参与安装收敛。安装路径若超时且只有 A/B 级证据，最多 `install_partial`，不能判 `install_completed`；S 级及反证据继续按 F15 仲裁。
 
 - 通过 `FileOpener.HasAssociation` 判断关联程序：无则记录 `skipped: no_host_app` 并跳过

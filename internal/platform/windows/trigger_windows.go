@@ -210,6 +210,10 @@ func splitCommand(s string) ([]string, error) {
 	return out, nil
 }
 func (Opener) ResolveShortcut(path string) (string, []string, error) {
+	relative, err := shortcutRelative(path)
+	if err != nil {
+		return "", nil, err
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	hr, _, _ := ole32.NewProc("CoInitializeEx").Call(0, 2)
@@ -245,5 +249,9 @@ func (Opener) ResolveShortcut(path string) (string, []string, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	return config.ExpandEnv(syscall.UTF16ToString(target)), tokens[1:], nil
+	resolved := relocatedShortcutTarget(path, config.ExpandEnv(syscall.UTF16ToString(target)), config.ExpandEnv(relative))
+	if resolved == "" {
+		return "", nil, fmt.Errorf("shortcut has no filesystem target")
+	}
+	return resolved, tokens[1:], nil
 }
