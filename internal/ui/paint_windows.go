@@ -504,7 +504,7 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 		if snap.PresentationState != "" {
 			status = snap.PresentationState
 		}
-		if len(snap.Rows) == 1 && snap.Error == "" {
+		if len(snap.Rows) == 1 && snap.Error == "" && snap.PresentationState == "" {
 			status = snap.Rows[0].Status
 		}
 		drawText(hdc, valueOr(name, "任务详情"), rectT{Left: left, Top: bounds.Top + int32(f.px(16)), Right: right - int32(f.px(220)), Bottom: bounds.Top + int32(f.px(42))}, modernTheme.text, f.statusFontOrDefault(), dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
@@ -523,7 +523,7 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 		if snap.PresentationState != "" {
 			message = status + " · 最终结果以执行结束后的 JSON 为准"
 		}
-		if snap.Error != "" {
+		if snap.Error != "" && snap.PresentationState == "" {
 			message = "任务失败：" + snap.Error
 		}
 		banner.Left += int32(f.px(12))
@@ -638,6 +638,14 @@ func (f *form) homeSummary() (*ResultSummary, bool) {
 
 func (f *form) resultSnapshot() (resultSnapshot, bool) {
 	path := f.resultPathOrDefault()
+	if f.page == pageTaskDetail && f.selectedTaskRunning() {
+		record, _ := f.selectedTaskRecord()
+		snap, _ := readResultSnapshot(path)
+		snap.TaskID, snap.Path, snap.StartedAt = record.ID, path, record.Created
+		snap.FinishedAt = nil
+		snap.PresentationState = "安装 / 触发进行中"
+		return snap, true
+	}
 	if snap, ok := readResultSnapshot(path); ok {
 		return snap, true
 	}

@@ -202,6 +202,7 @@ type form struct {
 
 	mu         sync.Mutex
 	logBuf     []byte
+	taskLogBuf []byte
 	flushed    int
 	reset      bool
 	pending    int32
@@ -1886,6 +1887,9 @@ func (f *form) launch(label string, args []string, aux bool) {
 	f.cancel = cancel
 	f.running = true
 	f.aux = aux
+	if !aux {
+		f.taskLogBuf = nil
+	}
 	f.exitCode = 0
 	f.mu.Unlock()
 	f.refreshTaskList()
@@ -2145,6 +2149,15 @@ func (f *form) filteredLogText() string {
 
 func (f *form) resultViewText() string {
 	var b strings.Builder
+	if f.page == pageTaskDetail && f.selectedTaskRunning() {
+		f.mu.Lock()
+		text := string(f.taskLogBuf)
+		f.mu.Unlock()
+		if strings.TrimSpace(text) == "" {
+			return "运行中，等待执行日志…\r\n"
+		}
+		return toCRLF(text)
+	}
 	if f.page == pageLogs {
 		b.WriteString("当前会话日志\r\n")
 		b.WriteString(strings.Repeat("=", 32) + "\r\n")
@@ -2227,6 +2240,12 @@ func (f *form) appendLog(p []byte) {
 	}
 	f.mu.Lock()
 	f.logBuf = append(f.logBuf, p...)
+	if f.running && !f.aux {
+		f.taskLogBuf = append(f.taskLogBuf, p...)
+		if len(f.taskLogBuf) > maxLogBytes {
+			f.taskLogBuf = append(f.taskLogBuf[:0], f.taskLogBuf[len(f.taskLogBuf)-maxLogBytes/2:]...)
+		}
+	}
 	if len(f.logBuf) > maxLogBytes {
 		keep := maxLogBytes / 2
 		f.logBuf = append(f.logBuf[:0], f.logBuf[len(f.logBuf)-keep:]...)
