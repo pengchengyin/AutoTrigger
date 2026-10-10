@@ -2,6 +2,7 @@ package core
 
 import (
 	"autotrigger/internal/activity"
+	"autotrigger/internal/core/layout"
 	"autotrigger/internal/core/ports"
 	"autotrigger/internal/logging"
 	"autotrigger/internal/verify"
@@ -15,6 +16,13 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	start := time.Now()
 	a := schema.Attempt{Method: cmd.Method, Command: commandText(cmd), Result: "failed", TerminationMode: "natural", InstallEvidence: []schema.Evidence{}, GUIActions: []schema.GUIAction{}, ArtifactCheck: "unknown"}
 	obs := verify.Observation{Evidence: []schema.Evidence{}}
+	for _, target := range []string{path, cmd.Program} {
+		matched, err := layout.ExecutionExclusion(target, e.Pack, e.Config)
+		if err != nil || matched != "" {
+			a.Error = schema.String(fmt.Sprintf("execution excluded: %s %v", matched, err))
+			return a, obs, false, false, false, false
+		}
+	}
 	p, err := e.Runner.Start(ctx, cmd)
 	if err != nil {
 		a.Error = schema.String(err.Error())

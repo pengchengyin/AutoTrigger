@@ -228,6 +228,13 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 	}
 	f.DetectedType = ft.Kind
 	f.ExtensionDisguised = ft.Disguised
+	if matched, err := layout.ExecutionExclusion(path, e.Pack, e.Config); err != nil {
+		f.FinalStatus, f.Notes = "failed", err.Error()
+		return f
+	} else if matched != "" {
+		f.SelectionReason, f.Notes = "excluded_blacklist", "excluded_blacklist: "+matched
+		return f
+	}
 	e.Log.Stage(logging.LevelInfo, logging.StageDetect, "识别结果：%s → %s（%s）", path, ft.Kind, humanSize(s.Size()))
 	if ft.Disguised {
 		e.Log.Stage(logging.LevelWarn, logging.StageDetect, "扩展名与真实类型不符（疑似伪装），按真实类型 %s 处理：%s", ft.Kind, path)
@@ -280,6 +287,13 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 			child.PlatformMeta["shortcut_target"] = target
 			return child
 		}
+	}
+	if matched, err := layout.ExecutionExclusion(triggerPath, e.Pack, e.Config); err != nil {
+		f.FinalStatus, f.Notes = "failed", err.Error()
+		return f
+	} else if matched != "" {
+		f.SelectionReason, f.Notes = "excluded_blacklist", "excluded_blacklist: "+matched
+		return f
 	}
 	e.Log.Stage(logging.LevelInfo, logging.StageVerify, "采集安装前基线快照（注册表卸载项 / 监控目录 / 文件关联），用于判定本次安装是否真的生效：%s", path)
 	base, err := e.Evidence.Snapshot(fileCtx, e.Config.Verify)
