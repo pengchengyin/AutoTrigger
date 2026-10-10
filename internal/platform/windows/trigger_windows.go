@@ -166,6 +166,9 @@ type Opener struct{}
 
 func (Opener) HasAssociation(path string) bool { _, err := association(path); return err == nil }
 func association(path string) (string, error) {
+	if filepath.Ext(path) == "" {
+		return "", fmt.Errorf("no associated host for %s", path)
+	}
 	buf := make([]uint16, 32768)
 	n := uint32(len(buf))
 	p := syscall.NewLazyDLL("shlwapi.dll").NewProc("AssocQueryStringW")
@@ -173,7 +176,12 @@ func association(path string) (string, error) {
 	if int32(r) < 0 || n < 2 {
 		return "", fmt.Errorf("no associated host for %s", path)
 	}
-	return syscall.UTF16ToString(buf), nil
+	command := syscall.UTF16ToString(buf)
+	args, err := splitCommand(command)
+	if err != nil || len(args) == 0 || strings.EqualFold(filepath.Base(args[0]), "OpenWith.exe") {
+		return "", fmt.Errorf("no associated host for %s", path)
+	}
+	return command, nil
 }
 func (Opener) OpenCommand(path string) (ports.Command, error) {
 	template, err := association(path)

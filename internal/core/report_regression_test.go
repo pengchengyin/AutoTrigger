@@ -21,6 +21,23 @@ func TestD01DirectBlacklistedInputsNeverStart(t *testing.T) {
 	}
 }
 
+func TestD10UnknownAndForeignFilesNeverLaunchOpenWith(t *testing.T) {
+	for _, data := range [][]byte{[]byte("random data"), {0x7f, 'E', 'L', 'F'}, {0xcf, 0xfa, 0xed, 0xfe}} {
+		e, r := engineFor(t)
+		e.Run(context.Background(), sample(t, "sample.bin", data))
+		f := e.Result.Results[0]
+		if len(r.commands) != 0 || len(f.Attempts) != 0 {
+			t.Fatal(f)
+		}
+		if string(data) == "random data" && (f.FinalStatus != "failed" || f.Notes != "untriggerable") {
+			t.Fatal(f)
+		}
+		if string(data) != "random data" && f.FinalStatus != "skipped" {
+			t.Fatal(f)
+		}
+	}
+}
+
 func TestD05DocumentHostCannotGenerateInstallationEvidence(t *testing.T) {
 	e, r := engineFor(t)
 	r.installAt = 1

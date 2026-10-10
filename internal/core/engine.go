@@ -302,6 +302,14 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		f.SelectionReason, f.Notes = "excluded_blacklist", "excluded_blacklist: "+matched
 		return f
 	}
+	if strings.HasPrefix(ft.Family, "unsupported_") {
+		f.Notes = ft.Family
+		return f
+	}
+	if ft.Kind == "unknown" && !e.Opener.HasAssociation(triggerPath) {
+		f.FinalStatus, f.Notes = "failed", "untriggerable"
+		return f
+	}
 	e.Log.Stage(logging.LevelInfo, logging.StageVerify, "采集安装前基线快照（注册表卸载项 / 监控目录 / 文件关联），用于判定本次安装是否真的生效：%s", path)
 	base, err := e.Evidence.Snapshot(fileCtx, e.Config.Verify)
 	if err != nil {
