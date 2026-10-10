@@ -59,7 +59,7 @@ func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy,
 		report.Issues = append(report.Issues, "系统版本过低：需要 Windows 7 SP1 x64 或更高版本")
 	}
 	if admin == 0 {
-		report.Issues = append(report.Issues, "建议以管理员身份运行：安装动作与 HKLM 采证在标准权限下可能不完整")
+		report.Issues = append(report.Issues, "建议以管理员身份运行：当前进程未提权，即使账户属于 Administrators 也可能是标准权限。系统级安装与 HKLM 采证可能不完整；权限拒绝需在管理员会话复测，不能据此推断安装器或工具有缺陷。UAC 处理见 README 使用说明")
 	}
 	candidates := []string{}
 	if c.Archive.SevenZipPath != "auto" {
