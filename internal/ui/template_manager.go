@@ -4,6 +4,7 @@ import (
 	"autotrigger/internal/config"
 	"autotrigger/internal/gui/templates"
 	"autotrigger/internal/resources"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -45,9 +46,49 @@ func templateConfigBody(body, mode, dir string) (string, error) {
 	return string(b), err
 }
 
+func templatePreviewFile(entry templates.Entry, dir string) (string, error) {
+	data, err := fs.ReadFile(entry.FS, entry.File)
+	if err != nil {
+		return "", err
+	}
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(data)
+	path := filepath.Join(dir, fmt.Sprintf("%x.png", hash))
+	if err = os.WriteFile(path, data, 0600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 func loadExternalTemplateDir(dir string) (*templates.Library, error) {
 	if _, err := os.Stat(filepath.Join(dir, "templates.index.json")); err != nil {
 		return nil, fmt.Errorf("请选择包含 templates.index.json 的模板目录：%w", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "templates.index.json"))
+	if err != nil {
+		return nil, err
+	}
+	var index templates.Index
+	if err = json.Unmarshal(data, &index); err != nil {
+		return nil, fmt.Errorf("模板索引不是有效 JSON：%w", err)
+	}
+	seen := map[string]bool{}
+	for _, entry := range index.Entries {
+		if seen[entry.ID] {
+			return nil, fmt.Errorf("模板 ID 重复：%s", entry.ID)
+		}
+		seen[entry.ID] = true
+		if strings.TrimSpace(entry.Family) == "" || strings.TrimSpace(entry.Action) == "" || strings.TrimSpace(entry.Lang) == "" {
+			return nil, fmt.Errorf("模板 %s：缺少 family、action 或 lang", entry.ID)
+		}
+		if entry.DPI != 100 && entry.DPI != 125 && entry.DPI != 150 && entry.DPI != 200 {
+			return nil, fmt.Errorf("模板 %s：DPI 必须是 100 / 125 / 150 / 200", entry.ID)
+		}
+		if entry.Theme != "light" && entry.Theme != "dark" && entry.Theme != "win7classic" {
+			return nil, fmt.Errorf("模板 %s：主题必须是 light / dark / win7classic", entry.ID)
+		}
 	}
 	cfg := config.Defaults()
 	cfg.GUI.TemplatePack, cfg.GUI.TemplateDir = "external", dir

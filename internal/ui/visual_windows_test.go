@@ -80,6 +80,7 @@ func TestWindowsVisualClicks(t *testing.T) {
 		procUpdateWindow.Call(f.hwnd)
 	}
 	capture("home")
+	exerciseGUIRequestedFixes(t, f, capture)
 	w, h := f.clientSize()
 	click(f.homeActionRect(0, w, h))
 	if f.page != pageNewTask {
@@ -163,6 +164,18 @@ func TestWindowsVisualClicks(t *testing.T) {
 		t.Fatal("valid template did not pass source self-test")
 	}
 	capture("templates-validated")
+	f.setComboSel(idTemplateSelect, 0)
+	send(f.hwnd, 0x111, uintptr(idTemplateSelect|cbnSelChange<<16), f.ctrls[idTemplateSelect])
+	if !strings.Contains(windowText(f.ctrls[idTemplateBody]), "test-only-button") || !strings.Contains(windowText(f.ctrls[idTemplateBody]), "DPI：100%") {
+		t.Fatal("single template details missing")
+	}
+	capture("template-single-details")
+	send(f.ctrls[idTemplateGuide], 0xF5, 0, 0)
+	if helpPanes[f.helpWindow] == nil || !strings.Contains(helpPanes[f.helpWindow].text, "templates.index.json") {
+		t.Fatal("template guide did not open")
+	}
+	procDestroyWindow.Call(f.helpWindow)
+	f.helpWindow = 0
 	parent := t.TempDir()
 	f.exportTemplateResourcesTo(parent)
 	exports, _ := filepath.Glob(filepath.Join(parent, "AutoTrigger-resources-*", "templates", "templates.index.json"))
@@ -384,6 +397,115 @@ func TestWindowsVisualClicks(t *testing.T) {
 		}
 	}
 	capture("task-history-after-failure")
+}
+
+func exerciseGUIRequestedFixes(t *testing.T, f *form, capture func(string)) {
+	t.Helper()
+	oldHistory, oldDir, oldResult := f.history, f.historyDir, f.resultPath
+	f.history = nil
+	f.historyDir = t.TempDir()
+	f.beginNewTask()
+	path := filepath.Join(t.TempDir(), "界面回归测试-未执行.exe")
+	if err := os.WriteFile(path, []byte("MZ UI regression fixture only"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	setWindowTextRaw(f.ctrls[idInput], path)
+	if windowText(f.ctrls[idTaskName]) != filepath.Base(path) {
+		t.Fatal("task name was not autofilled")
+	}
+	setWindowTextRaw(f.ctrls[idInput], filepath.Dir(path))
+	if windowText(f.ctrls[idTaskName]) != filepath.Base(filepath.Dir(path)) {
+		t.Fatal("auto name did not follow folder")
+	}
+	setWindowTextRaw(f.ctrls[idTaskName], "用户手动任务名")
+	setWindowTextRaw(f.ctrls[idInput], path)
+	if windowText(f.ctrls[idTaskName]) != "用户手动任务名" {
+		t.Fatal("manual task name overwritten")
+	}
+	setWindowTextRaw(f.ctrls[idTaskName], "")
+	setWindowTextRaw(f.ctrls[idInput], path)
+	result := filepath.Join(f.historyDir, "running-test.json")
+	f.registerTask(Options{Input: path, Output: result})
+	if f.history[0].FileType != "pe_executable" || f.history[0].FileSize == nil {
+		t.Fatal("pre-execution file metadata missing")
+	}
+	f.resultPath = result
+	f.selectedResult = result
+	f.mu.Lock()
+	oldLogs := append([]byte(nil), f.logBuf...)
+	f.running = true
+	f.logBuf = nil
+	for i := 0; i < 180; i++ {
+		f.logBuf = append(f.logBuf, []byte(fmt.Sprintf("[INFO] 界面回归日志 %03d（未执行安装）\n", i))...)
+	}
+	f.mu.Unlock()
+	f.setPage(pageTaskDetail)
+	snap, ok := f.resultSnapshot()
+	if !ok || snap.PresentationState != "安装 / 触发进行中" {
+		t.Fatal("running detail has no presentation")
+	}
+	capture("task-detail-running")
+	send(f.ctrls[idResultHelp], 0xF5, 0, 0)
+	pane := helpPanes[f.helpWindow]
+	if pane == nil {
+		t.Fatal("result JSON help window did not open")
+	}
+	setWindowTextRaw(pane.search, "results[].attempts[].exit_code")
+	if !strings.Contains(windowText(pane.body), "不是任务整体退出码") {
+		t.Fatal("result help field search failed")
+	}
+	captureNativeWindow(t, f.helpWindow, filepath.Join(os.Getenv("AUTOTRIGGER_UI_SHOTS"), "result-json-help.png"))
+	procDestroyWindow.Call(f.helpWindow)
+	f.helpWindow = 0
+	f.setPage(pageLogs)
+	h := f.ctrls[idResultView]
+	if !editAtBottom(h) {
+		t.Fatal("logs did not initially follow bottom")
+	}
+	send(h, 0x115, 6, 0)
+	send(h, 0x115, 5, 0)
+	before := windowText(h)
+	f.mu.Lock()
+	f.logBuf = append(f.logBuf, []byte("新增日志-暂停时不可刷新\n")...)
+	f.mu.Unlock()
+	f.updateLiveViews()
+	if windowText(h) != before {
+		t.Fatal("logs refreshed during scroll tracking")
+	}
+	capture("logs-review-paused")
+	send(h, 0x115, 8, 0)
+	send(h, 0x115, 7, 0)
+	f.updateLiveViews()
+	if !strings.Contains(windowText(h), "新增日志-暂停时不可刷新") || !editAtBottom(h) {
+		t.Fatal("logs did not resume at bottom")
+	}
+	capture("logs-live-bottom")
+	f.setPage(pageSettings)
+	send(f.ctrls[idSettingsAdvanced], 0xF5, 0, 0)
+	send(f.ctrls[idConfigHelp], 0xF5, 0, 0)
+	pane = helpPanes[f.helpWindow]
+	if pane == nil {
+		t.Fatal("configuration help did not open")
+	}
+	setWindowTextRaw(pane.search, "template_pack")
+	if !strings.Contains(windowText(pane.body), "merged") {
+		t.Fatal("config help missing enum semantics")
+	}
+	captureNativeWindow(t, f.helpWindow, filepath.Join(os.Getenv("AUTOTRIGGER_UI_SHOTS"), "config-json-help.png"))
+	procDestroyWindow.Call(f.helpWindow)
+	f.helpWindow = 0
+	f.mu.Lock()
+	f.running = false
+	f.logBuf = oldLogs
+	f.flushed = 0
+	f.mu.Unlock()
+	f.activeTask = ""
+	f.history = oldHistory
+	f.historyDir = oldDir
+	f.resultPath = oldResult
+	f.selectedResult = ""
+	f.setPage(pageHome)
+	f.refreshTaskList()
 }
 
 func captureNativeWindow(t *testing.T, hwnd uintptr, path string) {

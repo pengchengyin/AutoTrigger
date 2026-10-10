@@ -86,6 +86,15 @@ func TestExternalTemplateValidation(t *testing.T) {
 	if _, err := lib.SelfTest(); err != nil {
 		t.Fatal(err)
 	}
+	preview, err := templatePreviewFile(lib.Entries[0], t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, _ := os.ReadFile(filepath.Join(dir, "button.png"))
+	copy, _ := os.ReadFile(preview)
+	if string(source) != string(copy) {
+		t.Fatal("preview altered original template bytes")
+	}
 	writeTemplateFixture(t, dir, true)
 	if _, err := loadExternalTemplateDir(dir); err == nil {
 		t.Fatal("colored PNG accepted")
@@ -96,6 +105,40 @@ func TestExternalTemplateValidation(t *testing.T) {
 	}
 	if _, err := loadExternalTemplateDir(dir); err == nil {
 		t.Fatal("missing PNG accepted")
+	}
+}
+
+func TestTemplateImportRejectsInvalidMetadata(t *testing.T) {
+	for _, kind := range []string{"duplicate", "dpi", "theme", "family", "unsafe-path"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			writeTemplateFixture(t, dir, false)
+			path := filepath.Join(dir, "templates.index.json")
+			data, _ := os.ReadFile(path)
+			var index templates.Index
+			if err := json.Unmarshal(data, &index); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "duplicate":
+				index.Entries = append(index.Entries, index.Entries[0])
+			case "dpi":
+				index.Entries[0].DPI = 91
+			case "theme":
+				index.Entries[0].Theme = "unknown"
+			case "family":
+				index.Entries[0].Family = ""
+			case "unsafe-path":
+				index.Entries[0].File = "../outside.png"
+			}
+			data, _ = json.Marshal(index)
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadExternalTemplateDir(dir); err == nil {
+				t.Fatal("invalid template accepted")
+			}
+		})
 	}
 }
 

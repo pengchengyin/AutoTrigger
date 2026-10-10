@@ -505,6 +505,9 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 		pad, gap := f.px(18), f.px(12)
 		left, right := bounds.Left+int32(pad), bounds.Right-int32(pad)
 		status := schemaOutcomeText(snap)
+		if snap.PresentationState != "" {
+			status = snap.PresentationState
+		}
 		if len(snap.Rows) == 1 && snap.Error == "" {
 			status = snap.Rows[0].Status
 		}
@@ -521,6 +524,9 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 		banner := rectT{Left: left, Top: bounds.Top + int32(f.px(232)), Right: right, Bottom: bounds.Top + int32(f.px(272))}
 		roundRect(hdc, banner, modernTheme.surfaceAlt, statColor(outcomeKind(snap)), f.px(6))
 		message := status + " · " + schema.SummaryLine(snap.Summary.ByStatus, snap.Summary.Total)
+		if snap.PresentationState != "" {
+			message = status + " · 最终结果以执行结束后的 JSON 为准"
+		}
 		if snap.Error != "" {
 			message = "任务失败：" + snap.Error
 		}
@@ -635,7 +641,23 @@ func (f *form) homeSummary() (*ResultSummary, bool) {
 }
 
 func (f *form) resultSnapshot() (resultSnapshot, bool) {
-	return readResultSnapshot(f.resultPathOrDefault())
+	path := f.resultPathOrDefault()
+	if snap, ok := readResultSnapshot(path); ok {
+		return snap, true
+	}
+	if f.page == pageTaskDetail {
+		for _, record := range f.history {
+			if record.Result != path {
+				continue
+			}
+			state := "结果文件暂不可用"
+			if record.ID == f.activeTask && f.isRunning() {
+				state = "安装 / 触发进行中"
+			}
+			return resultSnapshot{TaskID: record.ID, Path: path, StartedAt: record.Created, PresentationState: state}, true
+		}
+	}
+	return resultSnapshot{}, false
 }
 
 func (f *form) resultPathOrDefault() string {
@@ -713,6 +735,12 @@ func schemaOutcomeText(snap resultSnapshot) string {
 }
 
 func outcomeKind(snap resultSnapshot) string {
+	if snap.PresentationState == "安装 / 触发进行中" {
+		return "run"
+	}
+	if snap.PresentationState != "" {
+		return "warn"
+	}
 	switch snapshotOutcome(snap) {
 	case schema.OutcomeOK:
 		return "ok"

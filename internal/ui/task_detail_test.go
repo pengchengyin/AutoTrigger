@@ -32,3 +32,18 @@ func TestDetailCardsUnknownAndMultipleConfidence(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestRunningDetailShowsKnownMetadataOnly(t *testing.T) {
+	size := int64(2048)
+	record := taskRecord{Input: "setup.exe", FileType: "pe_executable", FileSize: &size}
+	cards := detailCards(resultSnapshot{PresentationState: "安装 / 触发进行中"}, record)
+	text := strings.Join(append(cards[0].Lines, cards[2].Lines...), "\n")
+	for _, want := range []string{"可执行程序", "2048 字节", "等待实际执行记录", "安装 / 触发进行中", "置信度：未提供"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %s: %s", want, text)
+		}
+	}
+	if methodText("silent_install") != "静默安装" {
+		t.Fatal("method not translated")
+	}
+}

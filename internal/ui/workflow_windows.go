@@ -5,8 +5,10 @@ package ui
 import (
 	"autotrigger/internal/cli"
 	"autotrigger/internal/config"
+	"autotrigger/internal/core/detect"
 	"autotrigger/pkg/schema"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -87,6 +89,8 @@ func (f *form) createWorkflowControls() {
 	f.button(idHelpAbout, "关于 AutoTrigger")
 	f.showHelpTopic(0)
 	f.refreshTaskList()
+	f.installLiveViews()
+	f.addTooltip(idResultHelp, "结果 JSON 的结构与字段含义（第三方对接）")
 }
 
 var syscallComctl = syscall.NewLazyDLL("comctl32.dll")
@@ -140,6 +144,7 @@ func (f *form) beginNewTask() {
 	f.selectedResult = ""
 	setWindowTextRaw(f.ctrls[idInput], "")
 	setWindowTextRaw(f.ctrls[idTaskName], "")
+	f.autoTaskName = ""
 	f.setPage(pageNewTask)
 	f.setStatus("选择本次要处理的文件或文件夹。执行参数使用设置中的配置。")
 	procSetFocus.Call(f.ctrls[idInput])
@@ -346,7 +351,19 @@ func (f *form) registerTask(opts Options) {
 			configuration = absolute
 		}
 	}
-	f.addHistory(taskRecord{ID: id, Name: name, Input: input, Result: result, Config: configuration, Created: time.Now()})
+	record := taskRecord{ID: id, Name: name, Input: input, Result: result, Config: configuration, Created: time.Now()}
+	if stat, err := os.Stat(input); err == nil {
+		if stat.IsDir() {
+			record.FileType = "directory"
+		} else {
+			size := stat.Size()
+			record.FileSize = &size
+			if ft, err := (detect.Detector{}).Detect(input); err == nil {
+				record.FileType = ft.Kind
+			}
+		}
+	}
+	f.addHistory(record)
 }
 
 func (f *form) completeTask(code int) {
@@ -426,6 +443,7 @@ func (f *form) layoutSettingsPage(w, h int) {
 			f.place(id, int(point.X), int(r.Top)+f.px(52), int(rect.Right-rect.Left), f.px(28))
 		}
 		f.place(idCfgEditor, int(r.Left)+f.px(18), int(r.Top)+f.px(94), int(r.Right-r.Left)-f.px(36), int(r.Bottom-r.Top)-f.px(150))
+		f.showAt(idConfigHelp, int(r.Right)-f.px(146), int(r.Top)+f.px(52), f.px(128), f.px(28))
 		return
 	}
 	f.layoutSettingsControls(w, h)

@@ -18,6 +18,8 @@ type taskRecord struct {
 	Config   string    `json:"config"`
 	Created  time.Time `json:"created"`
 	ExitCode *int      `json:"exit_code,omitempty"`
+	FileType string    `json:"file_type,omitempty"`
+	FileSize *int64    `json:"file_size_bytes,omitempty"`
 }
 
 func loadHistory(dir string) ([]taskRecord, error) {

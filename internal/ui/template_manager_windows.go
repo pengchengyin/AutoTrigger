@@ -10,9 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unsafe"
 )
 
-var templateControlIDs = []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse, idTemplateUseBuiltin, idTemplateUseExternal, idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal, idTemplateImport, idTemplateExport, idTemplateCheck, idTemplateBody, idTemplateStatus}
+var templateControlIDs = []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse, idTemplateUseBuiltin, idTemplateUseExternal, idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal, idTemplateImport, idTemplateExport, idTemplateCheck, idTemplateBody, idTemplateStatus, idTemplateGuide, idTemplateSelect, idTemplatePreview}
 
 type templateCheckResult struct {
 	text string
@@ -53,8 +54,11 @@ func (f *form) layoutTemplates(w, h int) {
 		f.showAt(idTemplateDetailsMerged+i, int(card.Left)+f.px(94), int(card.Bottom)-f.px(42), f.px(72), f.px(28))
 	}
 	f.showAt(idTemplateCheck, right-f.px(110), top+f.px(244), f.px(110), f.px(28))
-	f.showAt(idTemplateStatus, left, top+f.px(244), right-left-f.px(122), f.px(28))
-	f.showAt(idTemplateBody, left, top+f.px(284), right-left, maxInt(f.px(48), int(r.Bottom)-top-f.px(302)))
+	f.showAt(idTemplateGuide, right-f.px(218), top+f.px(244), f.px(100), f.px(28))
+	f.showAt(idTemplateStatus, left, top+f.px(244), right-left-f.px(230), f.px(28))
+	f.showAt(idTemplateSelect, left, top+f.px(282), right-left-f.px(120), f.comboDropH(f.px(28), 8))
+	f.showAt(idTemplatePreview, right-f.px(110), top+f.px(282), f.px(110), f.px(28))
+	f.showAt(idTemplateBody, left, top+f.px(322), right-left, maxInt(f.px(48), int(r.Bottom)-top-f.px(340)))
 	if windowText(f.ctrls[idTemplateBody]) == "" {
 		f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
 	}
@@ -66,12 +70,53 @@ func (f *form) layoutTemplates(w, h int) {
 }
 
 func (f *form) showTemplateDetails(mode string) {
+	send(f.ctrls[idTemplateSelect], 0x14b, 0, 0)
+	f.templateEntries = nil
+	for _, entry := range f.templates.Entries {
+		if mode == "builtin" && entry.Source != "builtin" || mode == "external" && entry.Source != "external" {
+			continue
+		}
+		f.templateEntries = append(f.templateEntries, entry)
+		send(f.ctrls[idTemplateSelect], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr(entry.ID+" · "+entry.Source))))
+	}
+	if len(f.templateEntries) == 0 {
+		send(f.ctrls[idTemplateSelect], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr("当前分类没有图像模板"))))
+	}
+	f.setComboSel(idTemplateSelect, 0)
+	enableWindow(f.ctrls[idTemplatePreview], len(f.templateEntries) > 0)
 	setWindowTextRaw(f.ctrls[idTemplateBody], templateDetails(f.templates, mode))
 	text := "资源详情 · " + map[string]string{"merged": "全部模板", "builtin": "内置模板", "external": "自定义模板"}[mode]
 	if f.templates.Error != "" {
 		text = "模板加载失败，原因见下方详情"
 	}
 	setWindowTextRaw(f.ctrls[idTemplateStatus], text)
+}
+
+const templateGuide = "模板制作与使用\r\n\r\n1. 使用现有模板\r\n选择模板库并点击使用，进入设置保存。merged 保留内置规则并按 ID 合并自定义图像模板；builtin 忽略外部；external 仅用外部。当前内置图像索引为空，不能将内置规则当作安装按钮图片。\r\n\r\n2. 导入\r\n选择包含 templates.index.json 的目录。每个条目须有唯一 id、family、action、lang、dpi、theme、file、width、height。file 必须是目录内的相对路径。图片须为 8-bit 灰度 PNG，宽 24~240、高 16~48。保存配置后生效，源文件不会被移动或覆盖。\r\n\r\n3. 制作真实按钮图片\r\n在目标安装器真实窗口中采集控件本体，紧贴外接矩形，不要手工重绘。母版用 100% DPI、浅色主题；中文和英文分别采集。勾选/未勾选、可用/禁用状态分别保存。保留源截图，索引的 screenshot 指向源 PNG。\r\n\r\n4. 预览与校验\r\n下拉选择实际模板可查看字段和打开图片。校验会在后台匹配源截图，缺少图片、源截图或匹配失败会列出原因。通过测试样本校验不代表已经覆盖真实安装器。\r\n\r\n5. 导出与现场排障\r\n导出内置资源会创建新目录，包含规则和 templates 子目录。空模板索引需要自行补齐真实素材。命令行 --dump-ui 可采集窗口素材，--dump-resources 可导出资源，--self-test templates 可自检；详细制作规范见交付文档 docs/图像模板制作说明.md。"
+
+func (f *form) selectedTemplateDetails() {
+	index := f.comboIndex(idTemplateSelect)
+	if index < 0 || index >= len(f.templateEntries) {
+		return
+	}
+	entry := f.templateEntries[index]
+	setWindowTextRaw(f.ctrls[idTemplateBody], fmt.Sprintf("模板 ID：%s\r\n来源：%s\r\n家族：%s\r\n动作：%s\r\n语言：%s\r\nDPI：%d%%\r\n主题：%s\r\n尺寸：%d × %d\r\n图片：%s\r\n源截图：%s\r\n素材来源：%s", entry.ID, entry.Source, entry.Family, entry.Action, entry.Lang, entry.DPI, entry.Theme, entry.Width, entry.Height, entry.File, entry.Screenshot, entry.Origin))
+}
+
+func (f *form) previewTemplate() {
+	index := f.comboIndex(idTemplateSelect)
+	if index < 0 || index >= len(f.templateEntries) {
+		return
+	}
+	entry := f.templateEntries[index]
+	dir := filepath.Join(os.TempDir(), "AutoTrigger-template-preview")
+	path, err := templatePreviewFile(entry, dir)
+	if err == nil {
+		err = shellOpen(path)
+	}
+	if err != nil {
+		f.templateNotice("无法打开模板图片：" + err.Error())
+	}
 }
 
 func (f *form) templateNotice(text string) {

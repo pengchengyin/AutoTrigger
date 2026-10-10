@@ -139,13 +139,14 @@ type resultRow struct {
 }
 
 type resultSnapshot struct {
-	TaskID     string
-	StartedAt  time.Time
-	FinishedAt *time.Time
-	Summary    ResultSummary
-	Rows       []resultRow
-	Error      string
-	Path       string
+	PresentationState string
+	TaskID            string
+	StartedAt         time.Time
+	FinishedAt        *time.Time
+	Summary           ResultSummary
+	Rows              []resultRow
+	Error             string
+	Path              string
 }
 
 func snapshotOutcome(snap resultSnapshot) string {
@@ -292,8 +293,8 @@ func resultSnapshotReport(snap resultSnapshot) string {
 	for i, row := range snap.Rows {
 		b.WriteString(strconv.Itoa(i+1) + ". " + valueOr(row.File, "-") + "\r\n")
 		b.WriteString("   路径：" + valueOr(row.Path, "-") + "\r\n")
-		b.WriteString("   类型：" + valueOr(row.Type, "-") + "    状态：" + valueOr(row.Status, "-") + "    置信度：" + valueOr(row.Confidence, "-") + "\r\n")
-		b.WriteString("   方法：" + valueOr(row.Method, "-") + "\r\n")
+		b.WriteString("   类型：" + fileTypeText(row.Type) + " (" + row.Type + ")" + "    状态：" + valueOr(row.Status, "-") + "    置信度：" + valueOr(row.Confidence, "-") + "\r\n")
+		b.WriteString("   方法：" + methodText(row.Method) + " (" + row.Method + ")" + "\r\n")
 		b.WriteString("   证据：" + valueOr(row.Evidence, "-") + "\r\n")
 		if row.Notes != "" {
 			b.WriteString("   备注：" + row.Notes + "\r\n")

@@ -5,6 +5,7 @@ package ui
 import (
 	"autotrigger/internal/cli"
 	"autotrigger/internal/config"
+	"autotrigger/internal/gui/templates"
 	"autotrigger/pkg/schema"
 	"bytes"
 	"context"
@@ -109,6 +110,11 @@ const (
 	idTemplateDetailsMerged
 	idTemplateDetailsBuiltin
 	idTemplateDetailsExternal
+	idResultHelp
+	idConfigHelp
+	idTemplateGuide
+	idTemplateSelect
+	idTemplatePreview
 )
 
 // 布局常量，单位为 96 DPI 下的像素（实际值经 scale 换算）。
@@ -159,6 +165,12 @@ type form struct {
 	templates           templateInfo
 	configOpen          bool
 	templateTab         int
+	autoTaskName        string
+	logScroll           map[uintptr]*logScrollState
+	logSubclass         uintptr
+	helpWindow          uintptr
+	templateEntries     []templates.Entry
+	tooltipTexts        []*uint16
 	templateChecking    bool
 	templateCheckResult chan templateCheckResult
 	terminalBrush       uintptr
@@ -298,6 +310,11 @@ func (f *form) loop() {
 		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
 		if int32(r) <= 0 {
 			break
+		}
+		if f.helpWindow != 0 {
+			if handled, _, _ := procIsDialogMessageW.Call(f.helpWindow, uintptr(unsafe.Pointer(&m))); handled != 0 {
+				continue
+			}
 		}
 		if handled, _, _ := procIsDialogMessageW.Call(f.hwnd, uintptr(unsafe.Pointer(&m))); handled != 0 {
 			continue
@@ -439,6 +456,7 @@ func (f *form) createControls() {
 	f.button(idCfgImport, "导入")
 	f.button(idCfgExport, "导出")
 	f.button(idCfgValidate, "校验")
+	f.button(idConfigHelp, "? 字段说明")
 	f.label(idCfgStatus, "配置编辑器尚未加载。")
 
 	f.addControl(idResultView, "EDIT", "",
@@ -448,6 +466,7 @@ func (f *form) createControls() {
 	f.button(idResultOpenFile, "打开结果")
 	f.button(idResultOpenDir, "打开目录")
 	f.button(idResultCopy, "复制")
+	f.button(idResultHelp, "?")
 	f.button(idTemplateAll, "全部模板")
 	f.button(idTemplateBuiltin, "内置模板")
 	f.button(idTemplateExternal, "自定义模板")
@@ -457,6 +476,9 @@ func (f *form) createControls() {
 	f.button(idTemplateImport, "+ 导入模板")
 	f.button(idTemplateExport, "导出内置资源")
 	f.button(idTemplateCheck, "校验模板")
+	f.button(idTemplateGuide, "制作说明")
+	f.combo(idTemplateSelect, []string{"当前分类没有图像模板"}, 0)
+	f.button(idTemplatePreview, "打开图片")
 	for _, id := range []int{idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal} {
 		f.button(id, "详情")
 	}
@@ -718,7 +740,7 @@ func (f *form) layoutResultControls(clientW, clientH int) {
 	for _, item := range []struct {
 		id int
 		w  int
-	}{{idResultRefresh, 76}, {idResultOpenFile, 96}, {idResultOpenDir, 96}, {idResultCopy, 76}} {
+	}{{idResultRefresh, 76}, {idResultOpenFile, 96}, {idResultHelp, 28}, {idResultOpenDir, 96}, {idResultCopy, 76}} {
 		f.place(item.id, x, top, f.px(item.w), rowH)
 		x += f.px(item.w) + gap
 	}
@@ -911,7 +933,7 @@ func (f *form) showConfigControls(visible bool) {
 	if visible {
 		cmd = swShow
 	}
-	for _, id := range []int{idCfgEditor, idCfgLoad, idCfgSave, idCfgImport, idCfgExport, idCfgValidate, idCfgStatus} {
+	for _, id := range []int{idCfgEditor, idCfgLoad, idCfgSave, idCfgImport, idCfgExport, idCfgValidate, idCfgStatus, idConfigHelp} {
 		if h := f.ctrls[id]; h != 0 {
 			procShowWindow.Call(h, cmd)
 		}
@@ -923,7 +945,7 @@ func (f *form) showResultControls(visible bool) {
 	if visible {
 		cmd = swShow
 	}
-	for _, id := range []int{idResultView, idResultRefresh, idResultOpenFile, idResultOpenDir, idResultCopy} {
+	for _, id := range []int{idResultView, idResultRefresh, idResultOpenFile, idResultOpenDir, idResultCopy, idResultHelp} {
 		if h := f.ctrls[id]; h != 0 {
 			procShowWindow.Call(h, cmd)
 		}
@@ -947,9 +969,7 @@ func (f *form) wndProc(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.P
 	case wmAppLog:
 		f.flushLog()
 		if f.page == pageLogs {
-			setWindowTextRaw(f.ctrls[idResultView], f.filteredLogText())
-			send(f.ctrls[idResultView], emSetSel, ^uintptr(0), ^uintptr(0))
-			send(f.ctrls[idResultView], emScrollCaret, 0, 0)
+			f.updateLogView(f.ctrls[idResultView], f.filteredLogText())
 		}
 		atomic.StoreInt32(&f.pending, 0)
 		f.mu.Lock()
@@ -1008,7 +1028,7 @@ func (f *form) ctlRoleOf(lparam unsafe.Pointer) ctlRole {
 		return roleLabel
 	}
 	switch child := uintptr(lparam); {
-	case child != 0 && child == f.ctrls[idLog]:
+	case child != 0 && (child == f.ctrls[idLog] || child == f.ctrls[idResultView] || child == f.ctrls[idCfgEditor] || child == f.ctrls[idHelpBody] || child == f.ctrls[idTemplateBody]):
 		return roleLog
 	case child != 0 && child == f.ctrls[idStatus]:
 		return roleStatus
@@ -1026,6 +1046,11 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 		}
 	}()
 	switch msg {
+	case 0x113:
+		if wparam == 44 {
+			f.updateLiveViews()
+			return 0
+		}
 	case wmPaint:
 		return f.paint()
 	case wmEraseBkgnd:
@@ -1033,6 +1058,7 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 	case wmClose:
 		return f.onClose()
 	case wmDestroy:
+		user32.NewProc("KillTimer").Call(f.hwnd, 44)
 		if f.appIcon != 0 {
 			user32.NewProc("DestroyIcon").Call(f.appIcon)
 			f.appIcon = 0
@@ -1098,6 +1124,10 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 		role := f.ctlRoleOf(lparam)
 		bkMode, brushIdx := ctlColorScheme(role)
 		procSetBkMode.Call(wparam, bkMode)
+		if role == roleLog {
+			color, _, _ := procGetSysColor.Call(colorWindow)
+			procSetBkColor.Call(wparam, color)
+		}
 		procSetTextColor.Call(wparam, ctlTextColor(role, f.statusKind))
 		return sysColorBrush(brushIdx)
 	case wmCtlColorEdit:
@@ -1233,6 +1263,13 @@ func (f *form) setPage(page pageID) {
 	}
 	f.page = page
 	f.hoverPage = pageNone
+	if page == pageLogs || page == pageTaskDetail {
+		send(f.ctrls[idResultView], emSetSel, 0, 0)
+		if state := f.logScroll[f.ctrls[idResultView]]; state != nil {
+			state.follow = true
+			state.tracking = false
+		}
+	}
 	if page == pageTemplates {
 		f.templates = loadTemplateInfoWithConfig(f.exeDir, strings.TrimSpace(windowText(f.ctrls[idConfig])))
 		f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
@@ -1252,6 +1289,11 @@ func (f *form) setPage(page pageID) {
 		}
 	} else if page == pageLogs || page == pageTaskDetail {
 		f.refreshResultView()
+		if page == pageLogs {
+			send(f.ctrls[idResultView], emSetSel, ^uintptr(0), ^uintptr(0))
+			send(f.ctrls[idResultView], emScrollCaret, 0, 0)
+			send(f.ctrls[idResultView], 0x115, 7, 0)
+		}
 	} else if page == pageSettings {
 		body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), f.exeDir)
 		if err != nil {
@@ -1277,6 +1319,10 @@ func (f *form) setPage(page pageID) {
 }
 
 func (f *form) onCommand(id, code int) {
+	if id == idTemplateSelect && code == cbnSelChange {
+		f.selectedTemplateDetails()
+		return
+	}
 	if f.workflowCommand(id, code) {
 		return
 	}
@@ -1363,6 +1409,14 @@ func (f *form) onCommand(id, code int) {
 			f.openResultDir()
 		case idResultCopy:
 			f.copyResultView()
+		case idResultHelp:
+			f.showFieldHelp("结果 JSON 字段说明", fieldHelp(false))
+		case idConfigHelp:
+			f.showFieldHelp("高级配置字段说明", fieldHelp(true))
+		case idTemplateGuide:
+			f.showFieldHelp("模板制作与使用说明", templateGuide)
+		case idTemplatePreview:
+			f.previewTemplate()
 		case idTemplateAll, idTemplateBuiltin, idTemplateExternal:
 			f.templateTab = id - idTemplateAll
 			f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
@@ -1391,6 +1445,9 @@ func (f *form) onCommand(id, code int) {
 	case code == enChange:
 		switch id {
 		case idInput, idOutput, idConfig, idTimeout, idLogLevel:
+			if id == idInput {
+				f.syncTaskName()
+			}
 			f.refreshCommand()
 		}
 	}
@@ -1979,9 +2036,15 @@ func (f *form) refreshResultView() {
 	if h == 0 {
 		return
 	}
-	setWindowTextRaw(h, f.resultViewText())
+	if !f.canRefreshLog(h) {
+		return
+	}
+	if f.page != pageLogs {
+		setWindowTextRaw(h, f.resultViewText())
+		procInvalidateRect.Call(h, 0, 1)
+	}
 	if f.page == pageLogs {
-		setWindowTextRaw(h, f.filteredLogText())
+		f.updateLogView(h, f.filteredLogText())
 		send(f.ctrls[idLogFiles], 0x184, 0, 0)
 		f.logFiles = nil
 		for _, path := range f.relatedLogFiles() {
@@ -2062,6 +2125,13 @@ func (f *form) resultViewText() string {
 		b.WriteString("尚未读取到结果 JSON。\r\n")
 		b.WriteString("结果路径：" + f.resultPathOrDefault() + "\r\n")
 		b.WriteString("运行任务后点击“刷新”查看任务详情、逐文件结果和证据。\r\n")
+		return b.String()
+	}
+	if snap.PresentationState != "" {
+		fmt.Fprintf(&b, "任务 ID：%s\r\n状态：%s\r\n结果路径：%s\r\n\r\n", snap.TaskID, snap.PresentationState, snap.Path)
+		if snap.PresentationState == "安装 / 触发进行中" {
+			b.WriteString(toCRLF(f.logTextSnapshot()))
+		}
 		return b.String()
 	}
 	b.WriteString(resultSnapshotReport(snap))
@@ -2148,7 +2218,7 @@ func (f *form) flushLog() {
 		f.flushed = end
 	}
 	f.mu.Unlock()
-	if reset {
+	if reset && f.canRefreshLog(h) {
 		setWindowTextRaw(h, "")
 		f.logPrevCR = false
 	}
@@ -2157,7 +2227,9 @@ func (f *form) flushLog() {
 	}
 	// 多行 EDIT 只认 CRLF：纯 LF 不换行，日志会挤成一团。
 	chunk, f.logPrevCR = normalizeCRLF(chunk, f.logPrevCR)
-	f.appendToEdit(h, chunk)
+	if f.canRefreshLog(h) {
+		f.appendToEdit(h, chunk)
+	}
 }
 
 // appendToEdit 把文本追加到多行只读编辑控件末尾，并把视图滚到尾部。
