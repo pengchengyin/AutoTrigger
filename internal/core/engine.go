@@ -126,6 +126,10 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 	l.MountDrive = analysis.MountDrive
 	l.DismountStatus = analysis.DismountStatus
 	*analysis = l
+	packageScope := depth > 0
+	for _, c := range candidates {
+		packageScope = packageScope || c.Reason == "entry_p0_manifest"
+	}
 	converged := false
 	phase1 := 0
 	for _, c := range candidates {
@@ -143,6 +147,9 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 			continue
 		}
 		reason := c.Reason
+		if !packageScope && c.Priority == 5 {
+			analysis.FallbackUsed = true
+		}
 		skip := ""
 		if converged {
 			skip = "skipped_after_success"
@@ -153,7 +160,7 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 			if errors.Is(ctx.Err(), context.Canceled) {
 				skip = "interrupted"
 			}
-		} else if e.Config.PackageLayout.Enabled && e.Config.PackageLayout.Mode == "smart" {
+		} else if packageScope && e.Config.PackageLayout.Enabled && e.Config.PackageLayout.Mode == "smart" {
 			if c.Priority <= 4 {
 				phase1++
 				if phase1 > e.Config.PackageLayout.MaxEntriesPhase1 {
@@ -185,7 +192,7 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 		e.Log.Stage(logging.LevelInfo, logging.StageEntry, "选用入口：%s（优先级 P%d，判定依据 %s）", c.Path, c.Priority, c.Reason)
 		f := e.file(ctx, c.Path, reason, depth, map[string]bool{})
 		e.add(f)
-		if f.FinalStatus == "install_completed" && c.Priority != 3 && e.Config.PackageLayout.Enabled && e.Config.PackageLayout.Mode == "smart" {
+		if packageScope && f.FinalStatus == "install_completed" && c.Priority != 3 && e.Config.PackageLayout.Enabled && e.Config.PackageLayout.Mode == "smart" {
 			converged = true
 			analysis.ConvergedAt = schema.String(c.Relative)
 			e.Log.Stage(logging.LevelInfo, logging.StageEntry, "已达成安装成功，按「成功即收敛」策略停止执行本包后续候选")

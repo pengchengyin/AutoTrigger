@@ -263,6 +263,7 @@ func TestFolderConvergesAndExcludesUninstaller(t *testing.T) {
 	for _, name := range []string{"setup.exe", "unins000.exe", "other.exe"} {
 		os.WriteFile(filepath.Join(root, name), []byte("MZ"), 0600)
 	}
+	os.WriteFile(filepath.Join(root, "readme.txt"), []byte("run setup.exe"), 0600)
 	e.Run(context.Background(), root)
 	if len(r.commands) != 1 || e.Result.LayoutAnalysis.ConvergedAt == nil {
 		t.Fatal("package did not converge", r.commands)
@@ -290,8 +291,8 @@ func TestFolderFallback(t *testing.T) {
 	e2.Recursive = true
 	e2.Config.PackageLayout.FallbackToBrute = false
 	e2.Run(context.Background(), root)
-	if len(r2.commands) != 0 {
-		t.Fatal("disabled fallback ran")
+	if len(r2.commands) != 4 {
+		t.Fatal("ordinary batch must not suppress independent files")
 	}
 }
 func TestArchivePreflightAndRecursion(t *testing.T) {
