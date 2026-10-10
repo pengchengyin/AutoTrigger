@@ -192,19 +192,33 @@ func NewFile(path, profile string) FileResult {
 }
 
 type Prereq struct {
-	ArchiveBackend       *string  `json:"archive_backend"`
-	SevenZipVersion      *string  `json:"sevenzip_version"`
-	ArchiveBackendStatus string   `json:"archive_backend_status"`
-	MountBackend         *string  `json:"mount_backend"`
-	MountBackendStatus   string   `json:"mount_backend_status"`
-	OCREngine            string   `json:"ocr_engine"`
-	OCREnginePath        *string  `json:"ocr_engine_path"`
-	OCREngineStatus      string   `json:"ocr_engine_status"`
-	OCREngineVersion     *string  `json:"ocr_engine_version"`
-	OCREngineLanguages   []string `json:"ocr_engine_languages"`
-	OCRStartupMS         int64    `json:"ocr_startup_ms"`
-	OK                   bool     `json:"ok"`
-	Issues               []string `json:"issues"`
+	ArchiveBackend       *string          `json:"archive_backend"`
+	SevenZipVersion      *string          `json:"sevenzip_version"`
+	ArchiveBackendStatus string           `json:"archive_backend_status"`
+	MountBackend         *string          `json:"mount_backend"`
+	MountBackendStatus   string           `json:"mount_backend_status"`
+	OCREngine            string           `json:"ocr_engine"`
+	OCREnginePath        *string          `json:"ocr_engine_path"`
+	OCREngineStatus      string           `json:"ocr_engine_status"`
+	OCREngineVersion     *string          `json:"ocr_engine_version"`
+	OCREngineLanguages   []string         `json:"ocr_engine_languages"`
+	OCRStartupMS         int64            `json:"ocr_startup_ms"`
+	OCREngines           []OCREngineCheck `json:"ocr_engines,omitempty"`
+	OK                   bool             `json:"ok"`
+	Issues               []string         `json:"issues"`
+}
+
+// Optional inventory; the existing scalar OCR fields still describe the selected engine.
+type OCREngineCheck struct {
+	Engine      string   `json:"engine"`
+	Path        *string  `json:"path"`
+	PackagePath *string  `json:"package_path"`
+	Status      string   `json:"status"`
+	Version     *string  `json:"version"`
+	Languages   []string `json:"languages"`
+	StartupMS   int64    `json:"startup_ms"`
+	Detail      string   `json:"detail"`
+	Selected    bool     `json:"selected"`
 }
 
 func EmptyPrereq() Prereq {

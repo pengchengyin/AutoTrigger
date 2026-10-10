@@ -3,6 +3,8 @@ package ui
 import (
 	"autotrigger/pkg/schema"
 	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -22,9 +24,19 @@ func parsePrereqReport(body []byte) *schema.Prereq {
 
 func dependencyStates(report *schema.Prereq, checking bool) []dependencyState {
 	rows := []dependencyState{{Name: "7-Zip", Status: "未检查", Kind: "info"}, {Name: "OCR", Status: "未检查", Kind: "info"}}
+	if report == nil {
+		rows = rows[:1]
+		for _, engine := range []string{"paddleocr_json", "rapidocr_json", "umi_ocr", "tesseract", "windows"} {
+			rows = append(rows, dependencyState{Name: ocrDisplayName(engine), Status: "未检查", Kind: "info"})
+		}
+	}
 	if checking {
+		if report != nil && len(report.OCREngines) > 0 {
+			rows = dependencyStates(report, false)
+		}
 		for i := range rows {
 			rows[i].Status = "检测与部署中"
+			rows[i].Kind = "info"
 		}
 		return rows
 	}
@@ -74,11 +86,79 @@ func dependencyStates(report *schema.Prereq, checking bool) []dependencyState {
 			}
 		}
 	}
+	if len(report.OCREngines) > 0 {
+		rows = rows[:1]
+		for _, engine := range report.OCREngines {
+			name := ocrDisplayName(engine.Engine)
+			if engine.PackagePath != nil {
+				name = strings.TrimSuffix(filepath.Base(*engine.PackagePath), filepath.Ext(*engine.PackagePath))
+			}
+			if engine.Engine == "umi_ocr" && engine.Path == nil && engine.PackagePath == nil {
+				name += " · 本地服务"
+			}
+			if engine.Selected {
+				name += " · 当前选择"
+			}
+			status, kind := dependencyStatus(engine.Status)
+			if engine.Selected {
+				status = "当前 · " + strings.TrimPrefix(status, "已安装 · ")
+			}
+			detail := engine.Detail
+			if engine.Path != nil {
+				detail = *engine.Path + "；" + detail
+			}
+			if engine.Version != nil && *engine.Version != "unknown" {
+				detail = "版本 " + *engine.Version + "；" + detail
+			}
+			rows = append(rows, dependencyState{Name: name, Status: status, Kind: kind, Detail: detail})
+		}
+	}
 	return rows
+}
+
+func ocrDisplayName(engine string) string {
+	name := map[string]string{"paddleocr_json": "PaddleOCR-json", "rapidocr_json": "RapidOCR-json", "umi_ocr": "Umi-OCR", "tesseract": "Tesseract", "windows": "Windows OCR"}[engine]
+	if name == "" {
+		return engine
+	}
+	return name
+}
+
+func dependencyStatus(status string) (string, string) {
+	switch status {
+	case "ok":
+		return "已安装 · 可用", "ok"
+	case "startup_failed":
+		return "自检失败", "fail"
+	case "deploy_failed":
+		return "部署失败", "fail"
+	case "not_deployed":
+		return "未部署（只读）", "warn"
+	case "service_required":
+		return "需启动服务", "warn"
+	case "unsupported":
+		return "不支持 / 未实现", "warn"
+	case "disabled":
+		return "已关闭", "info"
+	case "missing":
+		return "未安装 / 不可用", "warn"
+	default:
+		return "检测异常", "warn"
+	}
 }
 
 func dependencySummary(report *schema.Prereq, checking bool) string {
 	rows := dependencyStates(report, checking)
+	if report != nil && len(report.OCREngines) > 0 && !checking {
+		available := 0
+		for _, engine := range report.OCREngines {
+			if engine.Status == "ok" {
+				available++
+			}
+		}
+		status, _ := dependencyStatus(report.OCREngineStatus)
+		return fmt.Sprintf("7-Zip：%s；当前 OCR：%s；清单 %d/%d 项可用", rows[0].Status, status, available, len(report.OCREngines))
+	}
 	return "7-Zip：" + rows[0].Status + "；OCR：" + rows[1].Status
 }
 

@@ -57,7 +57,9 @@ func derive(t reflect.Type) map[string]interface{} {
 				field["const"] = schema.Version
 			}
 			properties[name] = field
-			required = append(required, name)
+			if !strings.Contains(f.Tag.Get("json"), ",omitempty") {
+				required = append(required, name)
+			}
 		}
 		return map[string]interface{}{"type": "object", "properties": properties, "required": required, "additionalProperties": true}
 	case reflect.Slice:

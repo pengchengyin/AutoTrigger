@@ -116,6 +116,8 @@ const (
 	idTemplateSelect
 	idTemplatePreview
 	idTemplateCreate
+	idDependencyList
+	idDependencyDetails
 )
 
 // 布局常量，单位为 96 DPI 下的像素（实际值经 scale 换算）。
@@ -183,6 +185,7 @@ type form struct {
 	prereqWarnings      bool
 	prereqLogStart      int
 	prereqReport        *schema.Prereq
+	dependencyRows      []dependencyState
 	prereqOutput        []byte
 	appIcon             uintptr
 	historyDir          string
@@ -575,6 +578,11 @@ func (f *form) layout() {
 		procShowWindow.Call(f.ctrls[id], swHide)
 	}
 	switch f.page {
+	case pageHome:
+		if f.prereqChecked || f.checkingPrereq {
+			r := f.homeActionRect(0, clientW, clientH)
+			f.showAt(idDependencyDetails, clientW-f.px(uiContentPad+130), int(r.Bottom)+f.px(16), f.px(110), f.px(30))
+		}
 	case pageSettings:
 		f.layoutSettingsPage(clientW, clientH)
 	case pageTemplates:
@@ -1425,6 +1433,8 @@ func (f *form) onCommand(id, code int) {
 			f.showFieldHelp("模板制作与使用说明", templateGuide)
 		case idTemplateCreate:
 			f.showTemplateMaker()
+		case idDependencyDetails:
+			f.showDependencyDetails()
 		case idTemplatePreview:
 			f.previewTemplate()
 		case idTemplateAll, idTemplateBuiltin, idTemplateExternal:

@@ -246,6 +246,77 @@
             }
           ]
         },
+        "ocr_engines": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "engine": {
+                "type": "string"
+              },
+              "languages": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "package_path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "path": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "selected": {
+                "type": "boolean"
+              },
+              "startup_ms": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "engine",
+              "path",
+              "package_path",
+              "status",
+              "version",
+              "languages",
+              "startup_ms",
+              "detail",
+              "selected"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
         "ocr_startup_ms": {
           "type": "integer"
         },

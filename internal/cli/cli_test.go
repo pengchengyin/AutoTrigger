@@ -22,6 +22,38 @@ func stubDeps() Dependencies {
 
 type checkModeProbe struct{ readOnly bool }
 
+type environmentModeProbe struct {
+	checkModeProbe
+	inventory bool
+}
+
+func (p *environmentModeProbe) CheckEnvironment(ctx context.Context, c config.Config, deploy bool) (schema.Prereq, map[string]interface{}, error) {
+	p.inventory = true
+	r, meta, err := p.Check(ctx, c)
+	p.readOnly = !deploy
+	r.OCREngines = []schema.OCREngineCheck{{Engine: "rapidocr_json", Status: "missing", Languages: []string{}}}
+	return r, meta, err
+}
+func TestEnvironmentUsesAllEngineInventory(t *testing.T) {
+	for _, readonly := range []bool{false, true} {
+		probe := &environmentModeProbe{}
+		deps := stubDeps()
+		deps.Prereqs = probe
+		args := []string{"--check-prereq", "--json", "--output=-", "--log-file", filepath.Join(t.TempDir(), "check.log")}
+		if readonly {
+			args = append(args, "--no-deploy-deps")
+		}
+		var out, errout bytes.Buffer
+		if code := Run(context.Background(), args, &out, &errout, deps); code != 0 || !probe.inventory || probe.readOnly != readonly {
+			t.Fatalf("%d %s", code, errout.String())
+		}
+		var report schema.Prereq
+		if err := json.Unmarshal(out.Bytes(), &report); err != nil || len(report.OCREngines) != 1 {
+			t.Fatalf("inventory not serialized: %v %s", err, out.String())
+		}
+	}
+}
+
 func (p *checkModeProbe) Check(context.Context, config.Config) (schema.Prereq, map[string]interface{}, error) {
 	p.readOnly = false
 	r := schema.EmptyPrereq()

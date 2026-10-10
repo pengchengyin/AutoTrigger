@@ -55,6 +55,27 @@ func (p *Prereqs) deploySevenZip(ctx context.Context) (string, error) {
 }
 
 func (p *Prereqs) deployOCR(ctx context.Context, engine, sevenZip string, limit int64) (string, error) {
+	stem := "PaddleOCR-json"
+	if engine == "rapidocr_json" {
+		stem = "RapidOCR-json"
+	}
+	root := filepath.Join(p.ExeDir, "third_party", "ocr")
+	target := filepath.Join(root, stem)
+	exe := filepath.Join(target, stem+".exe")
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if findExecutable([]string{exe}, p.ExeDir) != "" {
+		return exe, nil
+	}
+	packages, _ := filepath.Glob(filepath.Join(root, stem+"*.7z"))
+	if len(packages) == 0 {
+		return "", fmt.Errorf("缺少 %s 离线压缩包；不会联网下载", stem)
+	}
+	return p.deployOCRArchive(ctx, packages[len(packages)-1], target, stem+".exe", sevenZip, limit, true)
+}
+
+func (p *Prereqs) deployOCRArchive(ctx context.Context, packagePath, target, executable, sevenZip string, limit int64, flatten bool) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -65,19 +86,9 @@ func (p *Prereqs) deployOCR(ctx context.Context, engine, sevenZip string, limit 
 		return "", err
 	}
 	defer unlock()
-	stem := "PaddleOCR-json"
-	if engine == "rapidocr_json" {
-		stem = "RapidOCR-json"
-	}
 	root := filepath.Join(p.ExeDir, "third_party", "ocr")
-	target := filepath.Join(root, stem)
-	exe := filepath.Join(target, stem+".exe")
-	if findExecutable([]string{exe}, p.ExeDir) != "" {
-		return exe, nil
-	}
-	packages, _ := filepath.Glob(filepath.Join(root, stem+"*.7z"))
-	if len(packages) == 0 {
-		return "", fmt.Errorf("缺少 %s 离线压缩包；不会联网下载", stem)
+	if paths := localOCRExecutablesIn(target, executable); len(paths) == 1 {
+		return paths[0], nil
 	}
 	stage, err := os.MkdirTemp(root, ".deploy-")
 	if err != nil {
@@ -85,7 +96,6 @@ func (p *Prereqs) deployOCR(ctx context.Context, engine, sevenZip string, limit 
 	}
 	defer os.RemoveAll(stage)
 	backend := archive.SevenZip{Path: sevenZip, Runner: p.Runner}
-	packagePath := packages[len(packages)-1]
 	entries, err := backend.List(ctx, packagePath)
 	if err != nil {
 		return "", err
@@ -101,9 +111,9 @@ func (p *Prereqs) deployOCR(ctx context.Context, engine, sevenZip string, limit 
 		if walkErr != nil {
 			return walkErr
 		}
-		if !entry.IsDir() && strings.EqualFold(entry.Name(), stem+".exe") {
+		if !entry.IsDir() && strings.EqualFold(entry.Name(), executable) {
 			if source != "" {
-				return fmt.Errorf("引擎包含多个 %s.exe，无法确定部署目录", stem)
+				return fmt.Errorf("引擎包含多个 %s，无法确定部署目录", executable)
 			}
 			source = filepath.Dir(path)
 		}
@@ -113,9 +123,13 @@ func (p *Prereqs) deployOCR(ctx context.Context, engine, sevenZip string, limit 
 		return "", err
 	}
 	if source == "" {
-		return "", fmt.Errorf("解压后未找到 %s.exe", stem)
+		return "", fmt.Errorf("解压后未找到 %s", executable)
 	}
-	if source != stage {
+	exeRelative, err := filepath.Rel(stage, filepath.Join(source, executable))
+	if err != nil {
+		return "", err
+	}
+	if flatten && source != stage {
 		children, err := os.ReadDir(stage)
 		if err != nil {
 			return "", err
@@ -124,16 +138,24 @@ func (p *Prereqs) deployOCR(ctx context.Context, engine, sevenZip string, limit 
 			return "", fmt.Errorf("OCR 发行包目录结构不明确，拒绝丢弃引擎目录以外的模型或 DLL")
 		}
 	}
+	if !flatten {
+		source = stage
+	} else {
+		exeRelative = executable
+	}
 	// Preserve any existing installation instead of overwriting user files.
 	if _, err := os.Stat(target); err == nil {
 		return "", fmt.Errorf("%s 已存在但引擎不完整，请修复该目录后重试", target)
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
+	if err = os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		return "", err
+	}
 	if err = os.Rename(source, target); err != nil {
 		return "", err
 	}
-	return exe, nil
+	return filepath.Join(target, exeRelative), nil
 }
 
 // Installer manifests can require UAC even for a tool-local installation.

@@ -71,6 +71,16 @@ func (f *form) createWorkflowControls() {
 	syscallComctl.NewProc("InitCommonControlsEx").Call(uintptr(unsafe.Pointer(&init)))
 	f.addControl(idTaskList, "SysListView32", "", wsChild|wsTabStop|0x1|0x4|0x8, wsExClientEdge)
 	send(f.ctrls[idTaskList], 0x1036, 0, 0x20|0x1)
+	f.addControl(idDependencyList, "SysListView32", "", wsChild|wsTabStop|0x1|0x4|0x8, wsExClientEdge)
+	send(f.ctrls[idDependencyList], 0x1036, 0, 0x20|0x1|0x10000)
+	for i, c := range []struct {
+		name  string
+		width int
+	}{{"工具 / 离线包", 240}, {"检测状态", 150}, {"路径 / 原因", 360}} {
+		column := listColumn{Mask: 1 | 2 | 4, Width: int32(f.px(c.width)), Text: utf16Ptr(c.name)}
+		send(f.ctrls[idDependencyList], 0x1061, uintptr(i), uintptr(unsafe.Pointer(&column)))
+	}
+	f.button(idDependencyDetails, "检测详情")
 	for i, c := range []struct {
 		name  string
 		width int
@@ -96,6 +106,8 @@ func (f *form) createWorkflowControls() {
 var syscallComctl = syscall.NewLazyDLL("comctl32.dll")
 
 func (f *form) hideWorkflowControls() {
+	procShowWindow.Call(f.ctrls[idDependencyList], swHide)
+	procShowWindow.Call(f.ctrls[idDependencyDetails], swHide)
 	for _, id := range []int{idTaskSearchLabel, idTaskNameLabel, idTaskName, idTaskSearch, idTaskList, idTaskView, idSettingsBasic, idSettingsAdvanced, idHelpTopics, idHelpBody, idHelpAbout, idOutputDir, idSettingsRecognition, idOCREnginePathLabel, idOCREnginePath, idOCREngineBrowse, idSevenZipLabel, idSevenZip, idSevenZipBrowse, idOCRScoreLabel, idOCRScore} {
 		procShowWindow.Call(f.ctrls[id], swHide)
 	}
@@ -225,6 +237,9 @@ func (f *form) workflowNotify(pointer unsafe.Pointer) {
 	header := (*notifyHeader)(pointer)
 	if header.ID == idTaskList && int32(header.Code) == -3 {
 		f.viewSelectedTask()
+	}
+	if header.ID == idDependencyList && int32(header.Code) == -3 {
+		f.showDependencyDetails()
 	}
 }
 
@@ -474,9 +489,58 @@ func (f *form) layoutRecognition(w, h int) {
 		f.showAt(row[1], left+f.px(140), y, fieldW, f.px(32))
 	}
 	f.showAt(idNoOCR, left, top+f.px(176), f.px(200), f.px(30))
-	f.showAt(idPrereq, left, top+f.px(302), f.px(140), f.px(34))
-	f.showAt(idSettingsSave, left+width-f.px(140), top+f.px(302), f.px(140), f.px(34))
-	f.showAt(idStatus, left, top+f.px(348), width, f.px(48))
+	listTop := top + f.px(240)
+	buttonTop := int(r.Bottom) - f.px(90)
+	f.showAt(idDependencyList, left, listTop, width, maxInt(f.px(48), buttonTop-listTop-f.px(12)))
+	send(f.ctrls[idDependencyList], 0x101e, 2, uintptr(maxInt(f.px(100), width-f.px(420))))
+	f.refreshDependencyList()
+	f.showAt(idPrereq, left, buttonTop, f.px(140), f.px(34))
+	f.showAt(idDependencyDetails, left+f.px(152), buttonTop, f.px(110), f.px(34))
+	f.showAt(idSettingsSave, left+width-f.px(140), buttonTop, f.px(140), f.px(34))
+	f.showAt(idStatus, left, buttonTop+f.px(42), width, f.px(40))
+}
+
+func (f *form) refreshDependencyList() {
+	rows := dependencyStates(f.prereqReport, f.checkingPrereq)
+	equal := len(rows) == len(f.dependencyRows)
+	if equal {
+		for i := range rows {
+			if rows[i] != f.dependencyRows[i] {
+				equal = false
+				break
+			}
+		}
+	}
+	if equal {
+		return
+	}
+	f.dependencyRows = rows
+	h := f.ctrls[idDependencyList]
+	send(h, 0x1009, 0, 0)
+	for i, row := range rows {
+		for col, text := range []string{row.Name, row.Status, row.Detail} {
+			item := listItem{Mask: 1, Item: int32(i), SubItem: int32(col), Text: utf16Ptr(text)}
+			msg, rowIndex := uint32(0x1074), uintptr(i)
+			if col == 0 {
+				msg, rowIndex = 0x104d, 0
+			}
+			send(h, msg, rowIndex, uintptr(unsafe.Pointer(&item)))
+		}
+	}
+}
+
+func (f *form) showDependencyDetails() {
+	var b strings.Builder
+	b.WriteString(dependencySummary(f.prereqReport, f.checkingPrereq) + "\r\n\r\n")
+	for _, row := range dependencyStates(f.prereqReport, f.checkingPrereq) {
+		fmt.Fprintf(&b, "%s\r\n状态：%s\r\n%s\r\n\r\n", row.Name, row.Status, row.Detail)
+	}
+	if f.prereqReport != nil {
+		for _, issue := range f.prereqReport.Issues {
+			b.WriteString(issue + "\r\n")
+		}
+	}
+	f.showFieldHelp("第三方工具检测详情", b.String())
 }
 
 func (f *form) showHelpTopic(index int) {

@@ -11,8 +11,6 @@ import (
 	"autotrigger/pkg/schema"
 	"context"
 	"fmt"
-	"image"
-	"image/color"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +37,18 @@ func (p *Prereqs) CheckOnly(ctx context.Context, c config.Config) (schema.Prereq
 }
 
 func (p *Prereqs) check(ctx context.Context, c config.Config, deploy bool) (schema.Prereq, map[string]interface{}, error) {
+	return p.checkEnvironment(ctx, c, deploy, false)
+}
+
+func (p *Prereqs) CheckEnvironment(ctx context.Context, c config.Config, deploy bool) (schema.Prereq, map[string]interface{}, error) {
+	return p.checkEnvironment(ctx, c, deploy, true)
+}
+
+func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy, inventory bool) (schema.Prereq, map[string]interface{}, error) {
+	if p.Engine != nil {
+		p.Engine.Stop()
+		p.Engine = nil
+	}
 	report := schema.EmptyPrereq()
 	v := winver.Current()
 	avx, avx2 := winver.AVX()
@@ -107,20 +117,26 @@ func (p *Prereqs) check(ctx context.Context, c config.Config, deploy bool) (sche
 		report.MountBackendStatus = "unsupported"
 		report.Issues = append(report.Issues, "Win7 环境：光盘映像请走解压轨；可选的 WinCDEmu 挂载适配器尚未验证")
 	}
+	if inventory {
+		report.OCREngines = p.inventoryOCR(ctx, c, deploy, avx, &report)
+	}
 	if c.OCR.Enabled && c.OCR.Engine != "none" {
 		engine := c.OCR.Engine
 		names := map[string]string{"paddleocr_json": "PaddleOCR-json.exe", "rapidocr_json": "RapidOCR-json.exe", "umi_ocr": "Umi-OCR.exe", "tesseract": "tesseract.exe"}
-		if engine == "paddleocr_json" && !avx {
+		if engine == "windows" {
+			report.Issues = append(report.Issues, "Windows OCR 适配尚未实现，请选择其他受支持的引擎")
+		} else if engine == "paddleocr_json" && !avx {
 			report.Issues = append(report.Issues, "CPU 未启用 AVX：若部署了 RapidOCR-json 将优先使用它")
 			engine = "rapidocr_json"
 		}
 		exe := names[engine]
 		paths := []string{}
-		if c.OCR.EnginePath != "auto" {
+		if c.OCR.EnginePath != "auto" && engine == c.OCR.Engine {
 			paths = append(paths, c.OCR.EnginePath)
 		} else {
 			stem := strings.TrimSuffix(exe, ".exe")
 			paths = append(paths, filepath.Join("third_party", "ocr", stem, exe), filepath.Join("third_party", "ocr", exe))
+			paths = append(paths, localOCRExecutables(p.ExeDir, exe)...)
 			if path, err := exec.LookPath(exe); err == nil {
 				paths = append(paths, path)
 			}
@@ -142,20 +158,16 @@ func (p *Prereqs) check(ctx context.Context, c config.Config, deploy bool) (sche
 		}
 		report.OCREngine = engine
 		report.OCREngineStatus = "missing"
-		if path != "" || engine == "umi_ocr" {
+		if path != "" {
+			report.OCREnginePath = schema.String(path)
+		}
+		if engine == "windows" || (engine == "paddleocr_json" && !avx) {
+			report.OCREngineStatus = "unsupported"
+		} else if path != "" || engine == "umi_ocr" {
 			ocrConfig := c.OCR
 			ocrConfig.Engine = engine
 			e := &ocr.Engine{Config: ocrConfig, Path: path, Runner: p.Runner}
-			info, err := e.Start(ctx)
-			if err == nil {
-				test := image.NewRGBA(image.Rect(0, 0, 96, 32))
-				for y := 0; y < 32; y++ {
-					for x := 0; x < 96; x++ {
-						test.Set(x, y, color.White)
-					}
-				}
-				_, err = e.Recognize(ctx, test)
-			}
+			info, err := probeOCRCapability(ctx, e)
 			if err == nil {
 				p.Engine = e
 				report.OCREnginePath = schema.String(path)
@@ -175,6 +187,14 @@ func (p *Prereqs) check(ctx context.Context, c config.Config, deploy bool) (sche
 				report.Issues = append(report.Issues, "检测到 OCR 离线压缩包，但压缩包不能直接运行。请先完整解压（保留模型和 DLL），再在设置中选择引擎 exe，或解压到工具同级 third_party\\ocr\\PaddleOCR-json（或 RapidOCR-json）目录。")
 			}
 			report.Issues = append(report.Issues, "未检测到可用 OCR 引擎：请部署 third_party\\ocr\\PaddleOCR-json 或 RapidOCR-json；当前退回 UIA/Win32 + 模板；可用 --no-ocr 显式跳过")
+		}
+	}
+	for i := range report.OCREngines {
+		row := &report.OCREngines[i]
+		row.Selected = row.Engine == report.OCREngine &&
+			((row.Path == nil && report.OCREnginePath == nil) || (row.Path != nil && report.OCREnginePath != nil && strings.EqualFold(*row.Path, *report.OCREnginePath)))
+		if row.Engine == "umi_ocr" && report.OCREngine == "umi_ocr" && row.Path == nil && row.PackagePath == nil {
+			row.Selected = true
 		}
 	}
 	report.OK = (!c.Archive.RequireSevenZip || report.ArchiveBackend != nil) && (!c.OCR.RequireOCR || !c.OCR.Enabled || report.OCREngineStatus == "ok")

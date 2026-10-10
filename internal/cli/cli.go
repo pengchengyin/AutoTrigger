@@ -314,6 +314,10 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		}
 	}
 	if checker, ok := deps.Prereqs.(interface {
+		CheckEnvironment(context.Context, config.Config, bool) (schema.Prereq, map[string]interface{}, error)
+	}); opts.CheckPrereq && ok {
+		result.Prereq, result.PlatformMeta, err = checker.CheckEnvironment(ctx, cfg, !opts.NoDeployDeps && !opts.Capabilities)
+	} else if checker, ok := deps.Prereqs.(interface {
 		CheckOnly(context.Context, config.Config) (schema.Prereq, map[string]interface{}, error)
 	}); (opts.NoDeployDeps || opts.Capabilities) && ok {
 		result.Prereq, result.PlatformMeta, err = checker.CheckOnly(ctx, cfg)

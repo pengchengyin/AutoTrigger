@@ -226,7 +226,11 @@ func (f *form) paintHome(hdc uintptr, clientW, clientH int) {
 		}
 	}
 	topStatus := f.homeActionRect(0, clientW, clientH).Bottom + int32(f.px(16))
-	drawText(hdc, status, rectT{Left: int32(left), Top: topStatus, Right: int32(right), Bottom: topStatus + int32(f.px(30))}, color, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	statusRight := right
+	if f.prereqChecked || f.checkingPrereq {
+		statusRight -= f.px(130)
+	}
+	drawText(hdc, status, rectT{Left: int32(left), Top: topStatus, Right: int32(statusRight), Bottom: topStatus + int32(f.px(30))}, color, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 	if f.prereqChecked || f.checkingPrereq {
 		drawText(hdc, dependencySummary(f.prereqReport, f.checkingPrereq), rectT{Left: int32(left), Top: topStatus + int32(f.px(30)), Right: int32(right), Bottom: topStatus + int32(f.px(56))}, modernTheme.text, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 	}
@@ -340,14 +344,6 @@ func (f *form) paintDependencyStates(hdc uintptr, bounds rectT) {
 	left, top := bounds.Left+int32(f.px(30)), bounds.Top+int32(f.px(56+214))
 	right := bounds.Right - int32(f.px(30))
 	drawText(hdc, "第三方工具", rectT{Left: left, Top: top, Right: right, Bottom: top + int32(f.px(22))}, modernTheme.text, f.statusFontOrDefault(), dtLeft|dtVCenter|dtSingleLine)
-	for i, row := range dependencyStates(f.prereqReport, f.checkingPrereq) {
-		y := top + int32(f.px(24+i*28))
-		drawText(hdc, row.Name, rectT{Left: left, Top: y, Right: left + int32(f.px(210)), Bottom: y + int32(f.px(24))}, modernTheme.text, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-		badge := rectT{Left: left + int32(f.px(216)), Top: y, Right: left + int32(f.px(354)), Bottom: y + int32(f.px(24))}
-		roundRect(hdc, badge, modernTheme.surfaceAlt, modernTheme.border, f.px(4))
-		drawText(hdc, row.Status, badge, statColor(row.Kind), f.font, dtCenter|dtVCenter|dtSingleLine)
-		drawText(hdc, row.Detail, rectT{Left: badge.Right + int32(f.px(12)), Top: y, Right: right, Bottom: badge.Bottom}, modernTheme.muted, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-	}
 }
 
 func (f *form) paintInfoCards(hdc uintptr, bounds rectT, cards []infoCard) {

@@ -11,7 +11,14 @@ import (
 )
 
 var fieldMeanings = map[string]string{
-	"timeout_sec": "单文件执行上限（秒），最大 600。", "startup_timeout_sec": "启动阶段超时（秒）。", "idle_timeout_sec": "无活动超时（秒）。", "task_timeout_sec": "整个任务的超时（秒），0 不另设上限。", "progress_interval_sec": "进度日志间隔（秒）。", "activity_cpu_epsilon_ms": "判断 CPU 活动的最小增量（毫秒）。", "activity_io_epsilon_bytes": "判断 I/O 活动的最小增量（字节）。", "concurrency": "执行并发数；当前为串行，保持 1。", "attempt_interval_sec": "两次触发尝试的间隔（秒）。", "max_attempts_per_file": "每个文件最多尝试次数。",
+	"ocr_engines":  "环境检查的完整 OCR 清单；可选新增字段，旧结果可能没有。原 ocr_engine 等字段仍表示实际选择的引擎。",
+	"package_path": "对应的本地离线包路径；null 表示此项没有关联离线包。",
+	"languages":    "此引擎自检得到的识别语言列表。",
+	"startup_ms":   "此引擎本次实际启动耗时，单位毫秒；未启动时为 0。",
+	"selected":     "此项是否对应本次检查实际选择的 OCR 引擎或服务；不代表此项已通过自检。",
+	"status":       "逐项能力状态：ok 可用；missing 未发现；not_deployed 只读检查未部署；deploy_failed 部署失败；startup_failed 自检失败；service_required 需启动本地服务；unsupported 不兼容或未实现；disabled 已关闭。",
+	"version":      "引擎自检实际返回的版本；unknown 表示未提供版本信息，null 表示没有取得版本。",
+	"timeout_sec":  "单文件执行上限（秒），最大 600。", "startup_timeout_sec": "启动阶段超时（秒）。", "idle_timeout_sec": "无活动超时（秒）。", "task_timeout_sec": "整个任务的超时（秒），0 不另设上限。", "progress_interval_sec": "进度日志间隔（秒）。", "activity_cpu_epsilon_ms": "判断 CPU 活动的最小增量（毫秒）。", "activity_io_epsilon_bytes": "判断 I/O 活动的最小增量（字节）。", "concurrency": "执行并发数；当前为串行，保持 1。", "attempt_interval_sec": "两次触发尝试的间隔（秒）。", "max_attempts_per_file": "每个文件最多尝试次数。",
 	"archive": "压缩包处理配置。", "max_depth": "最大嵌套解压层数。", "max_extract_size_bytes": "允许解压的最大总字节数。", "sevenzip_path": "7-Zip 程序路径；auto 自动查找。", "require_sevenzip": "是否要求 7-Zip 能力可用。", "min_version": "最低 7-Zip 版本。", "temp_root": "临时工作目录；空值使用系统临时目录。",
 	"iso": "光盘映像处理配置。", "strategy": "extract_first 优先解压 / mount_first 优先挂载 / extract_only 仅解压 / mount_only 仅挂载。", "allow_os_media": "是否允许处理操作系统介质。", "allow_media_disc": "是否允许处理影音光盘。", "autorun_as_p0": "将 autorun 指定入口列为高优先级候选。", "media_kinds_file": "介质识别规则文件。", "mount_tool_path": "挂载工具路径；auto 自动查找。", "mount_timeout_ms": "挂载超时（毫秒）。", "dismount_retry": "卸载挂载介质的重试次数。", "keep_mounted_until_verified": "保留挂载直到结果验证结束。", "keep_extracted_on_success": "成功后是否保留解压目录。", "motw_policy": "下载来源标记处理：native 系统默认 / preserve 保留 / clear 清除。",
 	"package_layout": "安装包入口识别配置。", "enabled": "是否启用当前功能。", "mode": "入口识别模式：smart 智能优先 / brute 遍历。", "entry_patterns_file": "安装入口匹配规则。", "exclude_patterns_file": "卸载、修复等入口排除规则。", "prefer_shallowest": "优先选择浅层目录中的入口。", "prefer_arch_match": "优先选择与系统架构匹配的入口。", "readme_hints": "参考说明文件中的安装提示。", "max_entries_phase1": "第一阶段最多尝试入口数量。", "fallback_to_brute": "智能入口未成功时是否回退遍历。",

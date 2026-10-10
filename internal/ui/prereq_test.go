@@ -41,3 +41,27 @@ func TestPrereqIssuesKeepActualFailures(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestOCRInventoryShowsEveryRowAndActualSelectedStatus(t *testing.T) {
+	r := schema.EmptyPrereq()
+	r.ArchiveBackendStatus = "ok"
+	r.OCREngine = "paddleocr_json"
+	r.OCREngineStatus = "startup_failed"
+	r.OCREngines = []schema.OCREngineCheck{
+		{Engine: "paddleocr_json", Status: "startup_failed", Detail: "DLL missing", Selected: true},
+		{Engine: "rapidocr_json", Status: "ok", PackagePath: schema.String("RapidOCR-json_v0.2.0.7z")},
+		{Engine: "umi_ocr", Status: "service_required"},
+		{Engine: "tesseract", Status: "missing"},
+		{Engine: "windows", Status: "unsupported"},
+	}
+	rows := dependencyStates(&r, false)
+	if len(rows) != 6 || !strings.Contains(rows[1].Name, "当前选择") || rows[1].Detail != "DLL missing" || rows[2].Kind != "ok" || rows[3].Status != "需启动服务" {
+		t.Fatal(rows)
+	}
+	if summary := dependencySummary(&r, false); !strings.Contains(summary, "当前 OCR：自检失败") || !strings.Contains(summary, "1/5") {
+		t.Fatal(summary)
+	}
+	if len(dependencyStates(&r, true)) != 6 {
+		t.Fatal("recheck hid engine inventory")
+	}
+}

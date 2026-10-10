@@ -68,9 +68,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 
 退出码：`0` 前置就绪 / `4` 缺 7-Zip / `5` 缺 OCR（要求部署但未就绪）/ `1` 其他错误。比工具本体默认更严格——工具在 `ocr.require_ocr: false` 时 OCR 缺失也返回 0，本脚本要求"要装就必须装好"，便于镜像构建阶段做卡点。
 
-**自动部署与脚本用途**：日常使用无需先运行脚本。GUI“检查环境”、CLI `--check-prereq` 及执行前检查均会从同级离线物料部署缺失的 7-Zip 和当前 CPU 所需的 OCR 引擎。`--check-prereq --no-deploy-deps` 仅检测；`--capabilities` 不部署。程序不会覆盖已有配置、联网下载或自动安装 VC++ 运行库；工具目录不可写、物料缺失、能力自检失败均明确提示。7-Zip 安装器可能写注册表或弹出 UAC。
+**自动部署与脚本用途**：日常使用无需先运行脚本。GUI“检查环境 / 检查前置”和 CLI `--check-prereq` 会逐个发现、部署并自检 `third_party\ocr` 下支持的便携 `.7z` / `.zip` 包，同一引擎的多个版本也独立处理；普通安装任务仅处理当前选定的引擎。`--check-prereq --no-deploy-deps` 仅检测已有程序与服务，未解压包标记未部署；`--capabilities` 不部署。程序不会覆盖已有配置、联网下载或自动安装 VC++ 运行库；工具目录不可写、物料缺失、能力自检失败均明确提示。7-Zip 安装器可能写注册表或弹出 UAC。
 
-脚本仍保留用于镜像批量准备、`-Check` / `-DryRun`、指定目录和 `-Force` 修复。脚本默认把两个 OCR 引擎解压到工具同级 `third_party\ocr`，`engine_path` 保持 `auto`，兼容不同 CPU；程序自动部署只释放本机需要的一个引擎。自定义 OCR 目录仍需配置显式路径。
+脚本仍保留用于镜像批量准备、`-Check` / `-DryRun`、指定目录和 `-Force` 修复。脚本默认把两个 OCR 引擎解压到工具同级 `third_party\ocr`，`engine_path` 保持 `auto`，兼容不同 CPU。程序完整环境检查将各包释放到 `third_party\ocr\packages\<包名与路径摘要>\`，保留整个发行包目录树，重复检查直接复用，不覆盖现有版本；`auto` 能递归发现这些程序。自定义目录仍需配置显式路径。
+
+支持发现的便携包名以 `PaddleOCR-json`、`RapidOCR-json`、`Umi-OCR` 或 `Tesseract` 开头。PaddleOCR-json / RapidOCR-json 启动后实际发送识别请求，Tesseract 还检查语言数据；CPU 无 AVX 时不启动 PaddleOCR-json。Umi-OCR 包只自动解压，其本地 HTTP 服务由用户自行启动，程序列表与服务检测分开显示。Windows OCR 适配尚未实现，清单会明确标记，不伪装成可用。GUI 的“设置 → 识别与依赖”可查看可滚动完整清单，首页“检测详情”可搜索、复制各项路径与失败原因。JSON 新增可选 `ocr_engines` 清单；原标量 OCR 字段仍描述实际选中的引擎，不以替代引擎通过替代当前配置自检。
 
 ## 手工部署（等价步骤）
 
