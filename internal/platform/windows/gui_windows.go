@@ -170,6 +170,7 @@ func (GUI) RawControls(w ports.Window) ([]ports.Control, error) {
 		comCall(e, 43, uintptr(unsafe.Pointer(&rect)))
 		text := bstr(e, 23)
 		id := bstr(e, 29)
+		checked := uiaChecked(e, kind)
 		release(e)
 		if offscreen != 0 || rect.Right <= rect.Left || rect.Bottom <= rect.Top {
 			continue
@@ -190,12 +191,39 @@ func (GUI) RawControls(w ports.Window) ([]ports.Control, error) {
 		if id == "" {
 			id = strconv.Itoa(int(i))
 		}
-		out = append(out, ports.Control{ID: id, Text: text, Role: role, Bounds: rect.rect(), Window: w, Source: "uia", Confidence: 1, Enabled: enabled != 0})
+		out = append(out, ports.Control{ID: id, Text: text, Role: role, Bounds: rect.rect(), Window: w, Source: "uia", Confidence: 1, Enabled: enabled != 0, Checked: checked})
 	}
 	if len(out) == 0 {
 		return win32Controls(w), nil
 	}
 	return out, nil
+}
+
+func uiaChecked(element uintptr, kind int32) bool {
+	var patternID uintptr
+	var index int
+	var iid guid
+	switch kind {
+	case 50002:
+		patternID, index = 10015, 4 // TogglePattern.CurrentToggleState
+		iid = guid{0x94cf8058, 0x9b8d, 0x4ab9, [8]byte{0x8b, 0xfd, 0x4c, 0xd0, 0xa3, 0x3c, 0x8c, 0x70}}
+	case 50013:
+		patternID, index = 10010, 6 // SelectionItemPattern.CurrentIsSelected
+		iid = guid{0xa8efa66a, 0x0fda, 0x421a, [8]byte{0x91, 0x94, 0x38, 0x02, 0x1f, 0x35, 0x78, 0xea}}
+	default:
+		return false
+	}
+	var unknown, pattern uintptr
+	if comCall(element, 16, patternID, uintptr(unsafe.Pointer(&unknown))) != nil || unknown == 0 {
+		return false
+	}
+	defer release(unknown)
+	if comCall(unknown, 0, uintptr(unsafe.Pointer(&iid)), uintptr(unsafe.Pointer(&pattern))) != nil || pattern == 0 {
+		return false
+	}
+	defer release(pattern)
+	var value int32
+	return comCall(pattern, index, uintptr(unsafe.Pointer(&value))) == nil && value == 1
 }
 
 func win32Controls(w ports.Window) []ports.Control {
@@ -224,6 +252,9 @@ func win32Controls(w ports.Window) []ports.Control {
 				checked = r == 1
 			case 4, 9:
 				role = "radio"
+				var r uintptr
+				user32.NewProc("SendMessageTimeoutW").Call(hwnd, 0xf0, 0, 0, 2, 100, uintptr(unsafe.Pointer(&r)))
+				checked = r == 1
 			}
 		}
 		if class == "Edit" {

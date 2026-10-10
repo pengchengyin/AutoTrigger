@@ -159,7 +159,7 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			if c.Enabled && (c.Role == "button" || c.Role == "checkbox" || c.Role == "radio") {
 				action := a.semantic(c.Text)
 				if action != "" && action != "deny" && action != "failure" && action != "network" && action != "reboot" {
-					if c.Role == "checkbox" && c.Checked {
+					if (c.Role == "checkbox" || c.Role == "radio") && c.Checked {
 						continue
 					}
 					candidates = append(candidates, c)

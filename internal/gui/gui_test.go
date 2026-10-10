@@ -9,11 +9,34 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type native struct {
 	controls []ports.Control
 	clicked  []ports.Control
+}
+
+func TestAgreementSelectionAdvancesToNext(t *testing.T) {
+	for _, role := range []string{"radio", "checkbox"} {
+		n := &native{controls: []ports.Control{
+			{ID: "accept", Text: "I accept the agreement", Role: role, Enabled: true},
+			{ID: "next", Text: "下一步(&N) >", Role: "button", Enabled: false},
+		}}
+		a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+		if err := a.Init(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := a.Step(context.Background(), []int{1}); err != nil || len(n.clicked) != 1 || n.clicked[0].ID != "accept" {
+			t.Fatalf("%s agreement was not selected: %v, %+v", role, err, n.clicked)
+		}
+		n.controls[0].Checked = true
+		n.controls[1].Enabled = true
+		a.states[1].lastClick = time.Now().Add(-time.Second)
+		if _, err := a.Step(context.Background(), []int{1}); err != nil || len(n.clicked) != 2 || n.clicked[1].ID != "next" {
+			t.Fatalf("%s blocked next after agreement: %v, %+v", role, err, n.clicked)
+		}
+	}
 }
 
 func (n *native) Windows([]int) ([]ports.Window, error) {
