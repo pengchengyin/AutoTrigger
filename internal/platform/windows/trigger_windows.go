@@ -78,6 +78,11 @@ func (t Trigger) Commands(path string, ft ports.FileType, temp string) ([]ports.
 	case "script":
 		switch strings.ToLower(filepath.Ext(path)) {
 		case ".bat", ".cmd":
+			converted, err := normalizeBatch(path, temp)
+			if err != nil {
+				return nil, err
+			}
+			path = converted
 			add(systemExe("cmd.exe"), []string{"/d", "/s", "/c", "\"" + path + "\""}, "script", false)
 			// cmd.exe parses its shell tail differently from CommandLineToArgvW.
 			out[len(out)-1].CommandLine = syscall.EscapeArg(systemExe("cmd.exe")) + " /d /s /c \"\"" + path + "\"\""

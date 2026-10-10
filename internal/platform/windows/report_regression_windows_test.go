@@ -3,8 +3,10 @@
 package windows
 
 import (
+	"autotrigger/internal/config"
 	"autotrigger/internal/core/ports"
 	"autotrigger/internal/procutil"
+	"autotrigger/internal/resources"
 	"context"
 	"encoding/binary"
 	"os"
@@ -47,6 +49,36 @@ func TestD08RelocatedUnicodeShortcut(t *testing.T) {
 	os.WriteFile(link, b[:30], 0600)
 	if _, err = shortcutRelative(link); err == nil {
 		t.Fatal("truncated link accepted")
+	}
+}
+
+func TestD12UTF16BatchRunsWithoutChangingOriginal(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "script.bat")
+	text := "@echo off\r\necho UTF16-BATCH>\"%~dp0sentinel.txt\"\r\n"
+	words, _ := syscall.UTF16FromString(text)
+	b := []byte{0xff, 0xfe}
+	for _, w := range words[:len(words)-1] {
+		b = append(b, byte(w), byte(w>>8))
+	}
+	os.WriteFile(path, b, 0600)
+	trigger := Trigger{Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+	commands, err := trigger.Commands(path, ports.FileType{Kind: "script"}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	exit, err := procutil.Run(ctx, Runner{}, commands[0])
+	if err != nil || exit.Code != 0 {
+		t.Fatalf("%+v %v", exit, err)
+	}
+	if _, err = os.Stat(filepath.Join(root, "sentinel.txt")); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := os.ReadFile(path)
+	if string(current) != string(b) {
+		t.Fatal("original batch changed")
 	}
 }
 
