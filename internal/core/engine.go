@@ -48,6 +48,13 @@ type Engine struct {
 }
 
 func (e *Engine) Run(ctx context.Context, input string) error {
+	e.Config.Verify.WatchExclude = append(append([]string{}, e.Config.Verify.WatchExclude...), e.IgnorePaths...)
+	if e.ResultPath != "" && e.ResultPath != "-" {
+		e.Config.Verify.WatchExclude = append(e.Config.Verify.WatchExclude, e.ResultPath, e.ResultPath+".tmp", e.ResultPath+".log", e.ResultPath+".journal.ndjson")
+	}
+	if dir := e.failureLogDir(); dir != "" {
+		e.Config.Verify.WatchExclude = append(e.Config.Verify.WatchExclude, dir)
+	}
 	if e.Config.TaskTimeoutSec > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(e.Config.TaskTimeoutSec)*time.Second)
@@ -554,6 +561,7 @@ func (e *Engine) tempDir() (string, error) {
 	}
 	if err == nil {
 		e.temps = append(e.temps, dir)
+		e.Config.Verify.WatchExclude = append(e.Config.Verify.WatchExclude, dir)
 	}
 	return dir, err
 }

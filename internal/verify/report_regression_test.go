@@ -5,6 +5,8 @@ import (
 	"autotrigger/internal/core/ports"
 	"autotrigger/pkg/schema"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -18,6 +20,20 @@ func TestD02MSILogStatusMustBeNumericSuccess(t *testing.T) {
 		if installerLogSuccess(text) == "" {
 			t.Fatalf("missing B1: %q", text)
 		}
+	}
+}
+
+func TestD16OwnOutputFilesCannotCreateFilesystemEvidence(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "result.json")
+	c := config.Defaults().Verify
+	c.WatchDirs = []string{root}
+	c.WatchExclude = []string{file}
+	before, _, _ := Files(context.Background(), c)
+	os.WriteFile(file, []byte("tool output"), 0600)
+	after, _, _ := Files(context.Background(), c)
+	if Digest(&ports.Baseline{Dirs: before}) != Digest(&ports.Baseline{Dirs: after}) {
+		t.Fatal("excluded tool output changed snapshot")
 	}
 }
 

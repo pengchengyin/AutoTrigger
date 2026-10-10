@@ -46,6 +46,9 @@ func Files(ctx context.Context, c config.Verify) (map[string]ports.DirState, boo
 		s := ports.DirState{Names: []string{}}
 		count++
 		for _, e := range entries {
+			if excluded(filepath.Join(dir, e.Name())) {
+				continue
+			}
 			if count >= c.SnapshotMaxEntries || time.Now().After(deadline) {
 				truncated = true
 				break
