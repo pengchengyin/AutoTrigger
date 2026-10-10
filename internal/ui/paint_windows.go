@@ -508,8 +508,8 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 			status = snap.Rows[0].Status
 		}
 		drawText(hdc, valueOr(name, "任务详情"), rectT{Left: left, Top: bounds.Top + int32(f.px(16)), Right: right - int32(f.px(220)), Bottom: bounds.Top + int32(f.px(42))}, modernTheme.text, f.statusFontOrDefault(), dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-		drawText(hdc, "任务 ID："+valueOr(snap.TaskID, "未提供"), rectT{Left: left, Top: bounds.Top + int32(f.px(42)), Right: right, Bottom: bounds.Top + int32(f.px(64))}, modernTheme.muted, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-		badge := rectT{Left: right - int32(f.px(210)), Top: bounds.Top + int32(f.px(18)), Right: right, Bottom: bounds.Top + int32(f.px(46))}
+		drawText(hdc, "任务 ID："+valueOr(snap.TaskID, "未提供"), rectT{Left: left, Top: bounds.Top + int32(f.px(42)), Right: right - int32(f.px(220)), Bottom: bounds.Top + int32(f.px(68))}, modernTheme.muted, f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+		badge := rectT{Left: right - int32(f.px(210)), Top: bounds.Top + int32(f.px(48)), Right: right, Bottom: bounds.Top + int32(f.px(72))}
 		roundRect(hdc, badge, modernTheme.surfaceAlt, statColor(outcomeKind(snap)), f.px(6))
 		drawText(hdc, status, badge, statColor(outcomeKind(snap)), f.font, dtCenter|dtVCenter|dtSingleLine|dtEndEllipsis)
 		width := (int(bounds.Right-bounds.Left) - 2*pad - 2*gap) / 3

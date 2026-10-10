@@ -49,6 +49,8 @@ func maxInt(a, b int) int {
 }
 
 func (f *form) createWorkflowControls() {
+	f.button(idDetailRetry, "重新安装")
+	f.button(idDetailStop, "停止")
 	f.label(idTaskNameLabel, "任务名称")
 	f.edit(idTaskName, "")
 	f.edit(idTaskSearch, "")
@@ -106,6 +108,8 @@ func (f *form) createWorkflowControls() {
 var syscallComctl = syscall.NewLazyDLL("comctl32.dll")
 
 func (f *form) hideWorkflowControls() {
+	procShowWindow.Call(f.ctrls[idDetailRetry], swHide)
+	procShowWindow.Call(f.ctrls[idDetailStop], swHide)
 	procShowWindow.Call(f.ctrls[idDependencyList], swHide)
 	procShowWindow.Call(f.ctrls[idDependencyDetails], swHide)
 	for _, id := range []int{idTaskSearchLabel, idTaskNameLabel, idTaskName, idTaskSearch, idTaskList, idTaskView, idSettingsBasic, idSettingsAdvanced, idHelpTopics, idHelpBody, idHelpAbout, idOutputDir, idSettingsRecognition, idOCREnginePathLabel, idOCREnginePath, idOCREngineBrowse, idSevenZipLabel, idSevenZip, idSevenZipBrowse, idOCRScoreLabel, idOCRScore} {
@@ -367,6 +371,7 @@ func (f *form) registerTask(opts Options) {
 		}
 	}
 	record := taskRecord{ID: id, Name: name, Input: input, Result: result, Config: configuration, Created: time.Now()}
+	record.Execution = &opts
 	if stat, err := os.Stat(input); err == nil {
 		if stat.IsDir() {
 			record.FileType = "directory"

@@ -11,15 +11,16 @@ import (
 )
 
 type taskRecord struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	Input    string    `json:"input"`
-	Result   string    `json:"result"`
-	Config   string    `json:"config"`
-	Created  time.Time `json:"created"`
-	ExitCode *int      `json:"exit_code,omitempty"`
-	FileType string    `json:"file_type,omitempty"`
-	FileSize *int64    `json:"file_size_bytes,omitempty"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Input     string    `json:"input"`
+	Result    string    `json:"result"`
+	Config    string    `json:"config"`
+	Created   time.Time `json:"created"`
+	ExitCode  *int      `json:"exit_code,omitempty"`
+	FileType  string    `json:"file_type,omitempty"`
+	FileSize  *int64    `json:"file_size_bytes,omitempty"`
+	Execution *Options  `json:"execution_options,omitempty"`
 }
 
 func loadHistory(dir string) ([]taskRecord, error) {

@@ -118,6 +118,8 @@ const (
 	idTemplateCreate
 	idDependencyList
 	idDependencyDetails
+	idDetailRetry
+	idDetailStop
 )
 
 // 布局常量，单位为 96 DPI 下的像素（实际值经 scale 换算）。
@@ -748,6 +750,9 @@ func (f *form) layoutResultControls(clientW, clientH int) {
 	right := int(r.Right) - pad
 	top := int(r.Top) + pad
 	if f.page == pageTaskDetail {
+		f.showAt(idDetailRetry, right-f.px(210), int(r.Top)+f.px(14), f.px(112), f.px(30))
+		f.showAt(idDetailStop, right-f.px(90), int(r.Top)+f.px(14), f.px(90), f.px(30))
+		f.updateDetailButtons()
 		top = int(r.Top) + f.px(286)
 	}
 	rowH := f.px(uiRowH)
@@ -1398,6 +1403,12 @@ func (f *form) onCommand(id, code int) {
 			f.startRun()
 		case idStop:
 			f.stopRun()
+		case idDetailRetry:
+			f.retrySelectedTask()
+		case idDetailStop:
+			if f.selectedTaskRunning() {
+				f.stopRun()
+			}
 		case idPrereq:
 			f.checkPrereq()
 		case idValidate:
@@ -1826,6 +1837,13 @@ func (f *form) startRun() {
 		messageBox(f.hwnd, "参数有误", err.Error(), mbOK|mbIconError)
 		return
 	}
+	f.runTaskOptions(opts)
+}
+
+func (f *form) runTaskOptions(opts Options) {
+	if f.isRunning() {
+		return
+	}
 	if opts.Input != "" && opts.Output != "-" {
 		dir := filepath.Dir(opts.Output)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -1996,6 +2014,7 @@ func (f *form) isRunning() bool {
 
 func (f *form) updateButtons() {
 	running := f.isRunning()
+	f.updateDetailButtons()
 	enableWindow(f.ctrls[idRun], !running)
 	enableWindow(f.ctrls[idStop], running)
 	for _, id := range []int{idPrereq, idValidate, idMakeConfig, idEditConfig,
