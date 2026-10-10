@@ -163,6 +163,9 @@ loop:
 	}
 	if a.ExitCode != nil {
 		e.Log.Stage(logging.LevelInfo, logging.StageRun, "本轮尝试结束：%s，退出码=%d，耗时 %.1f 秒", attemptResultText(a.Result), *a.ExitCode, a.DurationSec)
+		if cmd.MSI {
+			e.Log.Stage(logging.LevelInfo, logging.StageRun, "Windows Installer 退出状态：%s", verify.MSICodeNote(*a.ExitCode))
+		}
 	} else {
 		e.Log.Stage(logging.LevelInfo, logging.StageRun, "本轮尝试结束：%s，耗时 %.1f 秒", attemptResultText(a.Result), a.DurationSec)
 	}

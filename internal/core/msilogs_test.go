@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"autotrigger/internal/config"
+	"autotrigger/internal/core/ports"
 	"autotrigger/pkg/schema"
+	"context"
 )
 
 func TestTrimExtAndSanitizeName(t *testing.T) {
@@ -31,6 +33,43 @@ func TestTrimExtAndSanitizeName(t *testing.T) {
 		if got := sanitizeName(in); got != want {
 			t.Errorf("sanitizeName(%q) = %q，期望 %q", in, got, want)
 		}
+	}
+}
+
+type d18MSITrigger struct{}
+
+func (d18MSITrigger) Commands(path string, _ ports.FileType, temp string) ([]ports.Command, error) {
+	log := filepath.Join(temp, "MSI-0.log")
+	text := "Windows Installer 已安装产品。安装成功或错误状态: 1603。\r\nAction ended: InstallFinalize. Return value 3."
+	b := []byte{0xff, 0xfe}
+	for _, r := range text {
+		b = append(b, byte(r), byte(r>>8))
+	}
+	if err := os.WriteFile(log, b, 0600); err != nil {
+		return nil, err
+	}
+	return []ports.Command{{Program: path, Method: "msi", MSI: true, LogPath: log}}, nil
+}
+
+func TestD18FailedMSILogSurvivesFullTaskCleanup(t *testing.T) {
+	e, r := engineFor(t)
+	r.code = 1603
+	e.Trigger = d18MSITrigger{}
+	e.ResultPath = filepath.Join(t.TempDir(), "result.json")
+	path := sample(t, "fatal.msi", []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1})
+	if err := e.Run(context.Background(), path); err != nil {
+		t.Fatal(err)
+	}
+	f := e.Result.Results[0]
+	if f.FinalStatus != "failed" {
+		t.Fatal(f)
+	}
+	kept := filepath.Join(e.failureLogDir(), "fatal-1-msi.log")
+	if text := loadInstallerLog(kept, installerLogTailBytes); !strings.Contains(text, "1603") || strings.ContainsRune(text, 0) {
+		t.Fatalf("retained log unreadable: %q", text)
+	}
+	if _, err := os.Stat(*f.Attempts[0].MSILog); !os.IsNotExist(err) {
+		t.Fatal("task temp not cleaned", err)
 	}
 }
 
