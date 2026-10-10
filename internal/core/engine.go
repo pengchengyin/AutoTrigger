@@ -364,6 +364,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		e.GUI.Reset()
 	}
 	allEvidence := []schema.Evidence{}
+	unresolvedNegatives := []schema.Evidence{}
 	sideEffects := false
 	everStarted, timedout := false, false
 	for i, cmd := range commands {
@@ -412,6 +413,22 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 			}
 		}
 		d := verify.Decide(e.Config.Verify.JudgmentProfile, current, sideEffects, f.PreInstalled, everStarted, timedout, ev.Artifact)
+		for _, item := range ev.Evidence {
+			if item.Level == "N" {
+				unresolvedNegatives = append(unresolvedNegatives, item)
+			}
+		}
+		strong := false
+		for _, item := range ev.Evidence {
+			strong = strong || item.Level == "S"
+		}
+		resolved := d.Status == "install_completed" && strong && a.Result == "exited" && a.ExitCode != nil && verify.MSICodeIsSuccess(*a.ExitCode) && !timeoutAttempt
+		if resolved {
+			unresolvedNegatives = nil
+		}
+		if len(unresolvedNegatives) > 0 {
+			d = verify.Decide(e.Config.Verify.JudgmentProfile, append(positive(allEvidence), unresolvedNegatives...), sideEffects, f.PreInstalled, everStarted, timedout, ev.Artifact)
+		}
 		f.FinalStatus = d.Status
 		f.InstallConfidence = d.Confidence
 		f.EvidenceConflicts = d.Conflicts

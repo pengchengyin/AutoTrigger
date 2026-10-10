@@ -21,6 +21,15 @@ func TestD02MSILogStatusMustBeNumericSuccess(t *testing.T) {
 	}
 }
 
+func TestD07NegativePlusAnyPositiveIsConflict(t *testing.T) {
+	for _, level := range []string{"S", "A", "B"} {
+		d := Decide("loose", []schema.Evidence{{ID: level + "1", Level: level}, {ID: "N1", Level: "N", Detail: "1603"}}, false, false, true, false, "unknown")
+		if d.Status != "install_partial" || len(d.Conflicts) != 1 {
+			t.Fatal(d)
+		}
+	}
+}
+
 func TestD06TransientInstallationRemovedBeforeSettle(t *testing.T) {
 	empty := &ports.Baseline{Registry: map[string]ports.UninstallEntry{}, Dirs: map[string]ports.DirState{}}
 	transient := &ports.Baseline{Registry: map[string]ports.UninstallEntry{"new": {DisplayName: "Demo"}}, Dirs: map[string]ports.DirState{"newdir": {Files: 1}}}

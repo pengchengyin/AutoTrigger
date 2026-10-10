@@ -295,7 +295,7 @@ func Decide(profile string, ev []schema.Evidence, sideEffects, preInstalled, sta
 	}
 	confidence := func(c string) { d.Confidence = schema.String(c) }
 	if len(d.Conflicts) > 0 {
-		if sideEffects {
+		if sideEffects || s+a+b > 0 {
 			d.Status = "install_partial"
 			confidence("low")
 		} else if timedout {
