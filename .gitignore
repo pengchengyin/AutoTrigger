@@ -12,3 +12,4 @@ autotrigger-result.json.log*
 /config.json
 /artifacts/ui-review/
 /artifacts/ui-review-v2/
+/artifacts/win10-original/
