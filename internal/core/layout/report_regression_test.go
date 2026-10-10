@@ -23,3 +23,15 @@ func TestD13LurePrioritizesLinksAndRejectsTextSetup(t *testing.T) {
 	kind,err=a.MediaKind(entries,dataRoot)
 	if err!=nil || kind!="data_disc" { t.Fatalf("%s %v",kind,err) }
 }
+
+func TestD14ReadmeOnlyProvidesHintsNeverEntrance(t *testing.T) {
+	root:=t.TempDir()
+	for name,text:=range map[string]string{"安装说明.txt":"运行 missing.exe", "readme.txt":"run setup.exe", "autorun.inf":"[autorun]\nopen=setup.exe", "resource.dat":"data", "setup.exe":"MZ"} { os.WriteFile(filepath.Join(root,name),[]byte(text),0600) }
+	entries,_:=Scan(root,true)
+	c,_,err:=analyzer().Analyze(root,entries,true)
+	if err!=nil { t.Fatal(err) }
+	for _,v:=range c {
+		if v.Relative=="setup.exe" { if v.Priority!=0 { t.Fatal(v) }; continue }
+		if v.Reason!="non_executable_entry" || v.Priority!=5 { t.Fatal(v) }
+	}
+}

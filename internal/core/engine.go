@@ -136,12 +136,15 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 		if e.Err != nil {
 			return converged
 		}
-		if c.Reason == "excluded_blacklist" {
+		if c.Reason == "excluded_blacklist" || (packageScope && c.Reason == "non_executable_entry") {
 			f := schema.NewFile(c.Path, e.Config.Verify.JudgmentProfile)
 			f.FileSizeBytes = c.Size
 			f.DetectedType = c.Type.Kind
 			f.SelectionReason = c.Reason
-			f.Notes = "excluded_blacklist: " + c.Matched
+			f.Notes = c.Reason
+			if c.Matched != "" {
+				f.Notes += ": " + c.Matched
+			}
 			e.Log.Stage(logging.LevelInfo, logging.StageEntry, "排除（命中禁执行清单 %s）：%s", c.Matched, c.Path)
 			e.add(f)
 			continue

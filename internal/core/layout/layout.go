@@ -123,6 +123,9 @@ func (a Analyzer) Analyze(root string, entries []ports.ArchiveEntry, readHints b
 			c.Priority = 4
 			c.Reason = "entry_p4_main"
 		}
+		if !executable(ft.Kind) && ft.Kind != "archive" && ft.Kind != "disk_image" {
+			c.Priority, c.Reason = 5, "non_executable_entry"
+		}
 		candidates = append(candidates, c)
 	}
 	if readHints {
