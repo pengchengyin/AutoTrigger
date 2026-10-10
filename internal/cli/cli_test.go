@@ -20,6 +20,30 @@ func stubDeps() Dependencies {
 	return Dependencies{Runner: a, Trigger: func(config.Config, resources.Pack) ports.InstallerTrigger { return a }, Opener: a, Mounter: a, Evidence: a, NativeGUI: a, Lock: a, Prereqs: a}
 }
 
+func TestD20InformationCommandsNeverTouchPriorTaskArtifacts(t *testing.T) {
+	cwd, _ := os.Getwd()
+	root := t.TempDir()
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(cwd)
+	for _, name := range []string{"autotrigger-result.json", "autotrigger-result.json.log", "autotrigger-result.json.journal.ndjson"} {
+		os.WriteFile(name, []byte("previous task"), 0600)
+	}
+	for _, args := range [][]string{{"--capabilities", "--json"}, {"--check-prereq", "--json"}, {"--check-prereq", "--config", filepath.Join(root, "missing.json")}} {
+		var out, errout bytes.Buffer
+		deps := stubDeps()
+		deps.Prereqs = &checkModeProbe{}
+		Run(context.Background(), args, &out, &errout, deps)
+		for _, name := range []string{"autotrigger-result.json", "autotrigger-result.json.log", "autotrigger-result.json.journal.ndjson"} {
+			b, _ := os.ReadFile(name)
+			if string(b) != "previous task" {
+				t.Fatalf("%v changed %s: %s", args, name, b)
+			}
+		}
+	}
+}
+
 type checkModeProbe struct{ readOnly bool }
 
 type environmentModeProbe struct {

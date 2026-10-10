@@ -79,6 +79,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		return 0
 	}
 	opts := Options{}
+	informationMode := informationRequest(args)
 	fs := flag.NewFlagSet("AutoTrigger", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	// 参数出错时只给一行摘要并指向 --help，不刷整屏帮助（保持错误信息可读）。
@@ -142,6 +143,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 			}
 		}
 		now := time.Now()
+		if informationMode && argumentValue(args, "output") == "" {
+			return exit
+		}
 		result.FinishedAt = &now
 		result.ConfigDigest = cfg.Digest()
 		if writeErr := output.Write(resultPath, &result, stdout, cfg.Output.Pretty, int64(cfg.Output.MaxFileSizeMB)*1024*1024); writeErr != nil {
@@ -273,38 +277,49 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		return 0
 	}
 	logPath := cfg.Output.LogFile
-	if logPath == "" {
+	if informationMode && !visited["log-file"] {
+		logPath = ""
+	}
+	if logPath == "" && !informationMode {
 		if resultPath == "-" {
 			logPath = "autotrigger-result.json.log"
 		} else {
 			logPath = resultPath + ".log"
 		}
 	}
-	logPath, err = filepath.Abs(logPath)
-	if err != nil {
-		return finish(2, err)
+	logOut := stderr
+	if logPath != "" {
+		logPath, err = filepath.Abs(logPath)
+		if err != nil {
+			return finish(2, err)
+		}
+		if resultPath != "-" && strings.EqualFold(logPath, resultPath) {
+			return finish(2, fmt.Errorf("log and result paths must differ"))
+		}
+		if opts.Input != "" && (strings.EqualFold(resultPath, opts.Input) || strings.EqualFold(logPath, opts.Input)) {
+			return finish(2, fmt.Errorf("output paths must not overwrite the sample"))
+		}
+		if err = os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
+			return finish(1, err)
+		}
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return finish(1, err)
+		}
+		defer logFile.Close()
+		logOut = io.MultiWriter(stderr, logFile)
 	}
-	if resultPath != "-" && strings.EqualFold(logPath, resultPath) {
-		return finish(2, fmt.Errorf("log and result paths must differ"))
-	}
-	if opts.Input != "" && (strings.EqualFold(resultPath, opts.Input) || strings.EqualFold(logPath, opts.Input)) {
-		return finish(2, fmt.Errorf("output paths must not overwrite the sample"))
-	}
-	if err = os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
-		return finish(1, err)
-	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return finish(1, err)
-	}
-	defer logFile.Close()
-	logger = &logging.Logger{Out: io.MultiWriter(stderr, logFile), Level: cfg.Output.LogLevel}
+	logger = &logging.Logger{Out: logOut, Level: cfg.Output.LogLevel}
 	for _, w := range append(warnings, library.Warnings...) {
 		logger.Stage(logging.LevelWarn, logging.StageTask, "配置提示：%s", w)
 	}
-	logger.Stage(logging.LevelInfo, logging.StageTask, "任务开始：task_id=%s，工具版本 %s，资源包 %s", id, Version, resources.Version)
-	logger.Stage(logging.LevelInfo, logging.StageTask, "结果文件：%s", resultPath)
-	logger.Stage(logging.LevelInfo, logging.StageTask, "日志文件：%s", logPath)
+	if !informationMode {
+		logger.Stage(logging.LevelInfo, logging.StageTask, "任务开始：task_id=%s，工具版本 %s，资源包 %s", id, Version, resources.Version)
+		logger.Stage(logging.LevelInfo, logging.StageTask, "结果文件：%s", resultPath)
+		logger.Stage(logging.LevelInfo, logging.StageTask, "日志文件：%s", logPath)
+	} else {
+		logger.Stage(logging.LevelInfo, logging.StageTask, "开始环境/能力检查（不创建安装任务产物）")
+	}
 	if !opts.CheckPrereq && !opts.Capabilities {
 		if opts.Input == "" {
 			return finish(2, fmt.Errorf("--input is required"))
@@ -469,6 +484,17 @@ func argumentValue(args []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func informationRequest(args []string) bool {
+	for _, arg := range args {
+		for _, key := range []string{"capabilities", "check-prereq", "version", "dump-config", "dump-resources", "self-test"} {
+			if arg == "--"+key || arg == "-"+key || strings.HasPrefix(arg, "--"+key+"=") && !strings.HasSuffix(arg, "=false") {
+				return true
+			}
+		}
+	}
+	return false
 }
 func capabilities(c config.Config, r schema.Result, l *templates.Library) map[string]interface{} {
 	return map[string]interface{}{"tool_version": Version, "schema_version": schema.Version, "resource_pack_version": resources.Version, "platform": runtime.GOOS, "os_version": r.PlatformMeta["os_version"], "supported_final_status": schema.Statuses, "supported_evidence_ids": []string{"S1", "S2", "S3", "S4", "A1", "A2", "A3", "B1", "N1", "N2", "N3", "N4", "N5"}, "supported_confidence": []string{"high", "medium", "low"}, "supported_methods": []string{"silent_install", "no_param_run", "script", "msi", "dll_probe", "lnk_target", "document_host"}, "capabilities": map[string]interface{}{"archive_backend": r.Prereq.ArchiveBackend != nil, "mount_backend": r.Prereq.MountBackendStatus == "ok", "ocr": r.Prereq.OCREngineStatus == "ok", "gui_automation": c.GUI.Enabled, "builtin_resources": true, "builtin_templates": l.BuiltinCount > 0, "launch_check": false, "win7_runtime_verified": false}, "resources": map[string]interface{}{"template_pack": c.GUI.TemplatePack, "builtin_template_variants": l.BuiltinCount, "external_template_entries": l.ExternalCount, "master_count": l.Masters, "template_acceptance_ready": l.Masters >= 50 && l.BuiltinCount >= 180}, "limits": map[string]int{"max_attempts_per_file": c.MaxAttemptsPerFile, "timeout_sec": c.TimeoutSec, "idle_timeout_sec": c.IdleTimeoutSec, "task_timeout_sec": c.TaskTimeoutSec}, "prereq": r.Prereq}
