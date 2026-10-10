@@ -23,6 +23,17 @@ func TestD02MSILogStatusMustBeNumericSuccess(t *testing.T) {
 	}
 }
 
+func TestD16TemporaryExtractionWithOnlyShortcutResidueIsUnverified(t *testing.T) {
+	d := Decide("loose", []schema.Evidence{{ID: "S2", Level: "S"}, {ID: "A1", Level: "A"}}, true, false, true, false, "failed")
+	if d.Status != "install_unverified" {
+		t.Fatal(d)
+	}
+	d = Decide("loose", []schema.Evidence{{ID: "S2", Level: "S"}, {ID: "A1", Level: "A"}}, true, false, true, false, "ok")
+	if d.Status != "install_completed" {
+		t.Fatal("portable application rejected", d)
+	}
+}
+
 func TestD16OwnOutputFilesCannotCreateFilesystemEvidence(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "result.json")

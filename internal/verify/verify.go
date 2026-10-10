@@ -212,6 +212,16 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 	if v.Config.RequireArtifact && o.SideEffects {
 		o.Artifact = "failed"
 		for _, p := range artifacts {
+			excluded := false
+			for _, root := range v.Config.WatchExclude {
+				if pathWithin(p, config.ExpandEnv(root)) {
+					excluded = true
+					break
+				}
+			}
+			if excluded {
+				continue
+			}
 			if v.Source.ValidArtifact(p) {
 				o.Artifact = "ok"
 				break
@@ -309,6 +319,14 @@ func Decide(profile string, ev []schema.Evidence, sideEffects, preInstalled, sta
 		return d
 	}
 	if s > 0 {
+		if s == 1 && seen["S2"] && artifact == "failed" {
+			d.Status = "install_unverified"
+			if timedout {
+				d.Status = "install_partial"
+			}
+			confidence("low")
+			return d
+		}
 		d.Status = "install_completed"
 		confidence("high")
 		if artifact == "failed" {
