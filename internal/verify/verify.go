@@ -173,12 +173,8 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		}
 	}
 	o.Evidence = append(o.Evidence, gui...)
-	lower := strings.ToLower(output)
-	for _, word := range []string{"installation completed successfully", "installation successful", "安装成功"} {
-		if strings.Contains(lower, word) {
-			add("B1", "B", "installer_log_success", "installer_log", word)
-			break
-		}
+	if detail := installerLogSuccess(output); detail != "" {
+		add("B1", "B", "installer_log_success", "installer_log", detail)
 	}
 	if v.Config.RequireArtifact && o.SideEffects {
 		o.Artifact = "failed"
