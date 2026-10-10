@@ -61,6 +61,37 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
+func TestLocalizedWizardAccelerators(t *testing.T) {
+	for _, text := range []string{"下一步(&N) >", "下一步（Ｎ） ＞", "下一步 (&N)", "&Next >"} {
+		n := &native{controls: []ports.Control{{ID: "next", Text: text, Role: "button", Enabled: true}}}
+		a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+		if err := a.Init(); err != nil {
+			t.Fatal(err)
+		}
+		u, err := a.Step(context.Background(), []int{1})
+		if err != nil || len(u.Actions) != 1 || len(n.clicked) != 1 {
+			t.Fatalf("label %q: %+v, %v", text, u, err)
+		}
+		if _, err := a.Step(context.Background(), []int{1}); err != nil || len(n.clicked) != 1 {
+			t.Fatalf("label %q clicked repeatedly: %v", text, err)
+		}
+	}
+	a := Automator{Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+	if err := a.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"取消(&C)", "卸载(&U)", "退出(&X)"} {
+		if a.semantic(text) != "deny" {
+			t.Fatalf("accelerator bypassed deny: %q", text)
+		}
+	}
+	for _, text := range []string{"下一步(推荐)", "Install Malware (&M)", "下一步(N)其他"} {
+		if a.semantic(text) != "" {
+			t.Fatalf("unrelated label matched: %q", text)
+		}
+	}
+}
+
 func TestExternalRulesCannotOverrideMandatoryDeny(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "keywords"), 0755); err != nil {

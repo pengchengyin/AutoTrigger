@@ -55,6 +55,13 @@ func Normalize(text string) string {
 	}, text)
 	text = strings.Join(strings.Fields(text), " ")
 	text = strings.TrimSpace(strings.Trim(text, "<>»«›‹"))
+	// Localized Win32 labels often end with an accelerator, e.g. Next(&N).
+	if len(text) >= 3 && text[len(text)-3] == '(' && text[len(text)-1] == ')' {
+		key := text[len(text)-2]
+		if key >= 'a' && key <= 'z' {
+			text = strings.TrimSpace(text[:len(text)-3])
+		}
+	}
 	return strings.TrimSpace(text)
 }
 func (a *Automator) Init() error {
