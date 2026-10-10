@@ -21,6 +21,7 @@ type Command struct {
 	Dir         string
 	Method      string
 	MSI         bool
+	NonInstall  bool
 	LogPath     string
 	Stdin       io.Reader
 	Stdout      io.Writer

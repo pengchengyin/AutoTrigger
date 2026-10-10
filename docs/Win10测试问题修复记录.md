@@ -14,3 +14,4 @@
 | D08 | 原目标不存在时，按 MS-SHLLINK 的 RelativePath 与快捷方式所在目录恢复搬迁后的目标；不使用进程工作目录，参数仍由 COM 获取。Unicode 相对目标、真实 COM 加载、截断文件回归通过。 |
 | D09 | .exe/.dll/.scr/.com 后缀无 MZ 时按 unknown 处理；Windows 原生启动已有无扩展名 PE 时绕过 PATHEXT 自动补扩展名。文本伪装及真实无扩展名测试程序启动回归通过。 |
 | D10 | ELF/薄 Mach-O 魔数优雅跳过；未知文件无真实关联直接 failed/untriggerable，拒绝 OpenWith.exe 通用选择器。保留 F8 有明确系统关联的兜底触发，不盲目禁用全部未知格式；无进程启动回归通过。 |
+| D11 | 脚本及 .scr/.com 使用非安装触发状态，正常退出 0 为 triggered，失败与超时仍如实记录，置信度 null；.scr/.com 不轮询静默安装参数。快捷方式脚本目标仍经解释器执行。六类触发回归通过。 |

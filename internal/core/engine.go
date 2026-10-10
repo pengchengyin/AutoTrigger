@@ -353,7 +353,18 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		}
 	}
 	if len(linkArgs) > 0 {
-		commands = []ports.Command{{Program: triggerPath, Args: linkArgs, Dir: filepath.Dir(triggerPath), Method: "lnk_target"}}
+		if ft.Kind == "script" || ft.Kind == "document" || ft.Kind == "unknown" {
+			for i := range commands {
+				commands[i].Args = append(commands[i].Args, linkArgs...)
+				commands[i].CommandLine = ""
+			}
+		} else {
+			commands = []ports.Command{{Program: triggerPath, Args: linkArgs, Dir: filepath.Dir(triggerPath), Method: "lnk_target"}}
+		}
+	}
+	for i := range commands {
+		ext := strings.ToLower(filepath.Ext(triggerPath))
+		commands[i].NonInstall = commands[i].NonInstall || ft.Kind == "script" || commands[i].Method == "document_host" || ext == ".com" || ext == ".scr"
 	}
 	if e.DumpDir != "" {
 		for _, cmd := range commands {
@@ -396,7 +407,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		everStarted = everStarted || startedAttempt
 		timedout = timedout || timeoutAttempt
 		f.RequiresReboot = f.RequiresReboot || reboot
-		if cmd.Method == "document_host" {
+		if cmd.NonInstall {
 			f.PlatformMeta["host_program"] = cmd.Program
 			f.FinalStatus = "failed"
 			if startedAttempt && a.ExitCode != nil && *a.ExitCode == 0 {
@@ -406,7 +417,10 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 				f.FinalStatus = "killed_on_timeout"
 			}
 			f.InstallConfidence = nil
-			break
+			if f.FinalStatus == "triggered" || timeoutAttempt {
+				break
+			}
+			continue
 		}
 		if network {
 			f.PlatformMeta["requires_network"] = true

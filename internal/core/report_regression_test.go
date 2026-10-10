@@ -21,6 +21,22 @@ func TestD01DirectBlacklistedInputsNeverStart(t *testing.T) {
 	}
 }
 
+func TestD11NonInstallationSamplesHaveTriggerStatus(t *testing.T) {
+	for _, name := range []string{"script.bat", "script.ps1", "script.vbs", "script.js", "trigger.scr", "trigger.com"} {
+		e, r := engineFor(t)
+		r.installAt = 1
+		data := []byte("echo test")
+		if strings.HasSuffix(name, ".scr") || strings.HasSuffix(name, ".com") {
+			data = []byte("MZ")
+		}
+		e.Run(context.Background(), sample(t, name, data))
+		f := e.Result.Results[0]
+		if f.FinalStatus != "triggered" || f.InstallConfidence != nil || len(f.Attempts) != 1 || len(f.Attempts[0].InstallEvidence) != 0 {
+			t.Fatal(f)
+		}
+	}
+}
+
 func TestD10UnknownAndForeignFilesNeverLaunchOpenWith(t *testing.T) {
 	for _, data := range [][]byte{[]byte("random data"), {0x7f, 'E', 'L', 'F'}, {0xcf, 0xfa, 0xed, 0xfe}} {
 		e, r := engineFor(t)

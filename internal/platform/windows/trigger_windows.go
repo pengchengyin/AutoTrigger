@@ -30,6 +30,11 @@ func (t Trigger) Commands(path string, ft ports.FileType, temp string) ([]ports.
 	}
 	switch ft.Kind {
 	case "pe_executable":
+		if ext := strings.ToLower(filepath.Ext(path)); ext == ".com" || ext == ".scr" {
+			add(path, nil, "no_param_run", false)
+			out[0].NonInstall = true
+			return out, nil
+		}
 		rules, err := t.Pack.Rules("params/silent_params.windows.json")
 		if err != nil {
 			return nil, err

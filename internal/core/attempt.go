@@ -119,7 +119,7 @@ loop:
 					network = network || update.RequiresNetwork
 				}
 			}
-			if cmd.Method != "document_host" && time.Since(lastSnapshot) >= 2*time.Second {
+			if !cmd.NonInstall && cmd.Method != "document_host" && time.Since(lastSnapshot) >= 2*time.Second {
 				if current, err := e.Evidence.Snapshot(ctx, e.Config.Verify); err == nil {
 					filesystemSignature = verify.Digest(current)
 					for key, entry := range current.Registry {
@@ -197,7 +197,7 @@ loop:
 		}
 		filtered = append(filtered, ev)
 	}
-	if cmd.Method == "document_host" {
+	if cmd.NonInstall || cmd.Method == "document_host" {
 		return a, obs, true, timedout, reboot, network
 	}
 	verifyCtx, cancel := context.WithTimeout(context.Background(), time.Duration(e.Config.Verify.SettleMaxSec+2)*time.Second)
