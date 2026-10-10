@@ -59,14 +59,47 @@ func PreInstalled(path string, b *ports.Baseline) bool {
 	return false
 }
 
-func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline, cmd ports.Command, exit *int, gui []schema.Evidence, output string) (Observation, error) {
-	after, err := v.settle(ctx)
+func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline, cmd ports.Command, exit *int, gui []schema.Evidence, output string, observed ...*ports.Baseline) (Observation, error) {
+	after, history, err := v.settle(ctx)
 	if err != nil {
 		return Observation{}, err
 	}
 	o := Observation{Evidence: []schema.Evidence{}, Artifact: "unknown", PreInstalled: PreInstalled(path, base), BaselineDigest: Digest(base)}
 	add := func(id, level, typ, source, detail string) {
 		o.Evidence = append(o.Evidence, schema.Evidence{ID: id, Level: level, Type: typ, Source: source, Detail: detail, At: time.Now()})
+	}
+	removedRegistry, removedDirs := map[string]bool{}, map[string]bool{}
+	for _, snapshot := range append(observed, history...) {
+		for key, entry := range snapshot.Registry {
+			_, existed := base.Registry[key]
+			_, remains := after.Registry[key]
+			if !existed && !remains && entry.DisplayName != "" && !removedRegistry[key] {
+				replaced := false
+				for _, current := range after.Registry {
+					if strings.EqualFold(current.DisplayName, entry.DisplayName) {
+						replaced = true
+						break
+					}
+				}
+				if !replaced {
+					add("N4", "N", "registry_key_removed", key, "新增卸载项在稳定期消失："+entry.DisplayName)
+					o.SideEffects = true
+					removedRegistry[key] = true
+				}
+			}
+		}
+		if snapshot.Truncated || after.Truncated {
+			continue
+		}
+		for dir := range snapshot.Dirs {
+			_, existed := base.Dirs[dir]
+			_, remains := after.Dirs[dir]
+			if !existed && !remains && !removedDirs[dir] {
+				add("N6", "N", "new_directory_removed", dir, "新增目录在稳定期消失，疑似回滚")
+				o.SideEffects = true
+				removedDirs[dir] = true
+			}
+		}
 	}
 	artifacts := []string{}
 	newReg := map[string]ports.UninstallEntry{}
@@ -193,21 +226,23 @@ func pathWithin(path, root string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func (v Verifier) settle(ctx context.Context) (*ports.Baseline, error) {
+func (v Verifier) settle(ctx context.Context) (*ports.Baseline, []*ports.Baseline, error) {
 	started := time.Now()
 	max := time.Duration(v.Config.SettleMaxSec) * time.Second
 	quiet := 0
 	previous := ""
 	var last *ports.Baseline
+	history := []*ports.Baseline{}
 	for {
 		b, err := v.Source.Snapshot(ctx, v.Config)
 		if err != nil {
 			if last != nil {
-				return last, nil
+				return last, history, nil
 			}
-			return nil, err
+			return nil, history, err
 		}
 		last = b
+		history = append(history, b)
 		digest := Digest(b)
 		if digest == previous {
 			quiet++
@@ -216,11 +251,11 @@ func (v Verifier) settle(ctx context.Context) (*ports.Baseline, error) {
 		}
 		previous = digest
 		if time.Since(started) >= max || (time.Since(started) >= time.Duration(v.Config.SettleSec)*time.Second && quiet >= v.Config.QuietPolls) {
-			return b, nil
+			return b, history, nil
 		}
 		select {
 		case <-ctx.Done():
-			return last, nil
+			return last, history, nil
 		case <-time.After(500 * time.Millisecond):
 		}
 	}

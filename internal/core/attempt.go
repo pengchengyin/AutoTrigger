@@ -45,6 +45,7 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	guiSignature := ""
 	filesystemSignature := verify.Digest(base)
 	lastSnapshot := time.Now()
+	observed := &ports.Baseline{Registry: map[string]ports.UninstallEntry{}, Dirs: map[string]ports.DirState{}}
 	var exit ports.Exit
 	terminated := false
 	finish := func(reason string) {
@@ -121,6 +122,18 @@ loop:
 			if cmd.Method != "document_host" && time.Since(lastSnapshot) >= 2*time.Second {
 				if current, err := e.Evidence.Snapshot(ctx, e.Config.Verify); err == nil {
 					filesystemSignature = verify.Digest(current)
+					for key, entry := range current.Registry {
+						if _, exists := base.Registry[key]; !exists {
+							observed.Registry[key] = entry
+						}
+					}
+					if !current.Truncated {
+						for dir, state := range current.Dirs {
+							if _, exists := base.Dirs[dir]; !exists {
+								observed.Dirs[dir] = state
+							}
+						}
+					}
 				}
 				lastSnapshot = time.Now()
 			}
@@ -190,7 +203,7 @@ loop:
 	verifyCtx, cancel := context.WithTimeout(context.Background(), time.Duration(e.Config.Verify.SettleMaxSec+2)*time.Second)
 	defer cancel()
 	verifier := verify.Verifier{Source: e.Evidence, Config: e.Config.Verify}
-	obs, err = verifier.Observe(verifyCtx, path, base, cmd, a.ExitCode, filtered, a.StdoutSummary+"\n"+a.StderrSummary)
+	obs, err = verifier.Observe(verifyCtx, path, base, cmd, a.ExitCode, filtered, a.StdoutSummary+"\n"+a.StderrSummary, observed)
 	if err != nil {
 		a.Error = schema.String("verification: " + err.Error())
 		obs.Evidence = filtered

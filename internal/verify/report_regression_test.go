@@ -1,7 +1,10 @@
 package verify
 
 import (
+	"autotrigger/internal/config"
+	"autotrigger/internal/core/ports"
 	"autotrigger/pkg/schema"
+	"context"
 	"testing"
 )
 
@@ -15,6 +18,23 @@ func TestD02MSILogStatusMustBeNumericSuccess(t *testing.T) {
 		if installerLogSuccess(text) == "" {
 			t.Fatalf("missing B1: %q", text)
 		}
+	}
+}
+
+func TestD06TransientInstallationRemovedBeforeSettle(t *testing.T) {
+	empty := &ports.Baseline{Registry: map[string]ports.UninstallEntry{}, Dirs: map[string]ports.DirState{}}
+	transient := &ports.Baseline{Registry: map[string]ports.UninstallEntry{"new": {DisplayName: "Demo"}}, Dirs: map[string]ports.DirState{"newdir": {Files: 1}}}
+	c := config.Defaults().Verify
+	c.SettleMaxSec = 0
+	v := Verifier{Source: source{b: empty}, Config: c}
+	exit := 0
+	o, err := v.Observe(context.Background(), "demo.exe", empty, ports.Command{}, &exit, nil, "", transient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Decide("loose", o.Evidence, o.SideEffects, false, true, false, o.Artifact)
+	if d.Status != "install_partial" || len(d.Conflicts) != 2 {
+		t.Fatalf("%+v %+v", o, d)
 	}
 }
 
