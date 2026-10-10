@@ -80,6 +80,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 
 ### 镜像准备
 
+安装中遇到管理员权限确认时，处理选项、关闭通知步骤、风险与恢复方法见 [使用说明：UAC 权限确认](README.md#安装时出现管理员权限确认uac)。日常电脑优先以管理员身份运行工具，不要求关闭 UAC。
+
 目标 Windows 7 SP1 x64 或更新系统。准备可交互桌面、管理员运行权限、可写 TEMP 和样本/结果目录。镜像管理员按测试口径配置 UAC 与 AV/EDR 排除目录；工具不修改这些配置，也不替用户关闭系统保护。不能从无交互桌面的服务会话保证 GUI 安装。
 
 1. 核对交付包 manifest 的 SHA-256。
