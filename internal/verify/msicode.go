@@ -69,6 +69,8 @@ func ConflictText(c schema.Evidence) string {
 		return "已安装的注册表项被移除（疑似回滚）：" + c.Detail
 	case "N5":
 		return "监控目录实体数量减少（疑似回滚）：" + c.Detail
+	case "N6":
+		return "新增安装目录在稳定期消失（疑似回滚）：" + c.Detail
 	}
 	return c.Detail
 }

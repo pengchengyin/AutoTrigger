@@ -497,5 +497,11 @@ func informationRequest(args []string) bool {
 	return false
 }
 func capabilities(c config.Config, r schema.Result, l *templates.Library) map[string]interface{} {
+	result := capabilityReport(c, r, l)
+	result["supported_evidence_ids"] = []string{"S1", "S2", "S3", "S4", "A1", "A2", "A3", "B1", "N1", "N2", "N3", "N4", "N5", "N6"}
+	return result
+}
+
+func capabilityReport(c config.Config, r schema.Result, l *templates.Library) map[string]interface{} {
 	return map[string]interface{}{"tool_version": Version, "schema_version": schema.Version, "resource_pack_version": resources.Version, "platform": runtime.GOOS, "os_version": r.PlatformMeta["os_version"], "supported_final_status": schema.Statuses, "supported_evidence_ids": []string{"S1", "S2", "S3", "S4", "A1", "A2", "A3", "B1", "N1", "N2", "N3", "N4", "N5"}, "supported_confidence": []string{"high", "medium", "low"}, "supported_methods": []string{"silent_install", "no_param_run", "script", "msi", "dll_probe", "lnk_target", "document_host"}, "capabilities": map[string]interface{}{"archive_backend": r.Prereq.ArchiveBackend != nil, "mount_backend": r.Prereq.MountBackendStatus == "ok", "ocr": r.Prereq.OCREngineStatus == "ok", "gui_automation": c.GUI.Enabled, "builtin_resources": true, "builtin_templates": l.BuiltinCount > 0, "launch_check": false, "win7_runtime_verified": false}, "resources": map[string]interface{}{"template_pack": c.GUI.TemplatePack, "builtin_template_variants": l.BuiltinCount, "external_template_entries": l.ExternalCount, "master_count": l.Masters, "template_acceptance_ready": l.Masters >= 50 && l.BuiltinCount >= 180}, "limits": map[string]int{"max_attempts_per_file": c.MaxAttemptsPerFile, "timeout_sec": c.TimeoutSec, "idle_timeout_sec": c.IdleTimeoutSec, "task_timeout_sec": c.TaskTimeoutSec}, "prereq": r.Prereq}
 }

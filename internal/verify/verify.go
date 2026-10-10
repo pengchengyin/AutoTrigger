@@ -174,19 +174,19 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		}
 	}
 	if newFiles >= v.Config.MinNewFiles {
-		add("S2", "S", "filesystem_diff", "filesystem", fmt.Sprintf("%d new entities", newFiles))
+		add("S2", "S", "filesystem_diff", "filesystem", fmt.Sprintf("新增 %d 个文件或目录实体", newFiles))
 	} else if o.SideEffects && len(newReg) == 0 {
-		add("A3", "A", "filesystem_changed", "filesystem", "monitored files or directories changed")
+		add("A3", "A", "filesystem_changed", "filesystem", "监控文件或目录发生变化")
 	}
 	if !base.Truncated && !after.Truncated && removed > v.Config.ShrinkTolerance && len(newReg) == 0 {
-		add("N5", "N", "filesystem_shrunk", "filesystem", fmt.Sprintf("%d removed entities", removed))
+		add("N5", "N", "filesystem_shrunk", "filesystem", fmt.Sprintf("移除 %d 个文件或目录实体", removed))
 	}
 	if exit != nil {
 		if cmd.MSI && MSICodeIsSuccess(*exit) {
 			add("S3", "S", "msi_success_code", "msiexec", fmt.Sprint(*exit))
 			o.RequiresReboot = *exit == 3010 || *exit == 1641
 		} else if *exit == 0 {
-			add("A1", "A", "generic_exit_code_zero", "process", "generic exit code zero")
+			add("A1", "A", "generic_exit_code_zero", "process", "进程正常退出（退出码 0），不单独证明安装成功")
 		} else {
 			add("N1", "N", "failure_exit_code", "process", fmt.Sprint(*exit))
 		}
