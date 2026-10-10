@@ -13,7 +13,7 @@ import (
 	"unsafe"
 )
 
-var templateControlIDs = []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse, idTemplateUseBuiltin, idTemplateUseExternal, idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal, idTemplateImport, idTemplateExport, idTemplateCheck, idTemplateBody, idTemplateStatus, idTemplateGuide, idTemplateSelect, idTemplatePreview}
+var templateControlIDs = []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal, idTemplateUse, idTemplateUseBuiltin, idTemplateUseExternal, idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal, idTemplateImport, idTemplateExport, idTemplateCheck, idTemplateBody, idTemplateStatus, idTemplateGuide, idTemplateSelect, idTemplatePreview, idTemplateCreate}
 
 type templateCheckResult struct {
 	text string
@@ -55,7 +55,8 @@ func (f *form) layoutTemplates(w, h int) {
 	}
 	f.showAt(idTemplateCheck, right-f.px(110), top+f.px(244), f.px(110), f.px(28))
 	f.showAt(idTemplateGuide, right-f.px(218), top+f.px(244), f.px(100), f.px(28))
-	f.showAt(idTemplateStatus, left, top+f.px(244), right-left-f.px(230), f.px(28))
+	f.showAt(idTemplateCreate, right-f.px(326), top+f.px(244), f.px(100), f.px(28))
+	f.showAt(idTemplateStatus, left, top+f.px(244), right-left-f.px(338), f.px(28))
 	f.showAt(idTemplateSelect, left, top+f.px(282), right-left-f.px(120), f.comboDropH(f.px(28), 8))
 	f.showAt(idTemplatePreview, right-f.px(110), top+f.px(282), f.px(110), f.px(28))
 	f.showAt(idTemplateBody, left, top+f.px(322), right-left, maxInt(f.px(48), int(r.Bottom)-top-f.px(340)))
@@ -92,7 +93,23 @@ func (f *form) showTemplateDetails(mode string) {
 	setWindowTextRaw(f.ctrls[idTemplateStatus], text)
 }
 
-const templateGuide = "模板制作与使用\r\n\r\n1. 使用现有模板\r\n选择模板库并点击使用，进入设置保存。merged 保留内置规则并按 ID 合并自定义图像模板；builtin 忽略外部；external 仅用外部。当前内置图像索引为空，不能将内置规则当作安装按钮图片。\r\n\r\n2. 导入\r\n选择包含 templates.index.json 的目录。每个条目须有唯一 id、family、action、lang、dpi、theme、file、width、height。file 必须是目录内的相对路径。图片须为 8-bit 灰度 PNG，宽 24~240、高 16~48。保存配置后生效，源文件不会被移动或覆盖。\r\n\r\n3. 制作真实按钮图片\r\n在目标安装器真实窗口中采集控件本体，紧贴外接矩形，不要手工重绘。母版用 100% DPI、浅色主题；中文和英文分别采集。勾选/未勾选、可用/禁用状态分别保存。保留源截图，索引的 screenshot 指向源 PNG。\r\n\r\n4. 预览与校验\r\n下拉选择实际模板可查看字段和打开图片。校验会在后台匹配源截图，缺少图片、源截图或匹配失败会列出原因。通过测试样本校验不代表已经覆盖真实安装器。\r\n\r\n5. 导出与现场排障\r\n导出内置资源会创建新目录，包含规则和 templates 子目录。空模板索引需要自行补齐真实素材。命令行 --dump-ui 可采集窗口素材，--dump-resources 可导出资源，--self-test templates 可自检；详细制作规范见交付文档 docs/图像模板制作说明.md。"
+var templateGuide = toCRLF(`模板制作与使用
+
+1. 使用现有模板
+选择模板库并点击使用，进入设置保存。merged 保留内置规则并按 ID 合并自定义图像模板；builtin 忽略外部；external 仅用外部。当前内置图像索引为空，不能将内置规则当作安装按钮图片。
+
+2. 导入
+选择包含 templates.index.json 的目录。每个条目须有唯一 id、family、action、lang、dpi、theme、file、width、height。file 必须是目录内的相对路径。图片须为 8-bit 灰度 PNG，宽 24~240、高 16~48。保存配置后生效，源文件不会被移动或覆盖。
+
+3. 制作真实按钮图片
+点击模板管理中的“制作模板”。自行打开真实安装器，选择窗口后抓取截图，或载入已有原始 PNG。在截图中拖动框选按钮，用 X、Y、宽度、高度精确调整范围。选择家族、动作、实际语言、DPI 和主题，检查模板 ID，选择保存目录后点击“保存并使用”。按钮自动转为灰度图，原始截图和索引一同保存；现有库追加条目，重复 ID 不覆盖。最后到设置保存配置，才用于执行。
+采集不会启动或点击安装器。紧贴控件外接矩形，不要手工重绘；建议母版使用 100% DPI、浅色主题。中文和英文、勾选和未勾选、可用和禁用状态分别采集，禁用态仅作参考。
+
+4. 预览与校验
+下拉选择实际模板可查看字段和打开图片。校验会在后台匹配源截图，缺少图片、源截图或匹配失败会列出原因。通过源截图自检不代表已经通过真实安装器端到端验证。
+
+5. 导出与现场排障
+导出内置资源会创建新目录，包含规则和 templates 子目录。空模板索引需要自行补齐真实素材。命令行 --dump-ui 可采集窗口素材，--dump-resources 可导出资源，--self-test templates 可自检；详细制作规范见交付文档 docs/图像模板制作说明.md。`)
 
 func (f *form) selectedTemplateDetails() {
 	index := f.comboIndex(idTemplateSelect)

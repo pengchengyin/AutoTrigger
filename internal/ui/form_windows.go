@@ -115,6 +115,7 @@ const (
 	idTemplateGuide
 	idTemplateSelect
 	idTemplatePreview
+	idTemplateCreate
 )
 
 // 布局常量，单位为 96 DPI 下的像素（实际值经 scale 换算）。
@@ -169,6 +170,7 @@ type form struct {
 	logScroll           map[uintptr]*logScrollState
 	logSubclass         uintptr
 	helpWindow          uintptr
+	templateMaker       uintptr
 	templateEntries     []templates.Entry
 	tooltipTexts        []*uint16
 	templateChecking    bool
@@ -310,6 +312,11 @@ func (f *form) loop() {
 		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&m)), 0, 0, 0)
 		if int32(r) <= 0 {
 			break
+		}
+		if f.templateMaker != 0 {
+			if handled, _, _ := procIsDialogMessageW.Call(f.templateMaker, uintptr(unsafe.Pointer(&m))); handled != 0 {
+				continue
+			}
 		}
 		if f.helpWindow != 0 {
 			if handled, _, _ := procIsDialogMessageW.Call(f.helpWindow, uintptr(unsafe.Pointer(&m))); handled != 0 {
@@ -477,6 +484,7 @@ func (f *form) createControls() {
 	f.button(idTemplateExport, "导出内置资源")
 	f.button(idTemplateCheck, "校验模板")
 	f.button(idTemplateGuide, "制作说明")
+	f.button(idTemplateCreate, "制作模板")
 	f.combo(idTemplateSelect, []string{"当前分类没有图像模板"}, 0)
 	f.button(idTemplatePreview, "打开图片")
 	for _, id := range []int{idTemplateDetailsMerged, idTemplateDetailsBuiltin, idTemplateDetailsExternal} {
@@ -1415,6 +1423,8 @@ func (f *form) onCommand(id, code int) {
 			f.showFieldHelp("高级配置字段说明", fieldHelp(true))
 		case idTemplateGuide:
 			f.showFieldHelp("模板制作与使用说明", templateGuide)
+		case idTemplateCreate:
+			f.showTemplateMaker()
 		case idTemplatePreview:
 			f.previewTemplate()
 		case idTemplateAll, idTemplateBuiltin, idTemplateExternal:
