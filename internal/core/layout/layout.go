@@ -81,6 +81,7 @@ func (a Analyzer) Analyze(root string, entries []ports.ArchiveEntry, readHints b
 		c := Candidate{Path: path, Relative: rel, Type: ft, Priority: 5, Reason: "fallback_p5", Size: e.Size}
 		name := strings.ToLower(filepath.Base(rel))
 		for _, r := range excludes {
+			if r.ID == "help" { continue }
 			rx, err := regexp.Compile("(?i)" + r.Pattern)
 			if err != nil {
 				return nil, l, fmt.Errorf("exclude %s: %w", r.ID, err)

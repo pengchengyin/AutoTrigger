@@ -98,7 +98,7 @@ func ExtensionKind(ext string) string {
 		return "disk_image"
 	case ".lnk":
 		return "shortcut"
-	case ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".rtf", ".docm", ".xlsm", ".pptm":
+	case ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".rtf", ".docm", ".xlsm", ".pptm", ".chm", ".hlp":
 		return "document"
 	default:
 		return "unknown"

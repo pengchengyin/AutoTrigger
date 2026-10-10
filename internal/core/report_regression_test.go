@@ -21,6 +21,20 @@ func TestD01DirectBlacklistedInputsNeverStart(t *testing.T) {
 	}
 }
 
+func TestD15HelpDocumentsAreNotGlobalBlacklist(t *testing.T) {
+	for _, name := range []string{"manual.pdf", "help.chm", "manual.hlp"} {
+		e, r := engineFor(t)
+		e.Opener = fakeOpener{association: true}
+		root := t.TempDir()
+		os.WriteFile(filepath.Join(root, name), []byte("document"), 0600)
+		e.Run(context.Background(), root)
+		f := e.Result.Results[0]
+		if len(r.commands) != 1 || f.FinalStatus != "triggered" || f.SelectionReason == "excluded_blacklist" {
+			t.Fatal(f)
+		}
+	}
+}
+
 func TestD11NonInstallationSamplesHaveTriggerStatus(t *testing.T) {
 	for _, name := range []string{"script.bat", "script.ps1", "script.vbs", "script.js", "trigger.scr", "trigger.com"} {
 		e, r := engineFor(t)
