@@ -128,6 +128,14 @@ func (a Analyzer) Analyze(root string, entries []ports.ArchiveEntry, readHints b
 	if readHints {
 		a.applyHints(root, candidates)
 	}
+	kind, err := a.MediaKind(entries, root)
+	if err != nil { return nil, l, err }
+	if kind == "malware_lure" {
+		for i := range candidates {
+			c := &candidates[i]
+			if c.Reason != "excluded_blacklist" && c.Type.Kind == "shortcut" && filepath.Dir(c.Relative) == "." { c.Priority, c.Reason = 0, "entry_p0_lure" }
+		}
+	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		x, y := candidates[i], candidates[j]
 		if x.Priority != y.Priority {
@@ -214,7 +222,7 @@ func (a Analyzer) applyHints(root string, candidates []Candidate) {
 	}
 }
 
-func (a Analyzer) MediaKind(entries []ports.ArchiveEntry) (string, error) {
+func (a Analyzer) MediaKind(entries []ports.ArchiveEntry, roots ...string) (string, error) {
 	rules, err := a.Rules.Rules(a.Config.ISO.MediaKindsFile)
 	if err != nil {
 		return "", err
@@ -237,33 +245,34 @@ func (a Analyzer) MediaKind(entries []ports.ArchiveEntry) (string, error) {
 	}
 	rootCount := 0
 	lure := false
+	shortcut, payload, installer := false, false, false
 	for _, e := range entries {
 		p := strings.ReplaceAll(e.Path, "\\", "/")
+		if e.Directory { continue }
+		ft := ports.FileType{Kind:kindFromExtension(strings.ToLower(filepath.Ext(p)))}
+		if len(roots)>0 && roots[0]!="" {
+			ft,err = a.Detector.Detect(filepath.Join(roots[0],filepath.FromSlash(p)))
+			if err!=nil { return "",err }
+		}
+		payload = payload || ft.Kind=="pe_executable" || ft.Kind=="script"
+		for _,r:=range rules {
+			if r.Kind!="installer_media" || !executable(ft.Kind) || ft.Kind=="shortcut" { continue }
+			rx,err:=regexp.Compile("(?i)"+r.Pattern);if err!=nil {return "",err}
+			installer = installer || rx.MatchString(p)
+		}
 		if !e.Directory && !strings.Contains(p, "/") {
 			rootCount++
 			switch strings.ToLower(filepath.Ext(p)) {
 			case ".lnk", ".js", ".vbs", ".hta", ".wsf":
 				lure = true
 			}
+			shortcut = shortcut || ft.Kind=="shortcut"
 		}
 	}
-	if rootCount >= 1 && rootCount <= 3 && lure {
+	if !installer && ((rootCount >= 1 && rootCount <= 3 && lure) || (shortcut && payload)) {
 		return "malware_lure", nil
 	}
-	for _, r := range rules {
-		if r.Kind != "installer_media" {
-			continue
-		}
-		rx, err := regexp.Compile("(?i)" + r.Pattern)
-		if err != nil {
-			return "", err
-		}
-		for _, e := range entries {
-			if rx.MatchString(strings.ReplaceAll(e.Path, "\\", "/")) {
-				return "installer_media", nil
-			}
-		}
-	}
+	if installer { return "installer_media",nil }
 	return "data_disc", nil
 }
 func archRank(path string) int {

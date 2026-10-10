@@ -179,6 +179,14 @@ func (e *Engine) container(ctx context.Context, f schema.FileResult, depth int, 
 		return f
 	}
 	before := len(e.Result.Results)
+	if iso {
+		kind, err := analyzer.MediaKind(entries, root)
+		if err != nil {
+			f.FinalStatus, f.Notes = "failed", err.Error()
+			return f
+		}
+		analysis.MediaKind = &kind
+	}
 	converged := e.packageRun(ctx, root, entries, depth+1, &analysis)
 	f.FinalStatus = "triggered"
 	f.Notes = "container processed"
