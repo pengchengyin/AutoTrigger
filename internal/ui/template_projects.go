@@ -14,6 +14,8 @@ import (
 type templateProject struct {
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
+	Description     string     `json:"description,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at,omitempty"`
 	PublishedAt     *time.Time `json:"published_at,omitempty"`
 	PublishedDigest string     `json:"published_digest,omitempty"`
 }
@@ -45,9 +47,10 @@ func loadEditableTemplateDir(dir string) (*templates.Library, error) {
 }
 
 func writeProject(root string, p templateProject) error {
-	if filepath.Base(p.ID) != p.ID || p.ID == "." || p.ID == "" || strings.TrimSpace(p.Name) == "" {
+	if filepath.Base(p.ID) != p.ID || p.ID == "." || p.ID == ".." || strings.ContainsAny(p.ID, `\/:*?"<>|`) || p.ID == "" || strings.TrimSpace(p.Name) == "" {
 		return fmt.Errorf("模板名称不能为空，标识必须有效")
 	}
+	p.UpdatedAt = time.Now().UTC()
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
@@ -65,6 +68,9 @@ func atomicTemplateFile(path string, data []byte) error {
 	}
 	defer os.Remove(f.Name())
 	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
 	closeErr := f.Close()
 	if err != nil {
 		return err
@@ -198,6 +204,26 @@ func publishTemplateProject(root, target string, p templateProject) (err error) 
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err
+	}
+	// The immutable release belongs to this asset directory. The live index is
+	// the commit point; failed publication removes the entire uncommitted release.
+	release := templateRelease{ProjectID: p.ID, CreatedAt: time.Now().UTC(), Entries: append([]templates.Entry(nil), kept[len(kept)-len(lib.Entries):]...), Hashes: map[string]string{}}
+	for _, entry := range release.Entries {
+		for _, name := range []string{entry.File, entry.Screenshot} {
+			data, e := os.ReadFile(filepath.Join(target, filepath.FromSlash(name)))
+			if e != nil {
+				return e
+			}
+			release.Hashes[name] = fmt.Sprintf("%x", sha256.Sum256(data))
+		}
+	}
+	release.Version = filepath.Base(assets)
+	manifest, e := json.MarshalIndent(release, "", "  ")
+	if e != nil {
+		return e
+	}
+	if e = atomicTemplateFile(filepath.Join(assets, "release.json"), manifest); e != nil {
+		return e
 	}
 	return atomicTemplateFile(path, b)
 }

@@ -43,6 +43,11 @@ func TestMultipleDraftProjectsPublishIndependently(t *testing.T) {
 	if err = publishTemplateProject(root, target, a); err != nil {
 		t.Fatal(err)
 	}
+	releases, err := listTemplateReleases(target, a.ID)
+	if err != nil || len(releases) != 1 {
+		t.Fatalf("missing release: %v", err)
+	}
+	firstVersion := releases[0].Version
 	if err = publishTemplateProject(root, target, b); err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +75,28 @@ func TestMultipleDraftProjectsPublishIndependently(t *testing.T) {
 	if err != nil || len(lib.Entries) != 3 {
 		t.Fatal("republish lost another project or duplicated entries")
 	}
+	if err = restoreTemplateRelease(target, a.ID, firstVersion, true); err == nil {
+		t.Fatal("running task allowed rollback")
+	}
+	if err = restoreTemplateRelease(target, a.ID, firstVersion, false); err != nil {
+		t.Fatal(err)
+	}
+	lib, err = templates.Load(c, root)
+	if err != nil || len(lib.Entries) != 2 {
+		t.Fatal("rollback lost independent project")
+	}
+	oldIndex, _ := os.ReadFile(filepath.Join(target, "templates.index.json"))
+	resource := filepath.Join(target, filepath.FromSlash(releases[0].Entries[0].File))
+	if err = os.WriteFile(resource, []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = restoreTemplateRelease(target, a.ID, firstVersion, false); err == nil {
+		t.Fatal("corrupt version restored")
+	}
+	unchanged, _ := os.ReadFile(filepath.Join(target, "templates.index.json"))
+	if string(oldIndex) != string(unchanged) {
+		t.Fatal("failed rollback modified live index")
+	}
 	projects, err := listTemplateProjects(root)
 	if err != nil || len(projects) != 2 {
 		t.Fatal("project persistence failed")
@@ -84,6 +111,14 @@ func TestMultipleDraftProjectsPublishIndependently(t *testing.T) {
 	current, _ := os.ReadFile(filepath.Join(target, "templates.index.json"))
 	if string(current) != string(old) {
 		t.Fatal("invalid publication damaged working index")
+	}
+}
+
+func TestTemplateProjectRejectsUnsafeIDs(t *testing.T) {
+	for _, id := range []string{"..", "a/b", `a\b`, "a:b"} {
+		if writeProject(t.TempDir(), templateProject{ID: id, Name: "有效名称"}) == nil {
+			t.Fatalf("accepted unsafe ID %q", id)
+		}
 	}
 }
 
