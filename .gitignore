@@ -10,6 +10,8 @@ autotrigger-result.json.log*
 # Local executables, machine-specific configuration, and UI regression captures.
 /autotrigger.exe
 /AutoTrigger.exe
+/AutoTrigger.exe~
+/autotrigger.exe~
 /template-projects/
 /config.json
 /artifacts/ui-review/
