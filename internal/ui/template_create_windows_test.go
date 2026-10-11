@@ -55,7 +55,7 @@ func TestWindowsTemplateMaker(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Also exercise the shipped screenshot worker, without starting an installer.
-	tool, err := filepath.Abs(filepath.Join("..", "..", "dist", "autotrigger.exe"))
+	tool, err := filepath.Abs(filepath.Join("..", "..", "dist", "AutoTrigger.exe"))
 	if err == nil {
 		if _, err = os.Stat(tool); err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -20,6 +20,7 @@ GUI 采用现代化蓝白色设计，参考 `docs/ui-design.png`，提供首页�
 ## 3. 技术约束
 
 * 使用 Go。
+* Windows 工具构建、打包与交付名称统一为 `AutoTrigger.exe`，不得使用小写 `autotrigger.exe`；根目录与 `dist` 下的工具产物均遵循此约定。
 * 保持 Windows 7 SP1 x64 及以上兼容目标。
 * GUI 使用 Win32 原生窗口及控件，并通过局部自绘实现现代化视觉效果。
 * 严格遵守 PRD 关于 CGO、第三方依赖、离线运行和单文件交付的约束。
