@@ -40,6 +40,8 @@ const (
 	makerImages
 	makerWithdraw
 	makerDeleteImage
+	makerVersions
+	makerRollback
 )
 
 type templateMakerPane struct {
@@ -57,6 +59,7 @@ type templateMakerPane struct {
 	projects                      []templateProject
 	project                       templateProject
 	entries                       []templates.Entry
+	releases                      []templateRelease
 }
 
 var makerPanes = map[uintptr]*templateMakerPane{}
@@ -86,14 +89,15 @@ func (f *form) showTemplateMaker() {
 		send(c, wmSetFont, f.font, 1)
 		return c
 	}
-	for _, id := range []int{makerRefresh, makerCapture, makerLoad, makerBrowse, makerSave, makerWithdraw, makerDeleteImage} {
-		text := map[int]string{makerRefresh: "新建模板", makerCapture: "屏幕框选", makerLoad: "载入 PNG", makerBrowse: "发布", makerSave: "保存图片", makerWithdraw: "取消发布", makerDeleteImage: "删除图片"}[id]
+	for _, id := range []int{makerRefresh, makerCapture, makerLoad, makerBrowse, makerSave, makerWithdraw, makerDeleteImage, makerRollback} {
+		text := map[int]string{makerRefresh: "新建模板", makerCapture: "屏幕框选", makerLoad: "载入 PNG", makerBrowse: "发布", makerSave: "保存图片", makerWithdraw: "取消发布", makerDeleteImage: "删除图片", makerRollback: "回退版本"}[id]
 		p.controls[id] = add(id, "BUTTON", text, wsTabStop|0xB)
 	}
 	p.controls[makerWindows] = add(makerWindows, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
 	p.controls[makerName] = add(makerName, "EDIT", "新模板", wsTabStop|wsBorder|esAutoHScroll)
 	send(p.controls[makerName], 0x1501, 1, uintptr(unsafe.Pointer(utf16Ptr("模板名称"))))
 	p.controls[makerImages] = add(makerImages, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
+	p.controls[makerVersions] = add(makerVersions, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
 	for _, id := range []int{makerID, makerFamily, makerAction, makerLanguage, makerDPI, makerTheme, makerX, makerY, makerWidth, makerHeight, makerDir} {
 		label := map[int]string{makerID: "模板 ID", makerFamily: "安装器家族", makerAction: "按钮动作", makerLanguage: "界面语言", makerDPI: "截图 DPI", makerTheme: "截图主题", makerX: "X", makerY: "Y", makerWidth: "宽度", makerHeight: "高度", makerDir: "保存目录"}[id]
 		p.labels[id] = add(0, "STATIC", label, 0)
@@ -285,12 +289,14 @@ func (p *templateMakerPane) layout() {
 	send(p.controls[makerDir], 0xcf, 1, 0)
 	move(p.controls[makerSave], left, px(550), px(140), px(32))
 	move(p.controls[makerBrowse], left+px(152), px(550), px(148), px(32))
-	move(p.controls[makerWithdraw], left, px(590), side, px(28))
+	move(p.controls[makerWithdraw], left, px(590), px(140), px(28))
+	move(p.controls[makerRollback], left+px(152), px(590), px(148), px(28))
+	move(p.controls[makerVersions], pad, h-px(120), maxInt(1, left-pad-px(16)), px(180))
 	move(p.controls[makerImages], pad, px(58), maxInt(1, left-pad-px(120)), px(220))
 	move(p.controls[makerDeleteImage], left-px(112), px(58), px(96), px(28))
 	move(p.controls[makerStatus], pad, h-px(84), maxInt(1, left-pad-px(16)), px(68))
 	if p.shot != nil {
-		p.display = templateImageRect(image.Rect(pad, px(100), left-pad, h-px(100)), p.shot.Bounds().Size())
+		p.display = templateImageRect(image.Rect(pad, px(100), left-pad, h-px(136)), p.shot.Bounds().Size())
 	}
 	procInvalidateRect.Call(p.hwnd, 0, 1)
 }
@@ -422,6 +428,8 @@ func templateMakerProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintp
 					p.publishProject()
 				case makerWithdraw:
 					p.withdrawProject()
+				case makerRollback:
+					p.rollbackProject()
 				case makerDeleteImage:
 					p.deleteProjectImage()
 				case makerSave:

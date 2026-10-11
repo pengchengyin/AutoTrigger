@@ -51,7 +51,49 @@ func (p *templateMakerPane) selectProject() {
 	p.shot, p.pixels, p.bounds = nil, nil, image.Rectangle{}
 	p.updateBoundsFields()
 	p.refreshProjectImages()
+	p.refreshVersions()
 	procInvalidateRect.Call(p.hwnd, 0, 0)
+}
+
+func (p *templateMakerPane) refreshVersions() {
+	send(p.controls[makerVersions], 0x14b, 0, 0)
+	releases, err := listTemplateReleases(p.publishedTarget(), p.project.ID)
+	p.releases = releases
+	if err != nil {
+		p.status("版本列表读取失败：" + err.Error())
+	}
+	for _, release := range releases {
+		label := fmt.Sprintf("%s · %d 张 · %s", release.CreatedAt.Local().Format("2006-01-02 15:04:05"), len(release.Entries), release.Version)
+		send(p.controls[makerVersions], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr(label))))
+	}
+	if len(releases) == 0 {
+		send(p.controls[makerVersions], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr("暂无可回退的发布版本"))))
+	}
+	send(p.controls[makerVersions], 0x14e, 0, 0)
+	enableWindow(p.controls[makerRollback], err == nil && len(releases) > 0)
+}
+
+func (p *templateMakerPane) rollbackProject() {
+	i := int(send(p.controls[makerVersions], 0x147, 0, 0))
+	if i < 0 || i >= len(p.releases) {
+		return
+	}
+	release := p.releases[i]
+	if err := restoreTemplateRelease(p.publishedTarget(), p.project.ID, release.Version, p.owner.isRunning()); err != nil {
+		p.status("回退失败：" + err.Error())
+		return
+	}
+	now := time.Now()
+	p.project.PublishedAt = &now
+	// An old release is independent of the current draft, which remains editable.
+	p.project.PublishedDigest = "release:" + release.Version
+	if err := writeProject(p.owner.exeDir, p.project); err != nil {
+		p.status("版本已切换，但项目状态保存失败：" + err.Error())
+		return
+	}
+	p.owner.reloadTemplates()
+	p.refreshProjects(p.project.ID)
+	p.status("已恢复发布版本 " + release.Version + "；当前草稿未改变，后续任务使用恢复的资源。")
 }
 
 func (p *templateMakerPane) newProject() {

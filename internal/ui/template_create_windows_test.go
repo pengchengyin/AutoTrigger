@@ -169,6 +169,13 @@ func TestWindowsTemplateMaker(t *testing.T) {
 	if err != nil || len(lib.Entries) != 1 {
 		t.Fatalf("publication failed: %v", err)
 	}
+	if len(p.releases) != 1 || int(send(p.controls[makerVersions], 0x146, 0, 0)) != 1 {
+		t.Fatal("published version not exposed in native selector")
+	}
+	send(p.controls[makerRollback], 0xF5, 0, 0)
+	if !strings.Contains(p.value(makerStatus), "已恢复发布版本") {
+		t.Fatal("rollback button failed: " + p.value(makerStatus))
+	}
 	captureNativeWindow(t, p.hwnd, filepath.Join(dir, "template-project-published.png"))
 	p.captureScreen()
 	var overlay uintptr
