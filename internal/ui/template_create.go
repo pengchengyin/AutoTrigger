@@ -48,7 +48,7 @@ func saveCapturedTemplate(dir string, shot image.Image, bounds image.Rectangle, 
 	doc := map[string]json.RawMessage{}
 	var entries []json.RawMessage
 	if readErr == nil {
-		if _, err = loadExternalTemplateDir(dir); err != nil {
+		if _, err = loadEditableTemplateDir(dir); err != nil {
 			return fmt.Errorf("原模板库无效，不覆盖：%w", err)
 		}
 		if err = json.Unmarshal(original, &doc); err != nil {

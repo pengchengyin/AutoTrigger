@@ -143,10 +143,9 @@ func TestWindowsTemplateMaker(t *testing.T) {
 	procMoveWindow.Call(p.hwnd, 10, 10, uintptr(f.px(820)), uintptr(f.px(680)), 1)
 	procUpdateWindow.Call(p.hwnd)
 	captureNativeWindow(t, p.hwnd, filepath.Join(dir, "template-maker-small.png"))
-	out := filepath.Join(f.exeDir, "created-templates")
-	setWindowTextRaw(p.controls[makerDir], out)
+	out := projectDir(f.exeDir, p.project)
 	send(p.controls[makerSave], 0xF5, 0, 0)
-	if !strings.Contains(p.value(makerStatus), "已保存模板") {
+	if !strings.Contains(p.value(makerStatus), "已保存图片") {
 		t.Fatal(p.value(makerStatus))
 	}
 	lib, err := loadExternalTemplateDir(out)
@@ -159,12 +158,55 @@ func TestWindowsTemplateMaker(t *testing.T) {
 	if failures, err := lib.SelfTest(); err != nil {
 		t.Fatalf("%v: %v", err, failures)
 	}
-	if f.page != pageSettings || !strings.Contains(windowText(f.ctrls[idCfgEditor]), "created-templates") {
-		t.Fatal("saved template not applied to settings draft")
+	if fileExists(filepath.Join(f.exeDir, "templates", "templates.index.json")) {
+		t.Fatal("draft became executable before publishing")
 	}
-	send(p.controls[makerSave], 0xF5, 0, 0)
-	if !strings.Contains(p.value(makerStatus), "ID 已存在") {
-		t.Fatal("duplicate ID was not rejected")
+	p.publishProject()
+	if !strings.Contains(p.value(makerStatus), "已发布") {
+		t.Fatal(p.value(makerStatus))
+	}
+	lib, err = loadExternalTemplateDir(filepath.Join(f.exeDir, "templates"))
+	if err != nil || len(lib.Entries) != 1 {
+		t.Fatalf("publication failed: %v", err)
+	}
+	captureNativeWindow(t, p.hwnd, filepath.Join(dir, "template-project-published.png"))
+	p.captureScreen()
+	var overlay uintptr
+	for h, s := range screenPanes {
+		if s.pane == p {
+			overlay = h
+		}
+	}
+	if overlay == 0 {
+		t.Fatal("screen overlay did not open")
+	}
+	captureNativeWindow(t, overlay, filepath.Join(dir, "template-screen-overlay.png"))
+	send(overlay, wmLButtonDown, 1, uintptr(100|100<<16))
+	send(overlay, wmMouseMove, 1, uintptr(180|126<<16))
+	send(overlay, 0x202, 0, uintptr(180|126<<16))
+	if p.bounds != image.Rect(100, 100, 180, 126) || p.capturing {
+		t.Fatal("direct screen selection did not complete")
+	}
+	p.captureScreen()
+	for h, s := range screenPanes {
+		if s.pane == p {
+			send(h, 0x100, 27, 0)
+		}
+	}
+	if p.capturing || len(screenPanes) != 0 {
+		t.Fatal("cancel left screen overlay active")
+	}
+	p.deleteProjectImage()
+	if len(p.entries) != 0 {
+		t.Fatal("draft image deletion failed")
+	}
+	lib, err = loadExternalTemplateDir(filepath.Join(f.exeDir, "templates"))
+	if err != nil || len(lib.Entries) != 1 {
+		t.Fatal("draft deletion changed published version")
+	}
+	p.withdrawProject()
+	if p.project.PublishedAt != nil {
+		t.Fatal("withdraw did not reset state")
 	}
 	procDestroyWindow.Call(p.hwnd)
 	if f.templateMaker != 0 {

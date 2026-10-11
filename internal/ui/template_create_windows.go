@@ -3,9 +3,7 @@
 package ui
 
 import (
-	"autotrigger/internal/core/ports"
 	"autotrigger/internal/gui/templates"
-	"autotrigger/internal/platform/windows"
 	"fmt"
 	"image"
 	"image/png"
@@ -15,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -37,20 +36,17 @@ const (
 	makerBrowse
 	makerSave
 	makerStatus
+	makerName
+	makerImages
+	makerWithdraw
+	makerDeleteImage
 )
-const wmMakerCaptured = 0x8000 + 21
 
-type makerCaptureResult struct {
-	image  image.Image
-	err    error
-	window ports.Window
-}
 type templateMakerPane struct {
 	owner                         *form
 	hwnd                          uintptr
 	controls                      map[int]uintptr
 	labels                        map[int]uintptr
-	windows                       []ports.Window
 	shot                          image.Image
 	pixels                        []byte
 	display                       image.Rectangle
@@ -58,7 +54,9 @@ type templateMakerPane struct {
 	anchor                        image.Point
 	dragging, updating, capturing bool
 	autoID, origin                string
-	result                        chan makerCaptureResult
+	projects                      []templateProject
+	project                       templateProject
+	entries                       []templates.Entry
 }
 
 var makerPanes = map[uintptr]*templateMakerPane{}
@@ -88,12 +86,14 @@ func (f *form) showTemplateMaker() {
 		send(c, wmSetFont, f.font, 1)
 		return c
 	}
-	for _, id := range []int{makerRefresh, makerCapture, makerLoad, makerBrowse, makerSave} {
-		text := map[int]string{makerRefresh: "刷新窗口", makerCapture: "抓取窗口", makerLoad: "载入 PNG", makerBrowse: "浏览…", makerSave: "保存并使用"}[id]
+	for _, id := range []int{makerRefresh, makerCapture, makerLoad, makerBrowse, makerSave, makerWithdraw, makerDeleteImage} {
+		text := map[int]string{makerRefresh: "新建模板", makerCapture: "屏幕框选", makerLoad: "载入 PNG", makerBrowse: "发布", makerSave: "保存图片", makerWithdraw: "取消发布", makerDeleteImage: "删除图片"}[id]
 		p.controls[id] = add(id, "BUTTON", text, wsTabStop|0xB)
 	}
 	p.controls[makerWindows] = add(makerWindows, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
-	send(p.controls[makerWindows], 0x1703, 0, uintptr(unsafe.Pointer(utf16Ptr("请选择安装器窗口"))))
+	p.controls[makerName] = add(makerName, "EDIT", "新模板", wsTabStop|wsBorder|esAutoHScroll)
+	send(p.controls[makerName], 0x1501, 1, uintptr(unsafe.Pointer(utf16Ptr("模板名称"))))
+	p.controls[makerImages] = add(makerImages, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
 	for _, id := range []int{makerID, makerFamily, makerAction, makerLanguage, makerDPI, makerTheme, makerX, makerY, makerWidth, makerHeight, makerDir} {
 		label := map[int]string{makerID: "模板 ID", makerFamily: "安装器家族", makerAction: "按钮动作", makerLanguage: "界面语言", makerDPI: "截图 DPI", makerTheme: "截图主题", makerX: "X", makerY: "Y", makerWidth: "宽度", makerHeight: "高度", makerDir: "保存目录"}[id]
 		p.labels[id] = add(0, "STATIC", label, 0)
@@ -122,9 +122,12 @@ func (f *form) showTemplateMaker() {
 	}
 	setWindowTextRaw(p.controls[makerDir], dir)
 	p.refreshID()
-	p.refreshWindows()
+	p.refreshProjects("")
+	if len(p.projects) == 0 {
+		p.newProject()
+	}
 	p.updateBoundsFields()
-	p.status("尚未采集截图")
+	p.refreshProjectImages()
 	p.layout()
 	if f.appIcon != 0 {
 		send(h, 0x80, 0, f.appIcon)
@@ -141,91 +144,11 @@ func (p *templateMakerPane) value(id int) string {
 func (p *templateMakerPane) token(id int) string { return strings.Split(p.value(id), " · ")[0] }
 func (p *templateMakerPane) refreshID() {
 	current := p.value(makerID)
-	next := strings.Join([]string{p.token(makerFamily), p.token(makerAction), p.token(makerLanguage), p.token(makerDPI), p.token(makerTheme)}, "__")
+	next := strings.Join([]string{p.token(makerFamily), p.token(makerAction), p.token(makerLanguage), p.token(makerDPI), p.token(makerTheme)}, "__") + "__" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	if current == "" || current == p.autoID {
 		setWindowTextRaw(p.controls[makerID], next)
 		p.autoID = next
 	}
-}
-
-func (p *templateMakerPane) refreshWindows() {
-	ids := map[int]bool{}
-	cb := syscall.NewCallback(func(h, l uintptr) uintptr {
-		var pid uint32
-		user32.NewProc("GetWindowThreadProcessId").Call(h, uintptr(unsafe.Pointer(&pid)))
-		if int(pid) != os.Getpid() {
-			ids[int(pid)] = true
-		}
-		return 1
-	})
-	user32.NewProc("EnumWindows").Call(cb, 0)
-	pids := []int{}
-	for id := range ids {
-		pids = append(pids, id)
-	}
-	wins, err := (windows.GUI{}).Windows(pids)
-	if err != nil {
-		p.status("读取窗口失败：" + err.Error())
-		return
-	}
-	p.windows = nil
-	send(p.controls[makerWindows], 0x14b, 0, 0)
-	for _, w := range wins {
-		iconic, _, _ := user32.NewProc("IsIconic").Call(w.Handle)
-		if strings.TrimSpace(w.Title) == "" || iconic != 0 {
-			continue
-		}
-		p.windows = append(p.windows, w)
-		text := fmt.Sprintf("%s（PID %d）", w.Title, w.PID)
-		send(p.controls[makerWindows], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr(text))))
-	}
-	send(p.controls[makerWindows], 0x14e, ^uintptr(0), 0)
-	enableWindow(p.controls[makerCapture], false)
-}
-
-func (p *templateMakerPane) capture() {
-	if p.capturing {
-		return
-	}
-	i := int(send(p.controls[makerWindows], 0x147, 0, 0))
-	if i < 0 || i >= len(p.windows) {
-		p.status("请选择已打开且未最小化的安装器窗口")
-		return
-	}
-	win := p.windows[i]
-	var r rectT
-	ok, _, _ := user32.NewProc("GetWindowRect").Call(win.Handle, uintptr(unsafe.Pointer(&r)))
-	if ok == 0 {
-		p.status("目标窗口已关闭，请刷新窗口列表")
-		return
-	}
-	win.Bounds = ports.Rect{Left: int(r.Left), Top: int(r.Top), Right: int(r.Right), Bottom: int(r.Bottom)}
-	if win.Bounds.Width()*win.Bounds.Height() > 25000000 {
-		p.status("目标窗口过大，请缩小后采集")
-		return
-	}
-	validDPI := false
-	for _, v := range []int{100, 125, 150, 200} {
-		if win.DPI*100/96 == v {
-			validDPI = true
-		}
-	}
-	if !validDPI {
-		p.status("目标窗口为非标准 DPI，请调整到 100%、125%、150% 或 200% 后采集")
-		return
-	}
-	p.capturing = true
-	p.result = make(chan makerCaptureResult, 1)
-	ch, h := p.result, p.hwnd
-	enableWindow(p.controls[makerCapture], false)
-	enableWindow(p.controls[makerLoad], false)
-	enableWindow(p.controls[makerSave], false)
-	p.status("正在抓取窗口…")
-	go func() {
-		img, err := (windows.GUI{}).Screenshot(win)
-		ch <- makerCaptureResult{image: img, err: err, window: win}
-		post(h, wmMakerCaptured, 0, 0)
-	}()
 }
 
 func (p *templateMakerPane) setImage(img image.Image, origin string) {
@@ -302,24 +225,26 @@ func (p *templateMakerPane) save() {
 	}
 	dpi, _ := strconv.Atoi(p.token(makerDPI))
 	e := templates.Entry{ID: p.value(makerID), Family: p.token(makerFamily), Action: p.token(makerAction), Lang: p.token(makerLanguage), DPI: dpi, Theme: p.token(makerTheme), Origin: p.origin}
-	dir := p.value(makerDir)
-	body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(p.owner.ctrls[idConfig])), p.owner.exeDir)
-	if p.owner.configOpen {
-		body, err = windowText(p.owner.ctrls[idCfgEditor]), nil
+	dir := projectDir(p.owner.exeDir, p.project)
+	if p.project.ID == "" {
+		p.status("请先新建模板")
+		return
 	}
-	if err == nil {
-		_, err = templateConfigBody(body, "merged", dir)
-	}
-	if err != nil {
-		p.status("设置中的 JSON 草稿无效，请先修复后保存模板：" + err.Error())
+	p.project.Name = p.value(makerName)
+	if err = writeProject(p.owner.exeDir, p.project); err != nil {
+		p.status(err.Error())
 		return
 	}
 	if err = saveCapturedTemplate(dir, p.shot, b, e); err != nil {
 		p.status("保存失败：" + err.Error())
 		return
 	}
-	p.owner.importTemplateDir(dir)
-	p.status("已保存模板、源截图和索引，并写入设置草稿。请在设置中保存配置后使用。")
+	p.refreshProjects(p.project.ID)
+	p.refreshProjectImages()
+	setWindowTextRaw(p.controls[makerID], "")
+	p.autoID = ""
+	p.refreshID()
+	p.status(fmt.Sprintf("已保存图片，当前模板共 %d 张。发布后用于后续任务。", len(p.entries)))
 }
 
 func (p *templateMakerPane) layout() {
@@ -333,7 +258,8 @@ func (p *templateMakerPane) layout() {
 	move := func(c uintptr, x, y, width, height int) {
 		procMoveWindow.Call(c, uintptr(maxInt(0, x)), uintptr(maxInt(0, y)), uintptr(maxInt(1, width)), uintptr(maxInt(1, height)), 1)
 	}
-	move(p.controls[makerWindows], pad, pad, w-2*pad-px(336), px(280))
+	move(p.controls[makerWindows], pad, pad, px(230), px(280))
+	move(p.controls[makerName], pad+px(240), pad, maxInt(px(80), w-2*pad-px(576)), px(30))
 	for i, id := range []int{makerRefresh, makerCapture, makerLoad} {
 		move(p.controls[id], w-pad-px(328)+i*px(112), pad, px(104), px(30))
 	}
@@ -355,12 +281,16 @@ func (p *templateMakerPane) layout() {
 		move(p.controls[id], x, y+px(20), px(140), px(27))
 	}
 	move(p.labels[makerDir], left, px(488), side, px(18))
-	move(p.controls[makerDir], left, px(510), side-px(76), px(28))
-	move(p.controls[makerBrowse], left+side-px(68), px(510), px(68), px(28))
-	move(p.controls[makerSave], left, px(550), side, px(32))
+	move(p.controls[makerDir], left, px(510), side, px(28))
+	send(p.controls[makerDir], 0xcf, 1, 0)
+	move(p.controls[makerSave], left, px(550), px(140), px(32))
+	move(p.controls[makerBrowse], left+px(152), px(550), px(148), px(32))
+	move(p.controls[makerWithdraw], left, px(590), side, px(28))
+	move(p.controls[makerImages], pad, px(58), maxInt(1, left-pad-px(120)), px(220))
+	move(p.controls[makerDeleteImage], left-px(112), px(58), px(96), px(28))
 	move(p.controls[makerStatus], pad, h-px(84), maxInt(1, left-pad-px(16)), px(68))
 	if p.shot != nil {
-		p.display = templateImageRect(image.Rect(pad, px(58), left-pad, h-px(100)), p.shot.Bounds().Size())
+		p.display = templateImageRect(image.Rect(pad, px(100), left-pad, h-px(100)), p.shot.Bounds().Size())
 	}
 	procInvalidateRect.Call(p.hwnd, 0, 1)
 }
@@ -448,35 +378,6 @@ func templateMakerProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintp
 				p.owner.paintNativeButton(&item)
 				return 1
 			}
-		case wmMakerCaptured:
-			if p.result != nil {
-				select {
-				case result := <-p.result:
-					p.capturing = false
-					index := int(send(p.controls[makerWindows], 0x147, 0, 0))
-					enableWindow(p.controls[makerCapture], index >= 0 && index < len(p.windows))
-					enableWindow(p.controls[makerLoad], true)
-					if result.err != nil {
-						p.status("截图失败：" + result.err.Error())
-						p.updateBoundsFields()
-					} else {
-						for i, v := range []int{100, 125, 150, 200} {
-							if result.window.DPI*100/96 == v {
-								send(p.controls[makerDPI], 0x14e, uintptr(i), 0)
-							}
-						}
-						if result.window.Theme == "win7classic" {
-							send(p.controls[makerTheme], 0x14e, 2, 0)
-						} else {
-							send(p.controls[makerTheme], 0x14e, 0, 0)
-						}
-						p.refreshID()
-						p.setImage(result.image, "真实窗口："+result.window.Title)
-					}
-				default:
-				}
-			}
-			return 0
 		case wmLButtonDown:
 			x, y := mousePoint(l)
 			point := image.Pt(x, y)
@@ -512,15 +413,17 @@ func templateMakerProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintp
 			if code == 0 {
 				switch id {
 				case makerRefresh:
-					p.refreshWindows()
+					p.newProject()
 				case makerCapture:
-					p.capture()
+					p.captureScreen()
 				case makerLoad:
 					p.loadPNG()
 				case makerBrowse:
-					if dir, ok := pickFolderDialog(h, "选择模板保存目录"); ok {
-						setWindowTextRaw(p.controls[makerDir], dir)
-					}
+					p.publishProject()
+				case makerWithdraw:
+					p.withdrawProject()
+				case makerDeleteImage:
+					p.deleteProjectImage()
 				case makerSave:
 					p.save()
 				}
@@ -529,8 +432,10 @@ func templateMakerProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintp
 				p.refreshID()
 			}
 			if code == cbnSelChange && id == makerWindows {
-				index := int(send(p.controls[makerWindows], 0x147, 0, 0))
-				enableWindow(p.controls[makerCapture], index >= 0 && index < len(p.windows) && !p.capturing)
+				p.selectProject()
+			}
+			if code == cbnSelChange && id == makerImages {
+				p.previewProjectImage()
 			}
 			if code == enChange && id >= makerX && id <= makerHeight && !p.updating {
 				if b, err := p.readBounds(); err == nil {
