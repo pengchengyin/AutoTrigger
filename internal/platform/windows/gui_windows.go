@@ -503,6 +503,26 @@ func (GUI) Close() error { return nil }
 
 // InternalHelper serves read-only window capture requests before normal CLI startup.
 func InternalHelper() bool {
+	if len(os.Args) == 3 && os.Args[1] == "--internal-uia-point" {
+		xy := strings.Split(os.Args[2], ",")
+		if len(xy) != 2 {
+			os.Exit(2)
+		}
+		x, ex := strconv.Atoi(xy[0])
+		y, ey := strconv.Atoi(xy[1])
+		if ex != nil || ey != nil {
+			os.Exit(2)
+		}
+		winver.EnableDPI()
+		target, err := (GUI{}).RawPickAtPoint(x, y)
+		if err != nil {
+			os.Exit(1)
+		}
+		if json.NewEncoder(os.Stdout).Encode(target) != nil {
+			os.Exit(1)
+		}
+		return true
+	}
 	if len(os.Args) != 3 || (os.Args[1] != "--internal-uia" && os.Args[1] != "--internal-screenshot") {
 		return false
 	}

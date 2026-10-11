@@ -52,7 +52,49 @@ func (p *templateMakerPane) selectProject() {
 	p.updateBoundsFields()
 	p.refreshProjectImages()
 	p.refreshVersions()
+	p.refreshCaptureRecords()
 	procInvalidateRect.Call(p.hwnd, 0, 0)
+}
+
+func (p *templateMakerPane) refreshCaptureRecords() {
+	send(p.controls[makerRecords], 0x14b, 0, 0)
+	index, err := readCaptureIndex(projectDir(p.owner.exeDir, p.project), p.project.ID)
+	p.captures = nil
+	if err != nil {
+		p.status("捕获记录读取失败：" + err.Error())
+		return
+	}
+	p.captures = index.Items
+	for _, item := range index.Items {
+		state := "草稿"
+		if !item.Confirmed {
+			state = "会话未确认"
+		}
+		label := item.Name + " · " + item.Rule.Method + " · " + state
+		send(p.controls[makerRecords], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr(label))))
+	}
+	if len(index.Items) == 0 {
+		send(p.controls[makerRecords], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr("暂无连续捕获记录"))))
+	}
+	send(p.controls[makerRecords], 0x14e, 0, 0)
+}
+
+func (p *templateMakerPane) previewCaptureRecord() {
+	i := int(send(p.controls[makerRecords], 0x147, 0, 0))
+	if i < 0 || i >= len(p.captures) {
+		return
+	}
+	item := p.captures[i]
+	shot, err := captureImage(projectDir(p.owner.exeDir, p.project), item)
+	if err != nil {
+		p.status("无法查看捕获图片：" + err.Error())
+		return
+	}
+	p.setImage(shot, item.Name)
+	p.capturePreview = true
+	p.layout()
+	enableWindow(p.controls[makerSave], false)
+	p.status(fmt.Sprintf("%s · %s\r\n窗口：%s\r\n区域：%d,%d - %d,%d · DPI：%d\r\n规则：%+v", item.Name, item.Rule.Method, item.Window.Title, item.Bounds.Left, item.Bounds.Top, item.Bounds.Right, item.Bounds.Bottom, item.Window.DPI, item.Rule))
 }
 
 func (p *templateMakerPane) refreshVersions() {
@@ -131,7 +173,7 @@ func (p *templateMakerPane) refreshProjectImages() {
 		}
 	}
 	if len(p.entries) == 0 {
-		send(p.controls[makerImages], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr("尚未保存标记图片"))))
+		send(p.controls[makerImages], 0x143, 0, uintptr(unsafe.Pointer(utf16Ptr("暂无可发布图片"))))
 	}
 	send(p.controls[makerImages], 0x14e, 0, 0)
 	enableWindow(p.controls[makerBrowse], len(p.entries) > 0)

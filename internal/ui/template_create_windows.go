@@ -42,6 +42,7 @@ const (
 	makerDeleteImage
 	makerVersions
 	makerRollback
+	makerRecords
 )
 
 type templateMakerPane struct {
@@ -60,6 +61,8 @@ type templateMakerPane struct {
 	project                       templateProject
 	entries                       []templates.Entry
 	releases                      []templateRelease
+	captures                      []draftCapture
+	capturePreview                bool
 }
 
 var makerPanes = map[uintptr]*templateMakerPane{}
@@ -90,7 +93,7 @@ func (f *form) showTemplateMaker() {
 		return c
 	}
 	for _, id := range []int{makerRefresh, makerCapture, makerLoad, makerBrowse, makerSave, makerWithdraw, makerDeleteImage, makerRollback} {
-		text := map[int]string{makerRefresh: "新建模板", makerCapture: "屏幕框选", makerLoad: "载入 PNG", makerBrowse: "发布", makerSave: "保存图片", makerWithdraw: "取消发布", makerDeleteImage: "删除图片", makerRollback: "回退版本"}[id]
+		text := map[int]string{makerRefresh: "新建模板", makerCapture: "开始捕获", makerLoad: "载入 PNG", makerBrowse: "发布", makerSave: "保存图片", makerWithdraw: "取消发布", makerDeleteImage: "删除图片", makerRollback: "回退版本"}[id]
 		p.controls[id] = add(id, "BUTTON", text, wsTabStop|0xB)
 	}
 	p.controls[makerWindows] = add(makerWindows, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
@@ -98,6 +101,7 @@ func (f *form) showTemplateMaker() {
 	send(p.controls[makerName], 0x1501, 1, uintptr(unsafe.Pointer(utf16Ptr("模板名称"))))
 	p.controls[makerImages] = add(makerImages, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
 	p.controls[makerVersions] = add(makerVersions, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
+	p.controls[makerRecords] = add(makerRecords, "COMBOBOX", "", wsTabStop|cbsDropDownList|wsVScroll)
 	for _, id := range []int{makerID, makerFamily, makerAction, makerLanguage, makerDPI, makerTheme, makerX, makerY, makerWidth, makerHeight, makerDir} {
 		label := map[int]string{makerID: "模板 ID", makerFamily: "安装器家族", makerAction: "按钮动作", makerLanguage: "界面语言", makerDPI: "截图 DPI", makerTheme: "截图主题", makerX: "X", makerY: "Y", makerWidth: "宽度", makerHeight: "高度", makerDir: "保存目录"}[id]
 		p.labels[id] = add(0, "STATIC", label, 0)
@@ -156,6 +160,7 @@ func (p *templateMakerPane) refreshID() {
 }
 
 func (p *templateMakerPane) setImage(img image.Image, origin string) {
+	p.capturePreview = false
 	p.shot, p.origin, p.bounds = img, origin, image.Rectangle{}
 	b := img.Bounds()
 	p.pixels = make([]byte, b.Dx()*b.Dy()*4)
@@ -293,10 +298,17 @@ func (p *templateMakerPane) layout() {
 	move(p.controls[makerRollback], left+px(152), px(590), px(148), px(28))
 	move(p.controls[makerVersions], pad, h-px(120), maxInt(1, left-pad-px(16)), px(180))
 	move(p.controls[makerImages], pad, px(58), maxInt(1, left-pad-px(120)), px(220))
+	move(p.controls[makerRecords], pad, px(94), maxInt(1, left-pad-px(16)), px(220))
 	move(p.controls[makerDeleteImage], left-px(112), px(58), px(96), px(28))
 	move(p.controls[makerStatus], pad, h-px(84), maxInt(1, left-pad-px(16)), px(68))
 	if p.shot != nil {
-		p.display = templateImageRect(image.Rect(pad, px(100), left-pad, h-px(136)), p.shot.Bounds().Size())
+		area := image.Rect(pad, px(134), left-pad, h-px(136))
+		p.display = templateImageRect(area, p.shot.Bounds().Size())
+		if p.capturePreview && p.display.Dx() > p.shot.Bounds().Dx() {
+			size := p.shot.Bounds().Size()
+			center := area.Min.Add(area.Size().Div(2))
+			p.display = image.Rectangle{Min: center.Sub(size.Div(2)), Max: center.Sub(size.Div(2)).Add(size)}
+		}
 	}
 	procInvalidateRect.Call(p.hwnd, 0, 1)
 }
@@ -421,7 +433,7 @@ func templateMakerProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintp
 				case makerRefresh:
 					p.newProject()
 				case makerCapture:
-					p.captureScreen()
+					p.startHoverCapture()
 				case makerLoad:
 					p.loadPNG()
 				case makerBrowse:
@@ -444,6 +456,9 @@ func templateMakerProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintp
 			}
 			if code == cbnSelChange && id == makerImages {
 				p.previewProjectImage()
+			}
+			if code == cbnSelChange && id == makerRecords {
+				p.previewCaptureRecord()
 			}
 			if code == enChange && id >= makerX && id <= makerHeight && !p.updating {
 				if b, err := p.readBounds(); err == nil {
