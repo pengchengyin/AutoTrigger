@@ -7,6 +7,7 @@ import (
 	"autotrigger/internal/platform/windows/winver"
 	"autotrigger/internal/procutil"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -113,7 +114,15 @@ func (GUI) Controls(w ports.Window) ([]ports.Control, error) {
 	}
 	var controls []ports.Control
 	if err = json.Unmarshal([]byte(result.Stdout), &controls); err != nil {
-		return nil, err
+		return win32Controls(w), nil
+	}
+	if len(controls) == 0 {
+		return win32Controls(w), nil
+	}
+	for _, native := range win32Controls(w) {
+		if native.Role == "button" || native.Role == "checkbox" || native.Role == "radio" {
+			controls = append(controls, native)
+		}
 	}
 	for i := range controls {
 		controls[i].Window = w
@@ -241,7 +250,7 @@ func win32Controls(w ports.Window) []ports.Control {
 		class := syscall.UTF16ToString(classBuf)
 		role := "text"
 		checked := false
-		if class == "Button" {
+		if class == "Button" || class == "TButton" || class == "TNewButton" || class == "TNewCheckBox" || class == "TNewRadioButton" {
 			role = "button"
 			style, _, _ := user32.NewProc("GetWindowLongW").Call(hwnd, ^uintptr(15))
 			switch style & 0xf {
@@ -352,6 +361,51 @@ type mouseInput struct {
 	Extra  uintptr
 }
 
+func className(hwnd uintptr) string {
+	buf := make([]uint16, 128)
+	user32.NewProc("GetClassNameW").Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return syscall.UTF16ToString(buf)
+}
+
+// processIntegrityRID 返回进程令牌的完整性级别 RID（0x1000 低 / 0x2000 中 /
+// 0x3000 高）；查询失败返回 0，表示未知、不做限制。
+func processIntegrityRID(pid int) uint32 {
+	const processQueryLimitedInformation = 0x1000
+	h, err := syscall.OpenProcess(processQueryLimitedInformation, false, uint32(pid))
+	if err != nil {
+		return 0
+	}
+	defer syscall.CloseHandle(syscall.Handle(h))
+	var tok syscall.Handle
+	if e := callOK(advapi32.NewProc("OpenProcessToken"), uintptr(h), 0x0008, uintptr(unsafe.Pointer(&tok))); e != nil {
+		return 0
+	}
+	defer syscall.CloseHandle(tok)
+	var ret uint32
+	buf := make([]byte, 64)
+	if e := callOK(advapi32.NewProc("GetTokenInformation"), uintptr(tok), 25, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), uintptr(unsafe.Pointer(&ret))); e != nil {
+		return 0
+	}
+	sid := *(*uintptr)(unsafe.Pointer(&buf[0]))
+	if sid == 0 {
+		return 0
+	}
+	base := uintptr(unsafe.Pointer(&buf[0]))
+	if sid < base || sid-base > uintptr(len(buf)-8) {
+		return 0
+	}
+	offset := int(sid - base)
+	count := int(buf[offset+1])
+	if count == 0 {
+		return 0
+	}
+	end := offset + 8 + count*4
+	if end > len(buf) {
+		return 0
+	}
+	return binary.LittleEndian.Uint32(buf[end-4 : end])
+}
+
 func (GUI) Click(c ports.Control) error {
 	if !c.Enabled || c.Bounds.Width() < 1 || c.Bounds.Height() < 1 {
 		return fmt.Errorf("control disabled or empty")
@@ -364,21 +418,76 @@ func (GUI) Click(c ports.Control) error {
 	if valid == 0 {
 		return fmt.Errorf("window closed")
 	}
-	user32.NewProc("SetForegroundWindow").Call(c.Window.Handle)
-	foreground, _, _ := user32.NewProc("GetForegroundWindow").Call()
-	if foreground != c.Window.Handle {
-		return fmt.Errorf("cannot focus sample window")
+	var owner uint32
+	user32.NewProc("GetWindowThreadProcessId").Call(c.Window.Handle, uintptr(unsafe.Pointer(&owner)))
+	if owner == 0 || int(owner) != c.Window.PID {
+		return fmt.Errorf("sample window owner changed")
+	}
+	if own, target := processIntegrityRID(os.Getpid()), processIntegrityRID(int(owner)); target > own && own != 0 {
+		return fmt.Errorf("窗口 %q 的权限高于本工具（目标 0x%x，本工具 0x%x），输入可能被 Windows UIPI 拦截；请以管理员身份运行本工具后重试", c.Window.Title, target, own)
+	}
+	var probe uintptr
+	if e := callOK(user32.NewProc("SendMessageTimeoutW"), c.Window.Handle, 0, 0, 0, 2, 300, uintptr(unsafe.Pointer(&probe))); e != nil {
+		return fmt.Errorf("窗口 %q 拒绝消息或无响应（%v），无法点击", c.Window.Title, e)
+	}
+	nativeButton := c.Native != 0 && (c.Role == "button" || c.Role == "checkbox" || c.Role == "radio")
+	if nativeButton {
+		child, _, _ := user32.NewProc("IsChild").Call(c.Window.Handle, c.Native)
+		enabled, _, _ := user32.NewProc("IsWindowEnabled").Call(c.Native)
+		visible, _, _ := user32.NewProc("IsWindowVisible").Call(c.Native)
+		if child == 0 || enabled == 0 || visible == 0 {
+			return fmt.Errorf("native button is not a visible enabled child of the sample window")
+		}
+	}
+	// 首选真实鼠标点击。第三方安装器的按钮常是自定义窗口类（Inno 的 TNewButton、
+	// 部分 skinned 控件），它们不实现 BM_CLICK：消息能送达却毫无反应，只会让界面
+	// 停在原地。SendInput 注入系统级输入流，对标准控件与自定义控件都生效。
+	mouseErr := mouseClick(c, x, y)
+	if mouseErr == nil || !nativeButton {
+		return mouseErr
+	}
+	// 回退 1：直接向控件发 BM_CLICK。仅标准 Button 类有效——自定义按钮类
+	// （Inno 的 TNewButton 等）不实现 BM_CLICK，消息送达成功却毫无反应，
+	// 当作点击成功会造成"向导原地卡死"的假象。
+	if className(c.Native) == "Button" {
+		var result uintptr
+		if e := callOK(user32.NewProc("SendMessageTimeoutW"), c.Native, 0xf5, 0, 0, 2, 500, uintptr(unsafe.Pointer(&result))); e == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("窗口 %q 的按钮 %q（类 %s）无法点击：%v；若安装器以管理员权限运行而本工具未提权，Windows UIPI 会拒绝一切注入，请以管理员身份运行本工具", c.Window.Title, c.Text, className(c.Native), mouseErr)
+}
+
+// mouseClick 把目标窗口置于前台后在该控件中心注入真实鼠标点击。
+func mouseClick(c ports.Control, x, y int) error {
+	if !setForeground(c.Window.Handle) {
+		fg, _, _ := user32.NewProc("GetForegroundWindow").Call()
+		return fmt.Errorf("cannot focus sample window (foreground is %q)", windowText(fg))
 	}
 	if c.Native != 0 && c.Role == "checkbox" && c.Checked {
 		return nil
 	}
 	user32.NewProc("SetCursorPos").Call(uintptr(x), uintptr(y))
+	time.Sleep(30 * time.Millisecond) // 让光标先落位，避免个别控件把"移动+点击"当成拖拽
+	foreground, _, _ := user32.NewProc("GetForegroundWindow").Call()
+	var cursor struct{ X, Y int32 }
+	ok, _, _ := user32.NewProc("GetCursorPos").Call(uintptr(unsafe.Pointer(&cursor)))
+	if foreground != c.Window.Handle || ok == 0 || int(cursor.X) != x || int(cursor.Y) != y {
+		return fmt.Errorf("focus or cursor changed before input; click cancelled")
+	}
 	inputs := [2]mouseInput{{Flags: 2}, {Flags: 4}}
 	n, _, e := user32.NewProc("SendInput").Call(2, uintptr(unsafe.Pointer(&inputs[0])), unsafe.Sizeof(inputs[0]))
 	if n != 2 {
 		return fmt.Errorf("SendInput: %w", e)
 	}
 	return nil
+}
+
+// setForeground does not inject keys into another application's input queue.
+func setForeground(hwnd uintptr) bool {
+	user32.NewProc("SetForegroundWindow").Call(hwnd)
+	fg, _, _ := user32.NewProc("GetForegroundWindow").Call()
+	return fg == hwnd
 }
 func (GUI) SetText(c ports.Control, text string) error {
 	if c.Native == 0 || c.Role != "edit" {

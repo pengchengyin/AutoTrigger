@@ -154,6 +154,9 @@ type GUIUpdate struct {
 	Signature       string
 	RequiresNetwork bool
 	RequiresReboot  bool
+	// Notes 记录本轮没有产生动作的原因（窗口与控件摘要），供调用方按调试级别输出，
+	// 便于现场定位"界面看得见却点不动"这类问题。
+	Notes []string
 }
 type GUIController interface {
 	Step(context.Context, []int) (GUIUpdate, error)

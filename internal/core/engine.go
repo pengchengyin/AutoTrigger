@@ -400,14 +400,14 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		methods = append(methods, cmd.Method)
 	}
 	e.Log.Stage(logging.LevelInfo, logging.StageRun, "准备按 %d 种方式依次尝试安装：%s", len(commands), strings.Join(methods, "、"))
-	if e.GUI != nil {
-		e.GUI.Reset()
-	}
 	allEvidence := []schema.Evidence{}
 	unresolvedNegatives := []schema.Evidence{}
 	sideEffects := false
 	everStarted, timedout := false, false
 	for i, cmd := range commands {
+		if e.GUI != nil {
+			e.GUI.Reset()
+		}
 		if fileCtx.Err() != nil {
 			timedout = everStarted
 			break

@@ -27,6 +27,7 @@ type state struct {
 	lastControl string
 	lastHash    [32]byte
 	lastClick   time.Time
+	retries     int
 }
 type Automator struct {
 	Native    ports.GUIAutomator
@@ -131,20 +132,31 @@ func (a *Automator) signal(text string) string {
 	return ""
 }
 func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
-	u := Update{Actions: []schema.GUIAction{}, Evidence: []schema.Evidence{}}
+	u := Update{Actions: []schema.GUIAction{}, Evidence: []schema.Evidence{}, Notes: []string{}}
 	windows, err := a.Native.Windows(pids)
 	if err != nil {
 		return u, err
 	}
 	signature := []string{}
+	visible := map[uintptr]bool{}
+	var clickError error
 	for _, w := range windows {
+		visible[w.Handle] = true
 		controls, err := a.Native.Controls(w)
 		if err != nil {
 			controls = nil
 		}
 		signature = append(signature, fmt.Sprintf("%x:%s", w.Handle, w.Title))
+		texts := []string{}
 		for _, c := range controls {
 			signature = append(signature, c.Text+fmt.Sprint(c.Bounds))
+			if c.Text != "" && c.Role != "text" && len(texts) < 16 {
+				label := []rune(c.Text)
+				if len(label) > 120 {
+					label = label[:120]
+				}
+				texts = append(texts, fmt.Sprintf("%s/%s/可用=%t/选中=%t", string(label), c.Role, c.Enabled, c.Checked))
+			}
 			switch a.signal(c.Text) {
 			case "failure":
 				u.Evidence = append(u.Evidence, schema.Evidence{ID: "N2", Level: "N", Type: "gui_failure", Source: c.Source, Detail: c.Text, At: time.Now()})
@@ -193,6 +205,7 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			if a.Config.GUI.DumpFailedShots && shot != nil {
 				a.saveFailed(w, shot)
 			}
+			u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q（PID %d）未识别到可点击控件：%s", w.Title, w.PID, strings.Join(texts, "、")))
 			continue
 		}
 		sort.SliceStable(candidates, func(i, j int) bool {
@@ -209,6 +222,7 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			a.states[w.Handle] = s
 		}
 		if s.count >= a.Config.GUI.MaxActionsPerWindow {
+			u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 已达到单窗口点击上限 %d 次，本轮不再点击", w.Title, a.Config.GUI.MaxActionsPerWindow))
 			continue
 		}
 		if time.Since(s.lastClick) < 750*time.Millisecond {
@@ -220,13 +234,29 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 		hash := shotHash(shot)
 		key := c.ID + ":" + Normalize(c.Text)
 		if key == s.lastControl && hash == s.lastHash {
-			continue
+			if c.Role == "checkbox" || c.Role == "radio" || s.retries >= 2 {
+				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 的控件 %q 已点击且无变化，不重复切换选项或超过重试上限", w.Title, c.Text))
+				continue
+			}
+			if time.Since(s.lastClick) < 3*time.Second {
+				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q（句柄 %#x，PID %d）的控件 %q 刚点击过且画面无变化，稍候重试", w.Title, w.Handle, w.PID, c.Text))
+				continue
+			}
+			// 画面长时间无变化仍按上限有节制地重试：点击可能被前台切换、
+			// 焦点抢占或覆盖窗口等瞬态原因吞掉，永久放弃会让向导卡死。
+			u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q（句柄 %#x，PID %d，范围 %v）的控件 %q（范围 %v）点击后画面无变化，重试点击（本窗口第 %d 次，上限 %d）", w.Title, w.Handle, w.PID, w.Bounds, c.Text, c.Bounds, s.count+1, a.Config.GUI.MaxActionsPerWindow))
 		}
 		if ctx.Err() != nil {
 			return u, ctx.Err()
 		}
 		if err = a.Native.Click(c); err != nil {
+			clickError = fmt.Errorf("窗口 %q 的按钮 %q（%s）点击失败：%w", w.Title, c.Text, c.Source, err)
 			continue
+		}
+		if key == s.lastControl && hash == s.lastHash {
+			s.retries++
+		} else {
+			s.retries = 0
 		}
 		s.count++
 		s.lastControl = key
@@ -243,7 +273,15 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			u.Evidence = append(u.Evidence, schema.Evidence{ID: "A2", Level: "A", Type: "gui_finish_clicked", Source: c.Source, Detail: c.Text, At: time.Now()})
 		}
 	}
+	for handle := range a.states {
+		if !visible[handle] {
+			delete(a.states, handle)
+		}
+	}
 	u.Signature = strings.Join(signature, "|")
+	if len(u.Actions) == 0 && clickError != nil {
+		return u, clickError
+	}
 	return u, nil
 }
 func rank(action string) int {
@@ -305,13 +343,17 @@ func (a *Automator) match(ctx context.Context, w ports.Window, shot image.Image)
 	}
 	return out, nil
 }
-func (a *Automator) saveFailed(w ports.Window, shot image.Image) {
+func (a *Automator) saveShot(w ports.Window, shot image.Image, kind string) {
 	os.MkdirAll("shots", 0755)
-	f, err := os.Create(filepath.Join("shots", fmt.Sprintf("failed_%x_%d.png", w.Handle, time.Now().UnixMilli())))
+	f, err := os.Create(filepath.Join("shots", fmt.Sprintf("%s_%x_%d.png", kind, w.Handle, time.Now().UnixMilli())))
 	if err == nil {
 		png.Encode(f, shot)
 		f.Close()
 	}
+}
+
+func (a *Automator) saveFailed(w ports.Window, shot image.Image) {
+	a.saveShot(w, shot, "failed")
 }
 
 func (a *Automator) Dump(ctx context.Context, pids []int, dir string) error {

@@ -5,6 +5,7 @@ import (
 	"autotrigger/internal/core/ports"
 	"autotrigger/internal/resources"
 	"context"
+	"errors"
 	"image"
 	"os"
 	"path/filepath"
@@ -15,6 +16,56 @@ import (
 type native struct {
 	controls []ports.Control
 	clicked  []ports.Control
+	clickErr error
+}
+
+func TestUnchangedButtonRetriesAreBounded(t *testing.T) {
+	n := &native{controls: []ports.Control{{ID: "ok", Text: "确定", Role: "button", Enabled: true}}}
+	a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+	if err := a.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		if s := a.states[1]; s != nil {
+			s.lastClick = time.Now().Add(-4 * time.Second)
+		}
+		if _, err := a.Step(context.Background(), []int{1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(n.clicked) != 3 {
+		t.Fatalf("expected one click and two retries, got %d", len(n.clicked))
+	}
+	a.Reset()
+	if _, err := a.Step(context.Background(), []int{1}); err != nil || len(n.clicked) != 4 {
+		t.Fatal("next attempt kept previous click suppression")
+	}
+}
+
+func TestUnchangedAgreementDoesNotToggleAgain(t *testing.T) {
+	n := &native{controls: []ports.Control{{ID: "agree", Text: "Accept", Role: "checkbox", Enabled: true}}}
+	a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+	if err := a.Init(); err != nil {
+		t.Fatal(err)
+	}
+	a.Step(context.Background(), []int{1})
+	a.states[1].lastClick = time.Now().Add(-4 * time.Second)
+	a.Step(context.Background(), []int{1})
+	if len(n.clicked) != 1 {
+		t.Fatal("unchanged checkbox toggled again")
+	}
+}
+
+func TestClickFailureIsDiagnosticNotSuccess(t *testing.T) {
+	n := &native{controls: []ports.Control{{ID: "ok", Text: "确定", Role: "button", Enabled: true}}, clickErr: errors.New("cannot focus sample window")}
+	a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+	if err := a.Init(); err != nil {
+		t.Fatal(err)
+	}
+	u, err := a.Step(context.Background(), []int{1})
+	if err == nil || len(u.Actions) != 0 || a.states[1].count != 0 {
+		t.Fatalf("click failure hidden: %+v, %v", u, err)
+	}
 }
 
 func TestAgreementSelectionAdvancesToNext(t *testing.T) {
@@ -74,7 +125,13 @@ func (n *native) Controls(w ports.Window) ([]ports.Control, error) {
 func (n *native) Screenshot(ports.Window) (image.Image, error) {
 	return image.NewGray(image.Rect(0, 0, 500, 300)), nil
 }
-func (n *native) Click(c ports.Control) error         { n.clicked = append(n.clicked, c); return nil }
+func (n *native) Click(c ports.Control) error {
+	if n.clickErr != nil {
+		return n.clickErr
+	}
+	n.clicked = append(n.clicked, c)
+	return nil
+}
 func (n *native) SetText(ports.Control, string) error { return nil }
 func (n *native) CloseWindow(ports.Window) error      { return nil }
 func (n *native) Close() error                        { return nil }

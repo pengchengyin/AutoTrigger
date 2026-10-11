@@ -43,6 +43,7 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	guiEvidence := []schema.Evidence{}
 	timedout, reboot, network := false, false, false
 	guiSignature := ""
+	guiErrorText := ""
 	filesystemSignature := verify.Digest(base)
 	lastSnapshot := time.Now()
 	observed := &ports.Baseline{Registry: map[string]ports.UninstallEntry{}, Dirs: map[string]ports.DirState{}}
@@ -101,8 +102,18 @@ loop:
 			if e.GUI != nil && e.Config.GUI.Enabled && e.DumpDir == "" {
 				update, err := e.GUI.Step(ctx, progress.PIDs)
 				if err != nil {
-					e.Log.Stage(logging.LevelDebug, logging.StageGUI, "界面识别/点击未产生动作：%v", err)
+					// 首次出现按警告提示（如 UIPI 权限拦截、窗口无响应），重复出现降为调试，避免刷屏。
+					if err.Error() != guiErrorText {
+						guiErrorText = err.Error()
+						e.Log.Stage(logging.LevelWarn, logging.StageGUI, "界面识别/点击未产生动作：%v", err)
+					} else {
+						e.Log.Stage(logging.LevelDebug, logging.StageGUI, "界面识别/点击未产生动作：%v", err)
+					}
 				} else {
+					guiErrorText = ""
+					for _, note := range update.Notes {
+						e.Log.Stage(logging.LevelDebug, logging.StageGUI, "界面识别详情：%s", note)
+					}
 					a.GUIActions = append(a.GUIActions, update.Actions...)
 					for _, act := range update.Actions {
 						e.Log.Stage(logging.LevelInfo, logging.StageGUI, "自动点击：%s（识别来源 %s，窗口 %q）", act.ControlText, act.Source, act.Window)
