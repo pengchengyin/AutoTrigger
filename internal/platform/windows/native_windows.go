@@ -294,15 +294,15 @@ func (p *process) Terminate(ctx context.Context) (string, error) {
 	for _, id := range ids {
 		pidSet[id] = true
 	}
-	cb := syscall.NewCallback(func(hwnd, lparam uintptr) uintptr {
+	visit := func(hwnd, lparam uintptr) uintptr {
 		var id uint32
 		user32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&id)))
 		if pidSet[int(id)] {
 			user32.NewProc("PostMessageW").Call(hwnd, 0x10, 0, 0)
 		}
 		return 1
-	})
-	user32.NewProc("EnumWindows").Call(cb, 0)
+	}
+	enumerateWindows(0, false, visit)
 	kernel32.NewProc("GenerateConsoleCtrlEvent").Call(1, uintptr(p.PID()))
 	if waitEmpty(ctx, p, 3*time.Second) {
 		return "graceful", nil

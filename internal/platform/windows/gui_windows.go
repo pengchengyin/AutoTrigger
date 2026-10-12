@@ -38,7 +38,7 @@ func (GUI) Windows(pids []int) ([]ports.Window, error) {
 		set[id] = true
 	}
 	out := []ports.Window{}
-	cb := syscall.NewCallback(func(hwnd, lparam uintptr) uintptr {
+	visit := func(hwnd, lparam uintptr) uintptr {
 		var id uint32
 		user32.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&id)))
 		visible, _, _ := user32.NewProc("IsWindowVisible").Call(hwnd)
@@ -57,8 +57,8 @@ func (GUI) Windows(pids []int) ([]ports.Window, error) {
 		}
 		out = append(out, ports.Window{Handle: hwnd, PID: int(id), Title: windowText(hwnd), Bounds: r.rect(), DPI: winver.DPI(hwnd), Theme: theme})
 		return 1
-	})
-	if err := callOK(user32.NewProc("EnumWindows"), cb, 0); err != nil {
+	}
+	if err := enumerateWindows(0, false, visit); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -237,7 +237,7 @@ func uiaChecked(element uintptr, kind int32) bool {
 
 func win32Controls(w ports.Window) []ports.Control {
 	out := []ports.Control{}
-	cb := syscall.NewCallback(func(hwnd, lparam uintptr) uintptr {
+	visit := func(hwnd, lparam uintptr) uintptr {
 		vis, _, _ := user32.NewProc("IsWindowVisible").Call(hwnd)
 		if vis == 0 {
 			return 1
@@ -271,8 +271,8 @@ func win32Controls(w ports.Window) []ports.Control {
 		}
 		out = append(out, ports.Control{ID: fmt.Sprintf("%x", hwnd), Text: windowText(hwnd), Role: role, Bounds: rect.rect(), Window: w, Source: "win32", Confidence: 1, Enabled: enabled != 0, Checked: checked, Native: hwnd})
 		return 1
-	})
-	user32.NewProc("EnumChildWindows").Call(w.Handle, cb, 0)
+	}
+	enumerateWindows(w.Handle, true, visit)
 	return out
 }
 
