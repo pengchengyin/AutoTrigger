@@ -101,6 +101,39 @@ func TestOfflineDeploymentIsLocalAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestOfflineDeploymentUsesSelectedDataDirectory(t *testing.T) {
+	root := t.TempDir()
+	exeDir := t.TempDir()
+	for _, relative := range []string{"third_parties/7zip/7z2603-x64.exe", "third_parties/ocr/PaddleOCR-json_v1.4.1.7z"} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture, never executed"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := &Prereqs{Runner: &deployRunner{}, ExeDir: exeDir}
+	p.SetDataRoot(root)
+	zipPath, err := p.deploySevenZip(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zipPath != filepath.Join(root, "third_parties", "7zip", "7-Zip", "7z.exe") {
+		t.Fatal(zipPath)
+	}
+	ocrPath, err := p.deployOCR(context.Background(), "paddleocr_json", zipPath, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(ocrPath, filepath.Join(root, "third_parties", "ocr")) {
+		t.Fatal(ocrPath)
+	}
+	if _, err = os.Stat(filepath.Join(exeDir, "third_party")); !os.IsNotExist(err) {
+		t.Fatal("wrote dependency to EXE directory")
+	}
+}
+
 func TestOfflineDeploymentRejectsUnsafeAndMissingPackages(t *testing.T) {
 	root := t.TempDir()
 	runner := &deployRunner{unsafe: true}

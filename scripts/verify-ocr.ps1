@@ -318,6 +318,17 @@ function Read-ConfigOcr {
 
     if (-not $Path) {
         $cands = New-Object System.Collections.ArrayList
+        try {
+            foreach ($base in @((Split-Path -Parent $PSScriptRoot), (Get-Location).Path)) {
+                $dataRoot = $base
+                $locator = Join-Path $base 'config\data-location.json'
+                if (Test-Path -LiteralPath $locator) {
+                    $location = ConvertFrom-Json ([System.IO.File]::ReadAllText($locator))
+                    if ([System.IO.Path]::IsPathRooted($location.data_directory)) { $dataRoot = $location.data_directory }
+                }
+                [void]$cands.Add((Join-Path $dataRoot 'config\config.json'))
+            }
+        } catch { }
         try { if ($PSScriptRoot) { [void]$cands.Add((Join-Path $PSScriptRoot 'config.json')) } } catch { }
         try { if ($PSScriptRoot) { [void]$cands.Add((Join-Path (Split-Path -Parent $PSScriptRoot) 'config.json')) } } catch { }
         try { [void]$cands.Add((Join-Path (Get-Location).Path 'config.json')) } catch { }
@@ -955,7 +966,7 @@ if ($usable.Count -gt 0) {
     Write-Report ''
     Write-Report '  未发现任何可用 OCR 引擎。' 'Red'
     Write-Report '  解决方式（离线环境，任选其一）:' 'Yellow'
-    Write-Report '    0) 使用交付包内的引擎包（推荐）: third_party\ocr\PaddleOCR-json_v<版本>.7z' 'Yellow'
+    Write-Report '    0) 使用交付包内的引擎包（推荐）: third_parties\ocr\PaddleOCR-json_v<版本>.7z' 'Yellow'
     Write-Report '       解压到任意目录（绿色免安装），再设置 config.json 的 ocr.engine_path' 'Yellow'
     Write-Report '    1) 将解压目录加入 PATH' 'Yellow'
     Write-Report '    2) 若 CPU 不支持 AVX: 改用 RapidOCR-json 并设置 ocr.engine = "rapidocr_json"' 'Yellow'

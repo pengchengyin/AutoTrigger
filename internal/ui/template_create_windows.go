@@ -131,9 +131,9 @@ func (f *form) createTemplateMaker(show bool) {
 	p.controls[makerStatus] = add(makerStatus, "EDIT", "", wsBorder|esMultiline|esReadOnly|wsVScroll)
 	dir := f.templates.TemplateDir
 	if dir == "" {
-		dir = filepath.Join(f.exeDir, "templates")
+		dir = f.templateRoot()
 	} else if !filepath.IsAbs(dir) {
-		dir = filepath.Join(f.exeDir, dir)
+		dir = filepath.Join(f.dataLayout().Root, dir)
 	}
 	setWindowTextRaw(p.controls[makerDir], dir)
 	p.refreshID()
@@ -248,13 +248,13 @@ func (p *templateMakerPane) save() {
 	}
 	dpi, _ := strconv.Atoi(p.token(makerDPI))
 	e := templates.Entry{ID: p.value(makerID), Family: p.token(makerFamily), Action: p.token(makerAction), Lang: p.token(makerLanguage), DPI: dpi, Theme: p.token(makerTheme), Origin: p.origin}
-	dir := projectDir(p.owner.exeDir, p.project)
+	dir := projectDir(p.owner.templateRoot(), p.project)
 	if p.project.ID == "" {
 		p.status("请先新建模板")
 		return
 	}
 	p.project.Name = p.value(makerName)
-	if err = writeProject(p.owner.exeDir, p.project); err != nil {
+	if err = writeProject(p.owner.templateRoot(), p.project); err != nil {
 		p.status(err.Error())
 		return
 	}

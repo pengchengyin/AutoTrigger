@@ -15,7 +15,7 @@ import (
 )
 
 func (p *templateMakerPane) refreshProjects(selected string) {
-	projects, err := listTemplateProjects(p.owner.exeDir)
+	projects, err := listTemplateProjects(p.owner.templateRoot())
 	if err != nil {
 		p.status(err.Error())
 		return
@@ -27,7 +27,7 @@ func (p *templateMakerPane) refreshProjects(selected string) {
 		state := "草稿"
 		if project.PublishedAt != nil {
 			state = "已发布"
-			if project.PublishedDigest != projectDigest(p.owner.exeDir, project) {
+			if project.PublishedDigest != projectDigest(p.owner.templateRoot(), project) {
 				state = "已发布 · 草稿待更新"
 			}
 		}
@@ -47,7 +47,7 @@ func (p *templateMakerPane) selectProject() {
 	}
 	p.project = p.projects[i]
 	setWindowTextRaw(p.controls[makerName], p.project.Name)
-	setWindowTextRaw(p.controls[makerDir], projectDir(p.owner.exeDir, p.project))
+	setWindowTextRaw(p.controls[makerDir], projectDir(p.owner.templateRoot(), p.project))
 	p.shot, p.pixels, p.bounds = nil, nil, image.Rectangle{}
 	p.updateBoundsFields()
 	p.refreshProjectImages()
@@ -58,7 +58,7 @@ func (p *templateMakerPane) selectProject() {
 
 func (p *templateMakerPane) refreshCaptureRecords() {
 	send(p.controls[makerRecords], 0x14b, 0, 0)
-	index, err := readCaptureIndex(projectDir(p.owner.exeDir, p.project), p.project.ID)
+	index, err := readCaptureIndex(projectDir(p.owner.templateRoot(), p.project), p.project.ID)
 	p.captures = nil
 	if err != nil {
 		p.status("捕获记录读取失败：" + err.Error())
@@ -85,7 +85,7 @@ func (p *templateMakerPane) previewCaptureRecord() {
 		return
 	}
 	item := p.captures[i]
-	shot, err := captureImage(projectDir(p.owner.exeDir, p.project), item)
+	shot, err := captureImage(projectDir(p.owner.templateRoot(), p.project), item)
 	if err != nil {
 		p.status("无法查看捕获图片：" + err.Error())
 		return
@@ -129,7 +129,7 @@ func (p *templateMakerPane) rollbackProject() {
 	p.project.PublishedAt = &now
 	// An old release is independent of the current draft, which remains editable.
 	p.project.PublishedDigest = "release:" + release.Version
-	if err := writeProject(p.owner.exeDir, p.project); err != nil {
+	if err := writeProject(p.owner.templateRoot(), p.project); err != nil {
 		p.status("版本已切换，但项目状态保存失败：" + err.Error())
 		return
 	}
@@ -146,7 +146,7 @@ func (p *templateMakerPane) newProject() {
 	if name == "" {
 		name = fmt.Sprintf("模板 %d", len(p.projects)+1)
 	}
-	project, err := newTemplateProject(p.owner.exeDir, name)
+	project, err := newTemplateProject(p.owner.templateRoot(), name)
 	if err != nil {
 		p.status(err.Error())
 		return
@@ -161,8 +161,8 @@ func (p *templateMakerPane) newProject() {
 func (p *templateMakerPane) refreshProjectImages() {
 	send(p.controls[makerImages], 0x14b, 0, 0)
 	p.entries = nil
-	if p.project.ID != "" && fileExists(filepath.Join(projectDir(p.owner.exeDir, p.project), "templates.index.json")) {
-		lib, err := loadEditableTemplateDir(projectDir(p.owner.exeDir, p.project))
+	if p.project.ID != "" && fileExists(filepath.Join(projectDir(p.owner.templateRoot(), p.project), "templates.index.json")) {
+		lib, err := loadEditableTemplateDir(projectDir(p.owner.templateRoot(), p.project))
 		if err != nil {
 			p.status(err.Error())
 			return
@@ -191,7 +191,7 @@ func (p *templateMakerPane) deleteProjectImage() {
 	if i < 0 || i >= len(p.entries) {
 		return
 	}
-	dir := projectDir(p.owner.exeDir, p.project)
+	dir := projectDir(p.owner.templateRoot(), p.project)
 	unlock, err := acquireHistoryLock(dir)
 	if err != nil {
 		p.status(err.Error())
@@ -246,7 +246,7 @@ func (p *templateMakerPane) previewProjectImage() {
 		return
 	}
 	e := p.entries[i]
-	f, err := os.Open(filepath.Join(projectDir(p.owner.exeDir, p.project), filepath.FromSlash(e.Screenshot)))
+	f, err := os.Open(filepath.Join(projectDir(p.owner.templateRoot(), p.project), filepath.FromSlash(e.Screenshot)))
 	if err != nil {
 		p.status(err.Error())
 		return
@@ -270,14 +270,14 @@ func (p *templateMakerPane) publishedTarget() string {
 		dir = "templates"
 	}
 	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(p.owner.exeDir, dir)
+		dir = filepath.Join(p.owner.dataLayout().Root, dir)
 	}
 	return dir
 }
 
 func (p *templateMakerPane) publishProject() {
 	p.project.Name = p.value(makerName)
-	if err := writeProject(p.owner.exeDir, p.project); err != nil {
+	if err := writeProject(p.owner.templateRoot(), p.project); err != nil {
 		p.status(err.Error())
 		return
 	}
@@ -285,7 +285,7 @@ func (p *templateMakerPane) publishProject() {
 		p.status("请等待当前任务结束后发布")
 		return
 	}
-	body, path, _, err := ConfigEditorBody(windowText(p.owner.ctrls[idConfig]), p.owner.exeDir)
+	body, path, _, err := ConfigEditorBody(windowText(p.owner.ctrls[idConfig]), filepath.Dir(p.owner.dataLayout().Config()))
 	if err != nil {
 		p.status(err.Error())
 		return
@@ -304,15 +304,15 @@ func (p *templateMakerPane) publishProject() {
 			return
 		}
 	}
-	if _, err = ValidateConfigJSONBody(body, p.owner.exeDir); err != nil {
+	if _, err = ValidateConfigJSONBody(body, p.owner.dataLayout().Root); err != nil {
 		p.status(err.Error())
 		return
 	}
-	if err = publishTemplateProject(p.owner.exeDir, target, p.project); err != nil {
+	if err = publishTemplateProject(p.owner.templateRoot(), target, p.project); err != nil {
 		p.status("发布失败：" + err.Error())
 		return
 	}
-	if _, err = WriteConfigEditorBody(path, body, p.owner.exeDir); err != nil {
+	if _, err = WriteConfigEditorBody(path, body, filepath.Dir(p.owner.dataLayout().Config())); err != nil {
 		p.status("图片已发布，但启用配置失败：" + err.Error())
 		return
 	}
@@ -322,8 +322,8 @@ func (p *templateMakerPane) publishProject() {
 	setWindowTextRaw(p.owner.ctrls[idConfig], path)
 	now := time.Now()
 	p.project.PublishedAt = &now
-	p.project.PublishedDigest = projectDigest(p.owner.exeDir, p.project)
-	if err = writeProject(p.owner.exeDir, p.project); err != nil {
+	p.project.PublishedDigest = projectDigest(p.owner.templateRoot(), p.project)
+	if err = writeProject(p.owner.templateRoot(), p.project); err != nil {
 		p.status("发布成功，但状态记录失败：" + err.Error())
 		return
 	}
@@ -384,7 +384,7 @@ func (p *templateMakerPane) withdrawProject() {
 	}
 	p.project.PublishedAt = nil
 	p.project.PublishedDigest = ""
-	if err = writeProject(p.owner.exeDir, p.project); err != nil {
+	if err = writeProject(p.owner.templateRoot(), p.project); err != nil {
 		p.status(err.Error())
 		return
 	}

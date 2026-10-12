@@ -5,6 +5,7 @@ package ui
 import (
 	"autotrigger/internal/cli"
 	"autotrigger/internal/config"
+	"autotrigger/internal/datadir"
 	"autotrigger/internal/gui/templates"
 	"autotrigger/pkg/schema"
 	"bytes"
@@ -166,6 +167,9 @@ type form struct {
 	title               string
 	exePath             string
 	exeDir              string
+	dataDir             string
+	dataError           error
+	legacyPrompted      bool
 	opts                Options
 	ctrls               map[int]uintptr
 	page                pageID
@@ -254,16 +258,20 @@ func newForm(deps cli.Dependencies) *form {
 	f.font = uiFont()
 	f.statusFont = uiFontBold()
 	f.appIcon = loadAppIcon(f.px(64))
-	root, err := os.UserConfigDir()
-	if err != nil {
-		root = exeDir
+	layout, loadErr := datadir.Load(exeDir)
+	if loadErr != nil {
+		layout = datadir.Layout{Root: exeDir}
+		f.dataError = loadErr
 	}
-	f.historyDir = filepath.Join(root, "AutoTrigger", "history")
+	f.dataDir = layout.Root
+	f.opts.Output = filepath.Join(layout.Results(), DefaultResultName)
+	f.opts.Config = ""
+	if fileExists(layout.Config()) {
+		f.opts.Config = layout.Config()
+	}
+	f.historyDir = layout.History()
 	f.history, _ = loadHistory(f.historyDir)
-	if p, err := loadPreferences(filepath.Dir(f.historyDir)); err == nil {
-		if p.ConfigPath != "" {
-			f.opts.Config = p.ConfigPath
-		}
+	if p, err := loadPreferences(filepath.Dir(layout.Config())); err == nil {
 		f.opts.Recursive = p.Recursive
 		f.opts.NoArchive = p.NoArchive
 	}
@@ -272,6 +280,14 @@ func newForm(deps cli.Dependencies) *form {
 
 // create 注册窗口类并创建主窗口（先隐藏，控件布置完成后再显示，避免出现空窗闪烁）。
 func (f *form) create() error {
+	if f.dataError != nil {
+		return fmt.Errorf("无法读取数据目录：%w", f.dataError)
+	}
+	if f.dataDir != "" {
+		if err := f.dataLayout().Ensure(); err != nil {
+			return fmt.Errorf("数据目录不可写：%w", err)
+		}
+	}
 	hInst, _, _ := procGetModuleHandleW.Call(0)
 	f.instance = hInst
 	cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
@@ -315,6 +331,7 @@ func (f *form) create() error {
 func (f *form) show() {
 	procShowWindow.Call(f.hwnd, swShow)
 	procUpdateWindow.Call(f.hwnd)
+	f.offerLegacyMigration()
 	if f.page != pageTask {
 		return
 	}
@@ -822,7 +839,7 @@ func (f *form) layoutSettingsControls(w, h int) {
 	r := f.taskSurfaceRect(w, h)
 	left, top := int(r.Left)+f.px(30), int(r.Top)+f.px(58)
 	width := int(r.Right) - left - f.px(30)
-	rows := [][2]int{{idLblOutput, idOutputDir}, {idLblConfig, idConfig}, {idLblTimeout, idTimeout}, {idLblLogLevel, idLogLevel}}
+	rows := [][2]int{{idLblOutput, idOutputDir}, {idLblTimeout, idTimeout}, {idLblLogLevel, idLogLevel}}
 	for i, pair := range rows {
 		y := top + f.px(i*48)
 		for _, id := range pair {
@@ -834,7 +851,7 @@ func (f *form) layoutSettingsControls(w, h int) {
 			f.place(idLogLevel, left+f.px(120), y, width-f.px(250), f.comboDropH(f.px(30), 4))
 		}
 	}
-	for i, id := range []int{idBrowseOutput, idBrowseConfig, idTimeoutUnit} {
+	for i, id := range []int{idBrowseOutput, idTimeoutUnit} {
 		procShowWindow.Call(f.ctrls[id], swShow)
 		height := f.px(30)
 		if id == idTimeoutUnit {
@@ -842,6 +859,7 @@ func (f *form) layoutSettingsControls(w, h int) {
 		}
 		f.place(id, int(r.Right)-f.px(150), top+f.px(i*48), f.px(120), height)
 	}
+	f.showAt(5901, left, top+f.px(144), width, f.px(30))
 	for i, id := range []int{idRecursive, idNoArchive, idNoOCR, idLock} {
 		procShowWindow.Call(f.ctrls[id], swShow)
 		f.place(id, left+f.px((i%2)*260), top+f.px(220+(i/2)*38), f.px(250), f.px(30))
@@ -861,12 +879,21 @@ func (f *form) layoutSettingsControls(w, h int) {
 }
 
 func (f *form) saveSettings() bool {
+	if err := f.applyDataDirectory(); err != nil {
+		f.setStatusKind(err.Error(), statusKindFail)
+		return false
+	}
 	opts, err := f.collect()
 	if err != nil {
 		f.setStatusKind(err.Error(), statusKindFail)
 		return false
 	}
-	body, path, _, err := ConfigEditorBody(opts.Config, f.exeDir)
+	body, path, _, err := ConfigEditorBody(opts.Config, filepath.Dir(f.dataLayout().Config()))
+	path = f.dataLayout().Config()
+	if f.configOpen {
+		body = windowText(f.ctrls[idCfgEditor])
+		err = nil
+	}
 	if err != nil {
 		f.setStatusKind(err.Error(), statusKindFail)
 		return false
@@ -888,6 +915,7 @@ func (f *form) saveSettings() bool {
 		value        interface{}
 	}{
 		{"output", "path", opts.Output}, {"output", "log_level", opts.LogLevel}, {"ocr", "enabled", !opts.NoOCR}, {"lock", "enabled", opts.Lock},
+		{"gui", "template_dir", f.dataLayout().Templates()},
 		{"ocr", "engine", engines[engineIndex]},
 		{"ocr", "engine_path", strings.TrimSpace(windowText(f.ctrls[idOCREnginePath]))},
 		{"archive", "sevenzip_path", strings.TrimSpace(windowText(f.ctrls[idSevenZip]))},
@@ -910,9 +938,9 @@ func (f *form) saveSettings() bool {
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err == nil {
 		if path == "" {
-			path = filepath.Join(f.exeDir, "config.json")
+			path = f.dataLayout().Config()
 		}
-		_, err = WriteConfigEditorBody(path, string(b), f.exeDir)
+		_, err = WriteConfigEditorBody(path, string(b), filepath.Dir(f.dataLayout().Config()))
 	}
 	if err != nil {
 		f.setStatusKind(err.Error(), statusKindFail)
@@ -934,7 +962,7 @@ func (f *form) saveSettings() bool {
 }
 
 func (f *form) applyTemplatePack(mode, dir string) bool {
-	body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), f.exeDir)
+	body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), filepath.Dir(f.dataLayout().Config()))
 	if f.configOpen {
 		body, err = windowText(f.ctrls[idCfgEditor]), nil
 	}
@@ -1247,6 +1275,10 @@ func (f *form) onMouseDown(x, y int) {
 
 func (f *form) performHeaderAction(id string) {
 	switch id {
+	case "import-templates":
+		f.templateTransfer(true)
+	case "export-templates":
+		f.templateTransfer(false)
 	case "new-template":
 		f.hubSelected = ""
 		f.hubEditing = true
@@ -1308,7 +1340,7 @@ func (f *form) openTemplateDir() {
 }
 
 func (f *form) reloadTemplates() {
-	f.templates = loadTemplateInfoWithConfig(f.exeDir, strings.TrimSpace(windowText(f.ctrls[idConfig])))
+	f.templates = loadTemplateInfoWithConfig(f.dataLayout().Root, strings.TrimSpace(windowText(f.ctrls[idConfig])))
 	f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
 	if f.templates.Error != "" {
 		f.setStatusKind("模板刷新失败："+f.templates.Error, statusKindFail)
@@ -1339,7 +1371,7 @@ func (f *form) setPage(page pageID) {
 		}
 	}
 	if page == pageTemplates {
-		f.templates = loadTemplateInfoWithConfig(f.exeDir, strings.TrimSpace(windowText(f.ctrls[idConfig])))
+		f.templates = loadTemplateInfoWithConfig(f.dataLayout().Root, strings.TrimSpace(windowText(f.ctrls[idConfig])))
 		f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
 	}
 	f.layout()
@@ -1363,7 +1395,7 @@ func (f *form) setPage(page pageID) {
 			send(f.ctrls[idResultView], 0x115, 7, 0)
 		}
 	} else if page == pageSettings {
-		body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), f.exeDir)
+		body, _, _, err := ConfigEditorBody(strings.TrimSpace(windowText(f.ctrls[idConfig])), filepath.Dir(f.dataLayout().Config()))
 		if err != nil {
 			f.setStatusKind(err.Error(), statusKindFail)
 			return
@@ -1429,10 +1461,8 @@ func (f *form) onCommand(id, code int) {
 			}
 		case idBrowseOutput:
 			if f.page == pageSettings {
-				if p, ok := pickFolderDialog(f.hwnd, "选择结果保存目录"); ok {
+				if p, ok := pickFolderDialog(f.hwnd, "选择统一数据目录"); ok {
 					setWindowTextRaw(f.ctrls[idOutputDir], p)
-					setWindowTextRaw(f.ctrls[idOutput], filepath.Join(p, DefaultResultName))
-					f.refreshCommand()
 				}
 				return
 			}
@@ -1667,7 +1697,7 @@ func (f *form) startDir(p string) string {
 func (f *form) makeConfig() {
 	path := strings.TrimSpace(windowText(f.ctrls[idConfig]))
 	if path == "" {
-		path = ConfigPath(f.exeDir)
+		path = f.dataLayout().Config()
 	}
 	overwrite := false
 	if _, err := os.Stat(path); err == nil {
@@ -1691,7 +1721,7 @@ func (f *form) makeConfig() {
 func (f *form) editConfig() {
 	path := strings.TrimSpace(windowText(f.ctrls[idConfig]))
 	if path == "" {
-		path = ConfigPath(f.exeDir)
+		path = f.dataLayout().Config()
 	}
 	if _, err := os.Stat(path); err != nil {
 		if _, werr := WriteConfigFile(path, false); werr != nil {
@@ -1721,7 +1751,7 @@ func (f *form) validateConfig() {
 
 func (f *form) loadConfigEditor(showMessage bool) {
 	path := strings.TrimSpace(windowText(f.ctrls[idConfig]))
-	body, resolved, fromDisk, err := ConfigEditorBody(path, f.exeDir)
+	body, resolved, fromDisk, err := ConfigEditorBody(path, filepath.Dir(f.dataLayout().Config()))
 	if err != nil {
 		if showMessage {
 			messageBox(f.hwnd, "加载失败", err.Error(), mbOK|mbIconError)
@@ -1748,12 +1778,9 @@ func (f *form) loadConfigEditor(showMessage bool) {
 }
 
 func (f *form) saveConfigEditor() {
-	path := strings.TrimSpace(windowText(f.ctrls[idConfig]))
-	if path == "" {
-		path = ConfigPath(f.exeDir)
-	}
+	path := f.dataLayout().Config()
 	body := windowText(f.ctrls[idCfgEditor])
-	warnings, err := WriteConfigEditorBody(path, body, f.exeDir)
+	warnings, err := WriteConfigEditorBody(path, body, filepath.Dir(f.dataLayout().Config()))
 	if err != nil {
 		messageBox(f.hwnd, "保存失败", "配置未保存，原文件保持不变。\n\n"+err.Error(), mbOK|mbIconError)
 		setWindowTextRaw(f.ctrls[idCfgStatus], "保存失败："+err.Error())
@@ -1765,7 +1792,7 @@ func (f *form) saveConfigEditor() {
 	status := "已保存并通过校验：" + path
 	f.prereqChecked = false
 	f.prereqReport = nil
-	f.templates = loadTemplateInfoWithConfig(f.exeDir, path)
+	f.templates = loadTemplateInfoWithConfig(f.dataLayout().Root, path)
 	if prefErr := f.persistPreferences(path); prefErr != nil {
 		warnings = append(warnings, "界面偏好保存失败："+prefErr.Error())
 	}
@@ -1789,7 +1816,7 @@ func (f *form) importConfigEditor() {
 		messageBox(f.hwnd, "导入失败", err.Error(), mbOK|mbIconError)
 		return
 	}
-	setWindowTextRaw(f.ctrls[idConfig], p)
+	setWindowTextRaw(f.ctrls[idConfig], "")
 	setWindowTextRaw(f.ctrls[idCfgEditor], toCRLF(string(b)))
 	f.configOpen = true
 	f.refreshCommand()
@@ -1800,14 +1827,14 @@ func (f *form) importConfigEditor() {
 func (f *form) exportConfigEditor() {
 	cur := strings.TrimSpace(windowText(f.ctrls[idConfig]))
 	if cur == "" {
-		cur = ConfigPath(f.exeDir)
+		cur = f.dataLayout().Config()
 	}
 	p, ok := saveFileDialogWith(f.hwnd, "导出配置文件", cur, "json", configDialogFilter)
 	if !ok {
 		return
 	}
 	body := windowText(f.ctrls[idCfgEditor])
-	warnings, err := WriteConfigEditorBody(p, body, f.exeDir)
+	warnings, err := WriteConfigEditorBody(p, body, filepath.Dir(f.dataLayout().Config()))
 	if err != nil {
 		messageBox(f.hwnd, "导出失败", "配置未导出。\n\n"+err.Error(), mbOK|mbIconError)
 		return
@@ -1856,8 +1883,8 @@ func (f *form) auxArgs(extra ...string) []string {
 	if f.isChecked(idNoOCR) {
 		args = append(args, "--no-ocr")
 	}
-	// 附属命令不改动交付目录：日志写到临时目录。
-	args = append(args, "--log-file", filepath.Join(os.TempDir(), "autotrigger-ui-aux.log"))
+	// Auxiliary checks use a distinct log in the selected data directory.
+	args = append(args, "--log-file", filepath.Join(f.dataLayout().Logs(), "environment-"+time.Now().Format("20060102-150405.000000000")+".log"))
 	args = append(args, "--output", "-")
 	return args
 }
@@ -1907,7 +1934,7 @@ func (f *form) runTaskOptions(opts Options) {
 		return
 	}
 	if opts.Input != "" && opts.Output != "-" {
-		dir := filepath.Dir(opts.Output)
+		dir := f.dataLayout().Results()
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			messageBox(f.hwnd, "无法保存结果", err.Error(), mbOK|mbIconError)
 			return
@@ -1921,7 +1948,11 @@ func (f *form) runTaskOptions(opts Options) {
 	}
 	f.resultPath = opts.Output
 	if opts.Output != "" && opts.Output != "-" {
-		args = append(args, "--log-file", opts.Output+".log")
+		if err := os.MkdirAll(f.dataLayout().Logs(), 0755); err != nil {
+			f.setStatusKind(err.Error(), statusKindFail)
+			return
+		}
+		args = append(args, "--log-file", f.taskLogPath(opts.Output))
 	}
 	f.registerTask(opts)
 	f.launch("运行安装/触发", args, false)

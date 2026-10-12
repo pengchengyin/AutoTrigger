@@ -28,14 +28,14 @@ func (p *Prereqs) deploySevenZip(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer unlock()
-	target := filepath.Join(p.ExeDir, "third_party", "7zip", "7-Zip")
+	target := filepath.Join(p.thirdPartyDir(), "7zip", "7-Zip")
 	exe := filepath.Join(target, "7z.exe")
-	if findExecutable([]string{exe}, p.ExeDir) != "" {
+	if findExecutable([]string{exe}, p.dataBase()) != "" {
 		return exe, nil
 	}
-	packages, _ := filepath.Glob(filepath.Join(p.ExeDir, "third_party", "7zip", "7z*-x64.exe"))
+	packages, _ := filepath.Glob(filepath.Join(p.thirdPartyDir(), "7zip", "7z*-x64.exe"))
 	if len(packages) == 0 {
-		return "", fmt.Errorf("缺少 third_party\\7zip\\7z*-x64.exe 离线安装包；不会联网下载")
+		return "", fmt.Errorf("缺少 %s 离线安装包；不会联网下载", filepath.Join(p.thirdPartyDir(), "7zip", "7z*-x64.exe"))
 	}
 	if err := os.MkdirAll(target, 0755); err != nil {
 		return "", err
@@ -48,7 +48,7 @@ func (p *Prereqs) deploySevenZip(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if findExecutable([]string{exe}, p.ExeDir) == "" {
+	if findExecutable([]string{exe}, p.dataBase()) == "" {
 		return "", fmt.Errorf("安装器结束但没有生成 %s", exe)
 	}
 	return exe, nil
@@ -59,13 +59,13 @@ func (p *Prereqs) deployOCR(ctx context.Context, engine, sevenZip string, limit 
 	if engine == "rapidocr_json" {
 		stem = "RapidOCR-json"
 	}
-	root := filepath.Join(p.ExeDir, "third_party", "ocr")
+	root := filepath.Join(p.thirdPartyDir(), "ocr")
 	target := filepath.Join(root, stem)
 	exe := filepath.Join(target, stem+".exe")
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if findExecutable([]string{exe}, p.ExeDir) != "" {
+	if findExecutable([]string{exe}, p.dataBase()) != "" {
 		return exe, nil
 	}
 	packages, _ := filepath.Glob(filepath.Join(root, stem+"*.7z"))
@@ -86,7 +86,7 @@ func (p *Prereqs) deployOCRArchive(ctx context.Context, packagePath, target, exe
 		return "", err
 	}
 	defer unlock()
-	root := filepath.Join(p.ExeDir, "third_party", "ocr")
+	root := filepath.Join(p.thirdPartyDir(), "ocr")
 	if paths := localOCRExecutablesIn(target, executable); len(paths) == 1 {
 		return paths[0], nil
 	}

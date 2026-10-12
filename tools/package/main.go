@@ -29,6 +29,15 @@ type material struct {
 	URL           string `json:"source_url"`
 	ExpectedBytes int64  `json:"expected_bytes"`
 	Present       bool   `json:"complete"`
+	Source        string `json:"-"`
+}
+
+func materialSource(path string) string {
+	current := filepath.Join("dist", filepath.FromSlash(path))
+	if _, err := os.Stat(current); err == nil {
+		return current
+	}
+	return filepath.Join("dist", filepath.FromSlash(strings.Replace(path, "third_parties/", "third_party/", 1)))
 }
 
 func main() {
@@ -52,10 +61,11 @@ func assemble(dest string, release bool) error {
 	if absolute == root || !strings.HasPrefix(absolute, root+string(filepath.Separator)) {
 		return fmt.Errorf("delivery output must be a new directory inside this workspace")
 	}
-	materials := []material{{Path: "third_party/7zip/7z2603-x64.exe", URL: "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe", ExpectedBytes: 0}, {Path: "third_party/ocr/PaddleOCR-json_v1.4.1_windows_x64.7z", URL: "https://github.com/hiroi-sora/PaddleOCR-json/releases/download/v1.4.1/PaddleOCR-json_v1.4.1_windows_x64.7z", ExpectedBytes: 92736768}, {Path: "third_party/ocr/RapidOCR-json_v0.2.0.7z", URL: "https://github.com/hiroi-sora/RapidOCR-json/releases/download/v0.2.0/RapidOCR-json_v0.2.0.7z", ExpectedBytes: 73461693}}
+	materials := []material{{Path: "third_parties/7zip/7z2603-x64.exe", URL: "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe", ExpectedBytes: 0}, {Path: "third_parties/ocr/PaddleOCR-json_v1.4.1_windows_x64.7z", URL: "https://github.com/hiroi-sora/PaddleOCR-json/releases/download/v1.4.1/PaddleOCR-json_v1.4.1_windows_x64.7z", ExpectedBytes: 92736768}, {Path: "third_parties/ocr/RapidOCR-json_v0.2.0.7z", URL: "https://github.com/hiroi-sora/RapidOCR-json/releases/download/v0.2.0/RapidOCR-json_v0.2.0.7z", ExpectedBytes: 73461693}}
 	missing := []string{}
 	for i, m := range materials {
-		s, e := os.Stat(filepath.Join("dist", filepath.FromSlash(m.Path)))
+		materials[i].Source = materialSource(m.Path)
+		s, e := os.Stat(materials[i].Source)
 		materials[i].Present = e == nil && !s.IsDir() && (m.ExpectedBytes == 0 || s.Size() == m.ExpectedBytes)
 		if !materials[i].Present {
 			missing = append(missing, m.Path)
@@ -93,7 +103,7 @@ func assemble(dest string, release bool) error {
 	}
 	for _, m := range materials {
 		if m.Present {
-			if err = copyFile(filepath.Join("dist", filepath.FromSlash(m.Path)), filepath.Join(dest, filepath.FromSlash(m.Path))); err != nil {
+			if err = copyFile(m.Source, filepath.Join(dest, filepath.FromSlash(m.Path))); err != nil {
 				return err
 			}
 		}

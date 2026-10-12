@@ -14,6 +14,11 @@ autotrigger-result.json.log*
 /autotrigger.exe~
 /template-projects/
 /config.json
+/config/
+/logs/
+/results/
+/templates/
+/third_parties/
 /artifacts/ui-review/
 /artifacts/ui-review-v2/
 /artifacts/win10-original/

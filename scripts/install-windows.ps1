@@ -8,13 +8,13 @@
 
       [1] 7-Zip   —— 先找系统上**已有的**可用 7z.exe（-SevenZipExe → config.json → 注册表 →
                      PATH → 常见安装目录 → 交付包内便携目录）；确实没有，才用
-                     third_party\7zip\7z*-x64.exe 静默安装（/S /D=<目录>）。
+                     third_parties\7zip\7z*-x64.exe 静默安装（/S /D=<目录>）。
                      注意：使用该安装包时，7-Zip 安装器会把自身安装路径写进注册表
                      （HKLM/HKCU 的 SOFTWARE\7-Zip 与卸载项），这是安装 7-Zip 的正常副作用。
-      [2] OCR     —— 用上一步得到的 7z.exe 把 third_party\ocr\*.7z 释放到
+      [2] OCR     —— 用上一步得到的 7z.exe 把 third_parties\ocr\*.7z 释放到
                      <OCRRoot>\PaddleOCR-json 与 <OCRRoot>\RapidOCR-json，保留 models 与 DLL。
                      默认两个引擎都装：工具在 CPU 无 AVX 时会自动从 PaddleOCR 回落到 RapidOCR。
-      [3] config  —— 在 AutoTrigger.exe 同目录写**最小增量** config.json（显式 sevenzip_path；
+      [3] config  —— 在数据目录 config\config.json 写**最小增量**配置（显式 sevenzip_path；
                      ocr.engine_path 保持 auto，这样上一条的自动回落才依然有效）。覆盖前自动备份。
       [4] 自检    —— 调 `AutoTrigger.exe --check-prereq --json` 复核，报告与工具本体同源。
 
@@ -31,16 +31,16 @@
     直接指定已有的 7z.exe，跳过发现与安装。
 
 .PARAMETER SevenZipDir
-    安装 7-Zip 的目标目录。缺省 `<Root>\third_party\7zip\7-Zip`。
+    安装 7-Zip 的目标目录。缺省 `<数据目录>\third_parties\7zip\7-Zip`。
 
 .PARAMETER OCRRoot
-    OCR 引擎释放根目录，缺省 `<Root>\third_party\ocr`；最终目录为 `<OCRRoot>\PaddleOCR-json` 等。
+    OCR 引擎释放根目录，缺省 `<数据目录>\third_parties\ocr`；最终目录为 `<OCRRoot>\PaddleOCR-json` 等。
 
 .PARAMETER Engine
     要释放的 OCR 引擎：auto/both（缺省，两个都装）、paddleocr_json、rapidocr_json、none。
 
 .PARAMETER ConfigPath
-    写出的配置文件路径，缺省 `<Root>\config.json`。
+    写出的配置文件路径，缺省 `<数据目录>\config\config.json`。
 
 .PARAMETER MinSevenZipVersion
     最低 7-Zip 版本；缺省从 `AutoTrigger.exe --dump-config` 的 archive.min_version 读取。
@@ -195,7 +195,7 @@ function Find-DeliveryRoot([string]$Given) {
 }
 
 function Get-ConfigSevenZipPath([string]$RootPath) {
-    $cfg = Join-Path $RootPath 'config.json'
+    $cfg = Join-Path $RootPath 'config\config.json'
     if (-not (Test-Path $cfg)) { return $null }
     try {
         $text = [System.IO.File]::ReadAllText($cfg)
@@ -246,7 +246,7 @@ function Resolve-SevenZip([string]$RootPath) {
     if ($cmd) { [void]$cands.Add($cmd.Definition) }
     [void]$cands.Add('C:\Program Files\7-Zip\7z.exe')
     [void]$cands.Add('C:\Program Files (x86)\7-Zip\7z.exe')
-    [void]$cands.Add((Join-Path $RootPath 'third_party\7zip\7-Zip\7z.exe'))
+    [void]$cands.Add((Join-Path $RootPath 'third_parties\7zip\7-Zip\7z.exe'))
     foreach ($c in $cands) {
         if (-not $c) { continue }
         $v = Get-SevenZipVersion $c
@@ -256,7 +256,7 @@ function Resolve-SevenZip([string]$RootPath) {
 }
 
 function Get-ArchivePath([string]$RootPath, [string]$Keyword) {
-    $dir = Join-Path $RootPath 'third_party\ocr'
+    $dir = Join-Path $RootPath 'third_parties\ocr'
     if (-not (Test-Path $dir)) { return $null }
     $hit = Get-ChildItem -Path $dir -Filter '*.7z' -ErrorAction SilentlyContinue |
         Where-Object { $_.Name.ToLower().Contains($Keyword.ToLower()) } |
@@ -266,7 +266,7 @@ function Get-ArchivePath([string]$RootPath, [string]$Keyword) {
 }
 
 function Get-ThreeZipPackage([string]$RootPath) {
-    $dir = Join-Path $RootPath 'third_party\7zip'
+    $dir = Join-Path $RootPath 'third_parties\7zip'
     if (-not (Test-Path $dir)) { return $null }
     $hit = Get-ChildItem -Path $dir -Filter '*x64.exe' -ErrorAction SilentlyContinue |
         Sort-Object Name | Select-Object -First 1
@@ -351,14 +351,14 @@ function Step-SevenZip([string]$RootPath, [string]$MinVersion) {
     # 没有任何可用 7z.exe：用交付包内的安装包静默安装
     $pkg = Get-ThreeZipPackage $RootPath
     if (-not $pkg) {
-        Out-Fail ('未找到 7-Zip：系统无可用 7z.exe，交付包也缺 third_party\7zip\7z*-x64.exe')
+        Out-Fail ('未找到 7-Zip：系统无可用 7z.exe，交付包也缺 third_parties\7zip\7z*-x64.exe')
         Add-Step '7-Zip' 'missing' '无可用 7z.exe 且无离线安装包'
         return $null
     }
     $admin = Test-Admin
     $target = $SevenZipDir
     if (-not $target) {
-        $target = Join-Path $RootPath 'third_party\7zip\7-Zip'
+        $target = Join-Path $RootPath 'third_parties\7zip\7-Zip'
     }
     $commandLine = '/S /D=' + $target
     Out-Do ('静默安装 7-Zip：' + $pkg)
@@ -450,7 +450,7 @@ function Step-OCR([string]$RootPath, [string]$SevenZip) {
         }
         $archive = Get-ArchivePath $RootPath $e.keyword
         if (-not $archive) {
-            Out-Fail ('交付包缺 ' + $e.keyword + ' 离线压缩包（third_party\ocr\*' + $e.keyword + '*.7z）')
+            Out-Fail ('交付包缺 ' + $e.keyword + ' 离线压缩包（third_parties\ocr\*' + $e.keyword + '*.7z）')
             $allOK = $false
             continue
         }
@@ -489,7 +489,7 @@ function Step-OCR([string]$RootPath, [string]$SevenZip) {
 function Test-AutoOCRDir([string]$Dir) {
     if (-not $Dir) { return $false }
     $d = $Dir.TrimEnd('\')
-    foreach ($a in @('C:\tools', 'D:\tools', (Join-Path $root 'third_party\ocr'))) { if ($d -ieq $a) { return $true } }
+    foreach ($a in @('C:\tools', 'D:\tools', (Join-Path $root 'third_parties\ocr'))) { if ($d -ieq $a) { return $true } }
     return $false
 }
 
@@ -501,7 +501,7 @@ function Step-Config([string]$RootPath, [string]$EngineName) {
         return
     }
     $path = $ConfigPath
-    if (-not $path) { $path = Join-Path $RootPath 'config.json' }
+    if (-not $path) { $path = Join-Path $RootPath 'config\config.json' }
     # 最小增量覆盖：未列出的字段沿用工具内置默认值（config.Load 递归合并）
     $lines = New-Object System.Collections.ArrayList
     [void]$lines.Add('{')
@@ -540,6 +540,8 @@ function Step-Config([string]$RootPath, [string]$EngineName) {
         return
     }
     try {
+        $parent = Split-Path -Parent $path
+        if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
         if (Test-Path $path) {
             $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
             $backup = $path + '.bak-' + $stamp
@@ -562,7 +564,7 @@ function Step-Config([string]$RootPath, [string]$EngineName) {
 
 function Step-Verify([string]$RootPath) {
     Out-Section '第 4 步 / 共 4 步：前置自检（AutoTrigger --check-prereq）'
-    $exe = Join-Path $RootPath 'AutoTrigger.exe'
+    $exe = Join-Path $script:DeliveryRoot 'AutoTrigger.exe'
     $raw = ''
     $code = $null
     try {
@@ -575,7 +577,9 @@ function Step-Verify([string]$RootPath) {
         # 拿不到退出码/输出，而 & 的 $LASTEXITCODE 稳定可靠（AutoTrigger 不需要提权启动）。
         Push-Location $scratch
         try {
-            & $exe '--check-prereq' '--no-deploy-deps' '--json' > $outFile 2> $errFile
+            $verifyArgs = @('--check-prereq', '--no-deploy-deps', '--json')
+            if ($ConfigPath) { $verifyArgs += @('--config', $ConfigPath) }
+            & $exe @verifyArgs > $outFile 2> $errFile
             $code = $LASTEXITCODE
         } finally { Pop-Location }
         if (Test-Path $outFile) { $raw = [System.IO.File]::ReadAllText($outFile) }
@@ -623,9 +627,26 @@ if (-not $root) {
     Out-Fail '没找到 AutoTrigger.exe：请用 -Root 指定交付根目录（或把脚本放在交付包的 scripts\ 下运行）'
     $exit = 1
 } else {
-    if (-not $OCRRoot) { $OCRRoot = Join-Path $root 'third_party\ocr' }
+    $script:DeliveryRoot = $root
     $exe = Join-Path $root 'AutoTrigger.exe'
-    Out-Log ('交付根目录：' + $root)
+    $location = Join-Path $root 'config\data-location.json'
+    if (Test-Path $location) {
+        $text = [System.IO.File]::ReadAllText($location)
+        if ($PSVersionTable.PSVersion.Major -ge 3) {
+            $data = ConvertFrom-Json $text
+            $selectedRoot = $data.data_directory
+        } else {
+            Add-Type -AssemblyName System.Web.Extensions
+            $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+            $data = $serializer.DeserializeObject($text)
+            $selectedRoot = $data['data_directory']
+        }
+        if (-not $selectedRoot -or -not [System.IO.Path]::IsPathRooted($selectedRoot)) { throw '数据目录记录无效' }
+        $root = $selectedRoot
+    }
+    if (-not $OCRRoot) { $OCRRoot = Join-Path $root 'third_parties\ocr' }
+    Out-Log ('交付根目录：' + $script:DeliveryRoot)
+    Out-Log ('数据目录：' + $root)
     $minVersion = Get-ToolMinVersion $root $exe
     $sevenZip = Step-SevenZip $root $minVersion
     Step-OCR $root $sevenZip
@@ -662,7 +683,7 @@ if (-not $root) {
     } else {
         Out-Log '  OCR      : 未部署'
     }
-    if ($script:ConfigWritten) { Out-Log ('  配置文件 : ' + (Join-Path $root 'config.json') + '（已写入）') }
+    if ($script:ConfigWritten) { Out-Log ('  配置文件 : ' + (Join-Path $root 'config\config.json') + '（已写入）') }
     elseif ($NoConfig) { Out-Log '  配置文件 : 按 -NoConfig 未写' }
     else { Out-Log '  配置文件 : 未写入' }
 
@@ -708,7 +729,7 @@ if ($Json) {
     }
     [void]$sb.AppendLine('  },')
     [void]$sb.AppendLine('  "config": {')
-    [void]$sb.AppendLine('    "path": ' + (Esc-Json $(if ($NoConfig) { $null } else { $(if ($ConfigPath) { $ConfigPath } else { Join-Path $root 'config.json' }) })) + ',')
+    [void]$sb.AppendLine('    "path": ' + (Esc-Json $(if ($NoConfig) { $null } else { $(if ($ConfigPath) { $ConfigPath } else { Join-Path $root 'config\config.json' }) })) + ',')
     [void]$sb.AppendLine('    "written": ' + $(if ($script:ConfigWritten) { 'true' } else { 'false' }) + ',')
     [void]$sb.AppendLine('    "backup": ' + (Esc-Json $script:ConfigBackup))
     [void]$sb.AppendLine('  },')

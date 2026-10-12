@@ -162,7 +162,7 @@ func (p *templateMakerPane) startHoverCapture() {
 		p.status("已有捕获会话，请先结束")
 		return
 	}
-	session, err := newCaptureSession(p.owner.exeDir, p.project)
+	session, err := newCaptureSession(p.owner.templateRoot(), p.project)
 	if err != nil {
 		p.status("无法开始捕获：" + err.Error())
 		return

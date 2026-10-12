@@ -100,18 +100,18 @@ func ocrPackageTarget(root, path string) string {
 
 func (p *Prereqs) inventoryOCR(ctx context.Context, c config.Config, deploy, avx bool, report *schema.Prereq) []schema.OCREngineCheck {
 	rows := []schema.OCREngineCheck{}
-	root := filepath.Join(p.ExeDir, "third_party", "ocr")
+	root := filepath.Join(p.thirdPartyDir(), "ocr")
 	for _, def := range ocrDefinitions {
-		paths := localOCRExecutables(p.ExeDir, def.executable)
+		paths := localOCRExecutablesIn(filepath.Join(p.thirdPartyDir(), "ocr"), def.executable)
 		if def.engine == c.OCR.Engine && c.OCR.EnginePath != "auto" {
-			paths = append([]string{findExecutable([]string{c.OCR.EnginePath}, p.ExeDir)}, paths...)
+			paths = append([]string{findExecutable([]string{c.OCR.EnginePath}, p.dataBase())}, paths...)
 		}
 		if def.executable != "" {
 			if path, err := exec.LookPath(def.executable); err == nil {
 				paths = append(paths, path)
 			}
 			stem := strings.TrimSuffix(def.executable, ".exe")
-			if path := findExecutable([]string{filepath.Join(`C:\tools`, stem, def.executable), filepath.Join(`D:\tools`, stem, def.executable), filepath.Join(`C:\Program Files`, stem, def.executable), filepath.Join(`C:\Program Files\Tesseract-OCR`, def.executable)}, p.ExeDir); path != "" {
+			if path := findExecutable([]string{filepath.Join(`C:\tools`, stem, def.executable), filepath.Join(`D:\tools`, stem, def.executable), filepath.Join(`C:\Program Files`, stem, def.executable), filepath.Join(`C:\Program Files\Tesseract-OCR`, def.executable)}, p.dataBase()); path != "" {
 				paths = append(paths, path)
 			}
 		}

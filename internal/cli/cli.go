@@ -7,6 +7,7 @@ import (
 	"autotrigger/internal/core"
 	"autotrigger/internal/core/detect"
 	"autotrigger/internal/core/ports"
+	"autotrigger/internal/datadir"
 	"autotrigger/internal/gui"
 	"autotrigger/internal/gui/templates"
 	"autotrigger/internal/logging"
@@ -177,12 +178,31 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 	}
 	var warnings []string
 	var err error
-	cfg, warnings, err = config.Load(opts.Config, exeDir)
+	layout, err := datadir.Load(exeDir)
 	if err != nil {
 		return finish(3, err)
 	}
+	configPath := opts.Config
+	if configPath == "" {
+		if info, e := os.Stat(layout.Config()); e == nil && !info.IsDir() {
+			configPath = layout.Config()
+		}
+	}
+	cfg, warnings, err = config.Load(configPath, filepath.Dir(layout.Config()))
+	if err != nil {
+		return finish(3, err)
+	}
+	if checker, ok := deps.Prereqs.(interface{ SetDataRoot(string) }); ok {
+		checker.SetDataRoot(layout.Root)
+	}
 	visited := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { visited[f.Name] = true })
+	if !visited["output"] && cfg.Output.Path == config.Defaults().Output.Path {
+		cfg.Output.Path = filepath.Join(layout.Results(), "autotrigger-result.json")
+	}
+	if !visited["output"] && !visited["log-file"] && cfg.Output.LogFile == "" && cfg.Output.Path != "-" {
+		cfg.Output.LogFile = filepath.Join(layout.Logs(), filepath.Base(cfg.Output.Path)+".log")
+	}
 	if visited["timeout"] {
 		cfg.TimeoutSec = opts.Timeout
 	}
@@ -256,8 +276,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		}
 		return writeInfo(stdout, map[string]interface{}{"resource_pack_version": resources.Version, "exported_to": opts.DumpResources}, opts.Pretty, stderr)
 	}
-	pack := resources.Pack{Mode: cfg.GUI.TemplatePack, Root: exeDir}
-	library, err := templates.Load(cfg.GUI, exeDir)
+	pack := resources.Pack{Mode: cfg.GUI.TemplatePack, Root: layout.Root}
+	library, err := templates.LoadAt(cfg.GUI, layout.Root, layout.Templates())
 	if err != nil {
 		return finish(3, err)
 	}

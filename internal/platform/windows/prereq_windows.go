@@ -23,9 +23,24 @@ import (
 )
 
 type Prereqs struct {
-	Runner ports.ProcessRunner
-	Engine *ocr.Engine
-	ExeDir string
+	Runner   ports.ProcessRunner
+	Engine   *ocr.Engine
+	ExeDir   string
+	DataRoot string
+}
+
+func (p *Prereqs) SetDataRoot(root string) { p.DataRoot = root }
+func (p *Prereqs) dataBase() string {
+	if p.DataRoot != "" {
+		return p.DataRoot
+	}
+	return p.ExeDir
+}
+func (p *Prereqs) thirdPartyDir() string {
+	if p.DataRoot != "" {
+		return filepath.Join(p.DataRoot, "third_parties")
+	}
+	return filepath.Join(p.ExeDir, "third_party")
 }
 
 func (p *Prereqs) Check(ctx context.Context, c config.Config) (schema.Prereq, map[string]interface{}, error) {
@@ -65,7 +80,7 @@ func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy,
 	if c.Archive.SevenZipPath != "auto" {
 		candidates = append(candidates, c.Archive.SevenZipPath)
 	} else {
-		candidates = append(candidates, filepath.Join("third_party", "7zip", "7-Zip", "7z.exe"))
+		candidates = append(candidates, filepath.Join(p.thirdPartyDir(), "7zip", "7-Zip", "7z.exe"))
 		for _, key := range []string{"SOFTWARE\\7-Zip", "SOFTWARE\\WOW6432Node\\7-Zip"} {
 			h, err := regOpen(syscall.HKEY_LOCAL_MACHINE, key)
 			if err == nil {
@@ -78,7 +93,7 @@ func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy,
 		}
 		candidates = append(candidates, `C:\Program Files\7-Zip\7z.exe`, `C:\Program Files (x86)\7-Zip\7z.exe`)
 	}
-	zipPath := findExecutable(candidates, p.ExeDir)
+	zipPath := findExecutable(candidates, p.dataBase())
 	if zipPath == "" && deploy && (c.Archive.RequireSevenZip || (c.OCR.Enabled && c.OCR.Engine != "none")) {
 		var err error
 		zipPath, err = p.deploySevenZip(ctx)
@@ -108,7 +123,7 @@ func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy,
 		}
 	}
 	if report.ArchiveBackend == nil {
-		report.Issues = append(report.Issues, "7-Zip missing: install third_party\\7zip\\7z*-x64.exe /S, or msiexec /i 7z*-x64.msi /quiet /norestart; bypass with --no-archive")
+		report.Issues = append(report.Issues, fmt.Sprintf("7-Zip missing: place offline installer under %s; bypass with --no-archive", filepath.Join(p.thirdPartyDir(), "7zip")))
 	}
 	if v.NativeMount() {
 		report.MountBackend = schema.String("system")
@@ -135,14 +150,14 @@ func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy,
 			paths = append(paths, c.OCR.EnginePath)
 		} else {
 			stem := strings.TrimSuffix(exe, ".exe")
-			paths = append(paths, filepath.Join("third_party", "ocr", stem, exe), filepath.Join("third_party", "ocr", exe))
-			paths = append(paths, localOCRExecutables(p.ExeDir, exe)...)
+			paths = append(paths, filepath.Join(p.thirdPartyDir(), "ocr", stem, exe), filepath.Join(p.thirdPartyDir(), "ocr", exe))
+			paths = append(paths, localOCRExecutablesIn(filepath.Join(p.thirdPartyDir(), "ocr"), exe)...)
 			if path, err := exec.LookPath(exe); err == nil {
 				paths = append(paths, path)
 			}
 			paths = append(paths, filepath.Join(`C:\tools`, stem, exe), filepath.Join(`D:\tools`, stem, exe), filepath.Join(`C:\Program Files`, stem, exe), filepath.Join(`C:\Program Files\Tesseract-OCR`, exe))
 		}
-		path := findExecutable(paths, p.ExeDir)
+		path := findExecutable(paths, p.dataBase())
 		if path == "" && deploy && (engine == "paddleocr_json" || engine == "rapidocr_json") {
 			if report.ArchiveBackend == nil {
 				report.Issues = append(report.Issues, "无法自动部署 OCR：需要先准备可用的 7-Zip")
@@ -182,11 +197,11 @@ func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy,
 			}
 		}
 		if report.OCREngineStatus != "ok" {
-			archives, _ := filepath.Glob(filepath.Join(p.ExeDir, "third_party", "ocr", "*.7z"))
+			archives, _ := filepath.Glob(filepath.Join(p.thirdPartyDir(), "ocr", "*.7z"))
 			if path == "" && len(archives) > 0 {
-				report.Issues = append(report.Issues, "检测到 OCR 离线压缩包，但压缩包不能直接运行。请先完整解压（保留模型和 DLL），再在设置中选择引擎 exe，或解压到工具同级 third_party\\ocr\\PaddleOCR-json（或 RapidOCR-json）目录。")
+				report.Issues = append(report.Issues, fmt.Sprintf("检测到 OCR 离线包。请完整解压（保留模型和 DLL）到 %s，或在设置中选择引擎 exe。", filepath.Join(p.thirdPartyDir(), "ocr")))
 			}
-			report.Issues = append(report.Issues, "未检测到可用 OCR 引擎：请部署 third_party\\ocr\\PaddleOCR-json 或 RapidOCR-json；当前退回 UIA/Win32 + 模板；可用 --no-ocr 显式跳过")
+			report.Issues = append(report.Issues, fmt.Sprintf("未检测到可用 OCR 引擎：请部署到 %s；当前退回 UIA/Win32 + 模板；可用 --no-ocr 显式跳过", filepath.Join(p.thirdPartyDir(), "ocr")))
 		}
 	}
 	for i := range report.OCREngines {

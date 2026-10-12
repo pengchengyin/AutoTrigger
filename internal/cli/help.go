@@ -25,9 +25,9 @@ const helpText = `用法:
 
 基本:
   --input <路径>            待触发/安装的样本文件或目录（除检查类命令外必填）
-  --output <路径>           结果 JSON 路径；"-" 表示写 stdout（默认 .\autotrigger-result.json）
+  --output <路径>           结果 JSON 路径；"-" 表示写 stdout（默认 数据目录\results\autotrigger-result.json）
   --recursive               目录输入时递归子目录
-  --config <路径>           指定配置文件（显式指定时取代同目录 config.json）
+  --config <路径>           指定配置文件（默认 数据目录\config\config.json）
 
 前置与能力:
   --check-prereq            检查并部署缺失的离线前置（7-Zip / OCR）后退出
@@ -53,12 +53,15 @@ const helpText = `用法:
 输出与日志:
   --json                    检查类命令以 JSON 输出
   --pretty                  缩进 JSON
-  --log-file <路径>         日志路径（默认 <结果路径>.log）
+  --log-file <路径>         日志路径（默认 数据目录\logs；显式 --output 时默认 <结果路径>.log）
   --log-level <级别>        debug | info | warn | error
 
 帮助:
   -h, --help                显示本帮助并退出
   --gui                     单独使用，打开图形界面（需 Windows；等效于双击本程序）
+
+数据目录默认 EXE 同级，在 GUI 设置中统一修改；config\data-location.json 记录位置。
+旧版 config.json 可显式通过 --config 使用，或在 GUI 首次提示中复制迁移。
 
 退出码:
   0 正常完成         1 工具运行期异常     2 参数或路径非法

@@ -9,7 +9,7 @@ rem
 rem  Usage:  install-windows.bat [any install-windows.ps1 parameters]
 rem  Example: install-windows.bat -Check -Json
 rem
-rem  Dependencies default to tool-local third_party directories.
+rem  Dependencies default to tool-local third_parties directories.
 rem  Windows may still request UAC approval for the 7-Zip installer.
 rem ---------------------------------------------------------------------------
 setlocal
@@ -39,7 +39,7 @@ if "%RC%"=="0" (
 ) else if "%RC%"=="4" (
   echo [FAIL] 7-Zip is still missing. Re-run as Administrator, then check the log above.
 ) else if "%RC%"=="5" (
-  echo [FAIL] The OCR engine is not ready. Check third_party\ocr\*.7z, then re-run as Administrator.
+  echo [FAIL] The OCR engine is not ready. Check third_parties\ocr\*.7z, then re-run as Administrator.
 ) else (
   echo [FAIL] Installer exited with code %RC%. See the log above.
 )

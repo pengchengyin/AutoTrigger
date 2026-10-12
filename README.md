@@ -6,7 +6,23 @@
 
 在资源管理器中**双击 `AutoTrigger.exe`** 即可打开界面（无参数且独占新控制台时自动弹出）；也可用 `AutoTrigger.exe --gui` 显式启动。
 
-用**【选择文件…】**和**【选择文件夹…】**录入样本路径（直接弹系统对话框，不用手打路径），可改结果路径、配置路径、超时、日志级别，以及递归、跳过压缩包、关闭 OCR、单实例锁等开关；支持**一键生成默认 `config.json`**（已存在时不覆盖）与**打开编辑配置**；底部实时显示**等价命令行**，可一键复制去脚本里复跑。
+用【选择文件】或【选择文件夹】录入样本。公共参数在设置中保存，新建任务继承。任务详情下方提供实时执行日志与格式化结果 JSON。
+
+### 数据目录与模板迁移
+
+设置 → 基础设置只需要指定一个数据目录，默认是 `AutoTrigger.exe` 所在目录。目录内固定为：
+
+```text
+logs/             执行与环境检测日志
+results/          任务结果与恢复记录
+templates/        模板项目、捕获图片与发布版本
+third_parties/    7-Zip、OCR 离线包与部署文件
+config/           config.json、界面偏好及任务历史
+```
+
+修改数据目录后点击保存，会询问复制迁移、使用新目录或取消。复制保留原数据，目标已有数据时不覆盖；迁移前先关闭其他运行实例。EXE 同级 `config/data-location.json` 只记录目录位置，重启和命令行共用。首次发现旧版目录会另行询问复制迁移。
+
+模板管理右上角【批量导出】生成带完整性校验的 ZIP，【批量导入】导入到当前数据目录。重名模板不会覆盖，导入后需要自行勾选启用。导出包括草稿图片、标记和发布历史，但不携带启用状态。
 
 点【开始】后界面在后台调用与命令行**完全相同**的实现：参数校验、退出码语义与结果 JSON 一致，结果文件照常写出，日志区实时滚动；运行中可【停止】触发协作式中止。
 
@@ -14,7 +30,7 @@
 
 ## 安装前置（7-Zip / OCR）
 
-工具本体免安装，但**解压压缩包**需要外部 **7-Zip**（默认最低 24.09），**GUI 自动化的文字识别**需要外部 **OCR 引擎**（PaddleOCR-json / RapidOCR-json）。交付包 `scripts\` 下带一键脚本，直接把 `third_party\` 里的离线物料装好并写好 `config.json`：
+工具本体免安装，但**解压压缩包**需要外部 **7-Zip**（默认最低 24.09），**GUI 自动化的文字识别**需要外部 **OCR 引擎**（PaddleOCR-json / RapidOCR-json）。交付包 `scripts\` 下带一键脚本，直接把 `third_parties\` 里的离线物料装好并写好 `config.json`：
 
 ```powershell
 # 双击也行；建议以管理员身份运行
@@ -23,7 +39,7 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -Check
 ```
 
-脚本会：① 复用已有 `7z.exe`（没有才用离线包安装到工具同级 `third_party\7zip\7-Zip`）；② 把 OCR 离线包释放到工具同级 `third_party\ocr\PaddleOCR-json` 与 `RapidOCR-json`；③ 写最小增量配置（覆盖前备份）；④ 只读复核。脚本可选，日常 GUI 检查环境已能自动部署缺失依赖。退出码 `0` 就绪 / `4` 缺 7-Zip / `5` 缺 OCR，详见 `DEPLOY.md`。
+脚本会：① 复用已有 `7z.exe`（没有才用离线包安装到工具同级 `third_parties\7zip\7-Zip`）；② 把 OCR 离线包释放到工具同级 `third_parties\ocr\PaddleOCR-json` 与 `RapidOCR-json`；③ 写最小增量配置（覆盖前备份）；④ 只读复核。脚本可选，日常 GUI 检查环境已能自动部署缺失依赖。退出码 `0` 就绪 / `4` 缺 7-Zip / `5` 缺 OCR，详见 `DEPLOY.md`。
 
 ## 使用
 
@@ -41,7 +57,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps
 
 `--output -` 的 stdout 只有一个 JSON 文档。日志、进度和依赖提示写 stderr 与日志文件。PowerShell 5.1 重定向可能将 stdout 转为 UTF-16；第三方集成推荐 `--output result.json`，结果文件始终为 UTF-8 无 BOM。
 
-首次使用点击“检查环境”或执行 `--check-prereq`：程序复用已有 7-Zip 和 OCR；缺失时使用同级 `third_party` 离线包静默部署到工具目录，再做能力自检，不联网下载。`--no-deploy-deps` 仅检测，不部署；`--no-archive` 跳过压缩包和映像，`--no-ocr` 关闭 OCR。详情见 [DEPLOY.md](DEPLOY.md)。
+首次使用点击“检查环境”或执行 `--check-prereq`：程序复用已有 7-Zip 和 OCR；缺失时使用数据目录中的 `third_parties` 离线包静默部署到工具目录，再做能力自检，不联网下载。`--no-deploy-deps` 仅检测，不部署；`--no-archive` 跳过压缩包和映像，`--no-ocr` 关闭 OCR。详情见 [DEPLOY.md](DEPLOY.md)。
 
 ## 安装时出现管理员权限确认（UAC）
 
@@ -126,7 +142,7 @@ Windows 使用 `scripts/build.ps1 -Go <go.exe>`。构建包含 gofmt/vet、测�
 
 `scripts/smoke-windows.ps1` 使用测试目录内的无害向导；`-Gui` 验证真实点击链，`-Archive` 验证 ZIP 解压安装。样本源码在 `testdata/wizard`，仅写 `AT_FIXTURE_DEST`，不修改注册表。先用 `GOOS=windows GOARCH=amd64 go build -o dist/wizard-fixture.exe ./testdata/wizard` 构建夹具。Win7、真实 MSI/Inno/NSIS/InstallShield 和 ISO 挂载须按 [验收状态](docs/验收状态.md) 补充实机验收。
 
-将三份官方离线物料放入 `dist/third_party` 后，运行 `go run ./tools/package`，生成 `dist/AutoTrigger-0.1.0.zip` 与同名目录。清单含每个文件的 SHA-256；开发交付明确 `release_ready: false`。`go run ./tools/package --release` 会拒绝不齐备的离线物料与真实模板；不覆盖已有交付目录，需更换 `--out`。
+将三份官方离线物料放入 `dist/third_parties` 后，运行 `go run ./tools/package`，生成 `dist/AutoTrigger-0.1.0.zip` 与同名目录。清单含每个文件的 SHA-256；开发交付明确 `release_ready: false`。`go run ./tools/package --release` 会拒绝不齐备的离线物料与真实模板；不覆盖已有交付目录，需更换 `--out`。
 
 ## 当前边界
 

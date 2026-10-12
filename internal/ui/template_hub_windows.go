@@ -52,21 +52,21 @@ func (f *form) ensureHubControls() {
 	for _, id := range hubControlIDs {
 		procShowWindow.Call(f.ctrls[id], swHide)
 	}
-	if err := initializeTemplateSelection(f.exeDir); err != nil {
+	if err := initializeTemplateSelection(f.templateRoot()); err != nil {
 		f.setStatusKind(err.Error(), statusKindFail)
 	}
 	f.refreshTemplateHub()
 }
 
 func (f *form) refreshTemplateHub() {
-	projects, err := listTemplateProjects(f.exeDir)
+	projects, err := listTemplateProjects(f.templateRoot())
 	if err != nil {
 		f.setStatusKind("模板读取失败："+err.Error(), statusKindFail)
 		return
 	}
 	f.hubProjects = projects
 	f.hubEnabled = map[string]bool{}
-	index, err := selectedProjects(f.exeDir)
+	index, err := selectedProjects(f.templateRoot())
 	if err != nil {
 		f.setStatusKind("启用索引读取失败："+err.Error(), statusKindFail)
 	} else {
@@ -80,13 +80,13 @@ func (f *form) refreshTemplateHub() {
 	f.hubCaptures = nil
 	f.hubLegacy = nil
 	if p, ok := f.hubProject(); ok {
-		index, err := readCaptureIndex(projectDir(f.exeDir, p), p.ID)
+		index, err := readCaptureIndex(projectDir(f.templateRoot(), p), p.ID)
 		if err != nil {
 			f.setStatusKind(err.Error(), statusKindFail)
 		} else {
 			f.hubCaptures = index.Items
 		}
-		legacy, err := legacyProjectImages(f.exeDir, p)
+		legacy, err := legacyProjectImages(f.templateRoot(), p)
 		if err != nil {
 			f.setStatusKind(err.Error(), statusKindFail)
 		} else {
@@ -224,14 +224,14 @@ func (f *form) paintTemplateHub(dc uintptr, r rectT) {
 		text.Top += int32(f.px(40))
 		text.Bottom = card.Bottom - int32(f.px(80))
 		drawText(dc, valueOr(p.Description, "未填写描述"), text, modernTheme.muted, f.font, dtLeft|0x10)
-		index, err := readCaptureIndex(projectDir(f.exeDir, p), p.ID)
+		index, err := readCaptureIndex(projectDir(f.templateRoot(), p), p.ID)
 		count := 0
 		for _, item := range index.Items {
 			if item.Confirmed {
 				count++
 			}
 		}
-		legacy, legacyErr := legacyProjectImages(f.exeDir, p)
+		legacy, legacyErr := legacyProjectImages(f.templateRoot(), p)
 		count += len(legacy)
 		label := fmt.Sprintf("已标记图片：%d", count)
 		if err != nil || legacyErr != nil {
@@ -258,7 +258,7 @@ func (f *form) pauseHubProject() error {
 		return fmt.Errorf("任务运行中，请结束后再编辑")
 	}
 	if f.hubEnabled[f.hubSelected] {
-		if err := toggleTemplateProject(f.exeDir, f.hubSelected, false, false); err != nil {
+		if err := toggleTemplateProject(f.templateRoot(), f.hubSelected, false, false); err != nil {
 			return err
 		}
 		f.hubEnabled[f.hubSelected] = false
@@ -284,7 +284,7 @@ func (f *form) hubCommand(id, code int) bool {
 			f.openHubProject(p.ID)
 		} else {
 			enabled := f.isChecked(id)
-			if err := toggleTemplateProject(f.exeDir, p.ID, enabled, f.isRunning()); err != nil {
+			if err := toggleTemplateProject(f.templateRoot(), p.ID, enabled, f.isRunning()); err != nil {
 				messageBox(f.hwnd, "无法切换模板", err.Error(), mbOK|mbIconInfo)
 				f.setStatusKind(err.Error(), statusKindFail)
 			} else if enabled {
@@ -313,13 +313,13 @@ func (f *form) hubCommand(id, code int) bool {
 			item := f.hubCaptures[i]
 			name = item.Name
 			action = item.Rule.Action
-			shot, err = captureImage(projectDir(f.exeDir, p.project), item)
+			shot, err = captureImage(projectDir(f.templateRoot(), p.project), item)
 		} else {
 			entry := f.hubLegacy[i-len(f.hubCaptures)]
 			name = entry.ID
 			action = entry.Action
 			var file *os.File
-			file, err = os.Open(filepath.Join(projectDir(f.exeDir, p.project), filepath.FromSlash(entry.File)))
+			file, err = os.Open(filepath.Join(projectDir(f.templateRoot(), p.project), filepath.FromSlash(entry.File)))
 			if err == nil {
 				shot, err = png.Decode(file)
 				file.Close()
@@ -366,12 +366,12 @@ func (f *form) hubCommand(id, code int) bool {
 		p, ok := f.hubProject()
 		var err error
 		if !ok {
-			p, err = newTemplateProject(f.exeDir, name)
+			p, err = newTemplateProject(f.templateRoot(), name)
 		}
 		if err == nil {
 			p.Name = name
 			p.Description = strings.TrimSpace(windowText(f.ctrls[hubDescription]))
-			err = writeProject(f.exeDir, p)
+			err = writeProject(f.templateRoot(), p)
 		}
 		if err != nil {
 			f.setStatusKind(err.Error(), statusKindFail)
@@ -412,9 +412,9 @@ func (f *form) hubCommand(id, code int) bool {
 		}
 		var err error
 		if i < len(f.hubCaptures) {
-			err = updateCaptureMark(f.exeDir, p, f.hubCaptures[i].ID, action, id == hubDelete)
+			err = updateCaptureMark(f.templateRoot(), p, f.hubCaptures[i].ID, action, id == hubDelete)
 		} else {
-			err = updateLegacyMark(f.exeDir, p, f.hubLegacy[i-len(f.hubCaptures)].ID, action, id == hubDelete)
+			err = updateLegacyMark(f.templateRoot(), p, f.hubLegacy[i-len(f.hubCaptures)].ID, action, id == hubDelete)
 		}
 		if err != nil {
 			f.setStatusKind(err.Error(), statusKindFail)

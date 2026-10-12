@@ -30,6 +30,7 @@ func TestWindowsTemplateHub(t *testing.T) {
 	procSetProcessDPIAware.Call()
 	f := newForm(cli.Dependencies{})
 	f.exeDir = t.TempDir()
+	f.dataDir = ""
 	f.historyDir = filepath.Join(f.exeDir, "history")
 	f.history = nil
 	if err := f.create(); err != nil {

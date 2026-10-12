@@ -72,7 +72,7 @@ func pageSubtitle(id pageID) string {
 	case pageConfig:
 		return "加载、编辑、校验和导出配置"
 	case pageSettings:
-		return "工作目录、输出目录与前置依赖检查"
+		return "统一数据目录、运行参数与前置依赖检查"
 	case pageTaskDetail:
 		return "任务状态、证据、置信度和结果文件"
 	case pageHelp:
@@ -164,7 +164,7 @@ func headerActions(id pageID) []pageAction {
 	case pageNewTask:
 		return []pageAction{{ID: "back-tasks", Label: "返回列表", Kind: "normal"}}
 	case pageTemplates:
-		return []pageAction{{ID: "new-template", Label: "+ 新建模板", Kind: "primary"}}
+		return []pageAction{{ID: "new-template", Label: "+ 新建模板", Kind: "primary"}, {ID: "import-templates", Label: "批量导入", Kind: "normal"}, {ID: "export-templates", Label: "批量导出", Kind: "normal"}}
 	case pageLogs:
 		return nil
 	case pageConfig:
