@@ -181,11 +181,19 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 		var shot image.Image
 		if len(candidates) == 0 {
 			shot, err = a.Native.Screenshot(w)
+			if err != nil {
+				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 截图失败，无法进行模板/OCR 回退：%v", w.Title, err))
+			}
 			if err == nil {
 				candidates, _ = a.match(ctx, w, shot)
 				if len(candidates) == 0 && a.Engine != nil && a.Config.OCR.Enabled {
 					started := time.Now()
 					texts, e := a.Engine.Recognize(ctx, shot)
+					if e != nil {
+						u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q OCR 识别失败：%v", w.Title, e))
+					} else {
+						u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 已调用 OCR：识别文本 %d 项", w.Title, len(texts)))
+					}
 					if e == nil {
 						for _, t := range texts {
 							left, top, right, bottom := t.Box[0].X, t.Box[0].Y, t.Box[2].X, t.Box[2].Y
@@ -198,9 +206,28 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 							candidates = append(candidates, ports.Control{ID: fmt.Sprint(t.Box), Text: t.Text, Role: "button", Bounds: r, Window: w, Source: "ocr", Confidence: t.Score, Enabled: true, RecognizeMS: time.Since(started).Milliseconds()})
 						}
 					}
+				} else if len(candidates) == 0 {
+					u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 未命中模板，OCR 未启用或引擎未就绪", w.Title))
 				}
 			}
 		}
+		filtered := candidates[:0]
+		for _, candidate := range candidates {
+			blocked := false
+			if candidate.Source == "ocr" || candidate.Source == "template" {
+				x := (candidate.Bounds.Left + candidate.Bounds.Right) / 2
+				y := (candidate.Bounds.Top + candidate.Bounds.Bottom) / 2
+				for _, control := range controls {
+					if (!control.Enabled || a.semantic(control.Text) == "deny") && x >= control.Bounds.Left && x < control.Bounds.Right && y >= control.Bounds.Top && y < control.Bounds.Bottom {
+						blocked = true
+					}
+				}
+			}
+			if !blocked {
+				filtered = append(filtered, candidate)
+			}
+		}
+		candidates = filtered
 		if len(candidates) == 0 {
 			if a.Config.GUI.DumpFailedShots && shot != nil {
 				a.saveFailed(w, shot)
