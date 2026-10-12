@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -145,6 +146,7 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		}
 	}
 	newFiles, removed := 0, 0
+	addedByDir, removedByDir := map[string]int{}, map[string]int{}
 	for dir, s := range after.Dirs {
 		if base.Truncated || after.Truncated {
 			continue
@@ -152,14 +154,17 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		old, exists := base.Dirs[dir]
 		if !exists {
 			newFiles += 1 + s.Files
+			addedByDir[dir] = 1 + s.Files
 			o.SideEffects = true
 		} else {
 			if s.Files > old.Files {
 				newFiles += s.Files - old.Files
+				addedByDir[dir] = s.Files - old.Files
 				o.SideEffects = true
 			}
 			if s.Files < old.Files {
 				removed += old.Files - s.Files
+				removedByDir[dir] = old.Files - s.Files
 			}
 			if s.Bytes != old.Bytes || s.Modified != old.Modified {
 				o.SideEffects = true
@@ -177,15 +182,20 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		}
 		if _, ok := after.Dirs[dir]; !ok {
 			removed += 1 + s.Files
+			removedByDir[dir] = 1 + s.Files
 		}
 	}
 	if newFiles >= v.Config.MinNewFiles {
-		add("S2", "S", "filesystem_diff", "filesystem", fmt.Sprintf("新增 %d 个文件或目录实体", newFiles))
+		for _, dir := range sortedDirectories(addedByDir) {
+			add("S2", "S", "filesystem_diff", dir, fmt.Sprintf("目录 %s 新增 %d 个文件或目录实体（快照差异，不代表进程归因）", dir, addedByDir[dir]))
+		}
 	} else if o.SideEffects && len(newReg) == 0 {
 		add("A3", "A", "filesystem_changed", "filesystem", "监控文件或目录发生变化")
 	}
 	if !base.Truncated && !after.Truncated && removed > v.Config.ShrinkTolerance && len(newReg) == 0 {
-		add("N5", "N", "filesystem_shrunk", "filesystem", fmt.Sprintf("移除 %d 个文件或目录实体", removed))
+		for _, dir := range sortedDirectories(removedByDir) {
+			add("N5", "N", "filesystem_shrunk", dir, fmt.Sprintf("目录 %s 移除 %d 个文件或目录实体（快照差异，不代表进程归因）", dir, removedByDir[dir]))
+		}
 	}
 	if exit != nil {
 		if cmd.MSI && MSICodeIsSuccess(*exit) {
@@ -235,6 +245,15 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		}
 	}
 	return o, nil
+}
+
+func sortedDirectories(counts map[string]int) []string {
+	keys := make([]string, 0, len(counts))
+	for dir := range counts {
+		keys = append(keys, dir)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func pathWithin(path, root string) bool {
