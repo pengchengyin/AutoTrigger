@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 	"syscall"
@@ -550,19 +551,16 @@ func LooksLikeDoubleClick() bool {
 	return consoleProcessCount() == 1
 }
 
-// hideConsole 隐藏由本进程独占的控制台窗口（双击启动时会先出现一个黑框）。
-//
-// 附加在用户已有终端上时**不做任何事** —— GetConsoleWindow 返回的是用户正在
-// 使用的那扇窗口，隐藏它会让用户的终端凭空消失。采用隐藏而非 FreeConsole，
-// 保留句柄以便异常时仍有输出通道。
-func hideConsole() {
-	if consoleProcessCount() != 1 {
-		return
+// Detach only the GUI process; never hide or close a shared user terminal.
+func detachConsole() error {
+	if consoleProcessCount() == 0 {
+		return nil
 	}
-	h, _, _ := procGetConsoleWindow.Call()
-	if h != 0 {
-		procShowWindow.Call(h, swHide)
+	r, _, err := kernel32.NewProc("FreeConsole").Call()
+	if r == 0 {
+		return fmt.Errorf("FreeConsole: %w", err)
 	}
+	return nil
 }
 
 // dpiScale 返回系统 DPI 相对 96 的缩放系数，用于把布局像素换算成实际像素。
