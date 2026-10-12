@@ -76,7 +76,7 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 			if !existed && !remains && entry.DisplayName != "" && !removedRegistry[key] {
 				replaced := false
 				for _, current := range after.Registry {
-					if strings.EqualFold(current.DisplayName, entry.DisplayName) {
+					if sameProduct(entry, current) {
 						replaced = true
 						break
 					}
@@ -135,7 +135,7 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		}
 		replacement := false
 		for _, n := range after.Registry {
-			if strings.EqualFold(n.DisplayName, r.DisplayName) {
+			if sameProduct(r, n) {
 				replacement = true
 				break
 			}

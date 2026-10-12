@@ -165,6 +165,7 @@ type GUIController interface {
 }
 
 type UninstallEntry struct {
+	Publisher       string `json:"publisher,omitempty"`
 	Key             string `json:"key"`
 	DisplayName     string `json:"display_name"`
 	DisplayVersion  string `json:"display_version"`

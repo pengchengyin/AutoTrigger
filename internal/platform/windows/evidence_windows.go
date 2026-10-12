@@ -71,7 +71,7 @@ func registrySnapshot(ctx context.Context) (map[string]ports.UninstallEntry, []s
 				continue
 			}
 			id := r.prefix + "\\" + key
-			out[id] = ports.UninstallEntry{Key: id, DisplayName: regString(sub, "DisplayName"), DisplayVersion: regString(sub, "DisplayVersion"), InstallLocation: regString(sub, "InstallLocation"), DisplayIcon: regString(sub, "DisplayIcon"), UninstallString: regString(sub, "UninstallString")}
+			out[id] = ports.UninstallEntry{Publisher: regString(sub, "Publisher"), Key: id, DisplayName: regString(sub, "DisplayName"), DisplayVersion: regString(sub, "DisplayVersion"), InstallLocation: regString(sub, "InstallLocation"), DisplayIcon: regString(sub, "DisplayIcon"), UninstallString: regString(sub, "UninstallString")}
 			syscall.RegCloseKey(sub)
 		}
 		syscall.RegCloseKey(h)
