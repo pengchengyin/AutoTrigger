@@ -201,7 +201,7 @@ func (f *form) paintHome(hdc uintptr, clientW, clientH int) {
 
 	quickTop := cardTop + f.px(132)
 	drawText(hdc, "快速入口", rectT{Left: int32(left), Top: int32(quickTop - f.px(26)), Right: int32(right), Bottom: int32(quickTop - f.px(4))}, modernTheme.text, f.statusFontOrDefault(), dtLeft|dtVCenter|dtSingleLine)
-	actions := []string{"新建任务", "模板管理", "日志查看", "设置"}
+	actions := []string{"新建任务", "模板管理", "任务历史", "设置"}
 	for i, text := range actions {
 		r := f.homeActionRect(i, clientW, clientH)
 		roundRect(hdc, r, modernTheme.surface, modernTheme.border, f.px(uiCardRadius))
@@ -446,6 +446,9 @@ func (f *form) paintNativeButton(item *buttonDrawItem) {
 	if (item.ID == idSettingsBasic && !f.settingsAdvanced && !f.settingsRecognition) || (item.ID == idSettingsRecognition && f.settingsRecognition) || (item.ID == idSettingsAdvanced && f.settingsAdvanced) {
 		background, foreground = modernTheme.primary, modernTheme.surface
 	}
+	if item.ID == idDetailLogTab && !f.detailJSON || item.ID == idDetailJSONTab && f.detailJSON {
+		background, foreground = modernTheme.primary, modernTheme.surface
+	}
 	if item.State&1 != 0 {
 		background = modernTheme.primarySoft
 	}
@@ -453,7 +456,11 @@ func (f *form) paintNativeButton(item *buttonDrawItem) {
 		background, foreground = modernTheme.bg, modernTheme.muted
 	}
 	roundRect(item.DC, item.Rect, background, modernTheme.border, f.px(5))
-	drawText(item.DC, windowText(item.Window), item.Rect, foreground, f.font, dtCenter|dtVCenter|dtSingleLine)
+	flags := uint32(dtCenter | dtVCenter | dtSingleLine)
+	if item.ID == idDetailPath {
+		flags = dtLeft | dtVCenter | dtSingleLine | dtEndEllipsis
+	}
+	drawText(item.DC, windowText(item.Window), item.Rect, foreground, f.font, flags)
 	if item.State&0x10 != 0 {
 		r := item.Rect
 		r.Left += 3

@@ -8,8 +8,8 @@ import (
 )
 
 func TestNavItemsCoverRequiredPages(t *testing.T) {
-	if len(uiNavItems) != 6 {
-		t.Fatalf("导航项数量 = %d，期望 6", len(uiNavItems))
+	if len(uiNavItems) != 5 {
+		t.Fatalf("导航项数量 = %d，期望 5", len(uiNavItems))
 	}
 	seen := map[pageID]string{}
 	for _, item := range uiNavItems {
@@ -29,6 +29,9 @@ func TestNavItemsCoverRequiredPages(t *testing.T) {
 	}
 	if _, ok := seen[pageConfig]; ok {
 		t.Fatal("config must be inside settings")
+	}
+	if _, ok := seen[pageLogs]; ok {
+		t.Fatal("logs must be inside task detail")
 	}
 }
 

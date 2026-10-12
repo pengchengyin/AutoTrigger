@@ -103,6 +103,7 @@ func (f *form) createWorkflowControls() {
 	f.refreshTaskList()
 	f.installLiveViews()
 	f.addTooltip(idResultHelp, "结果 JSON 的结构与字段含义（第三方对接）")
+	f.addTooltip(idDetailPath, "点击打开当前任务对应的文件")
 }
 
 var syscallComctl = syscall.NewLazyDLL("comctl32.dll")
@@ -234,6 +235,7 @@ func (f *form) viewSelectedTask() {
 		return
 	}
 	f.selectedResult = f.historyView[index].Result
+	f.detailJSON = false
 	f.setPage(pageTaskDetail)
 }
 
@@ -371,6 +373,10 @@ func (f *form) registerTask(opts Options) {
 		}
 	}
 	record := taskRecord{ID: id, Name: name, Input: input, Result: result, Config: configuration, Created: time.Now()}
+	record.LogPath = result + ".log"
+	if absolute, err := filepath.Abs(record.LogPath); err == nil {
+		record.LogPath = absolute
+	}
 	record.Execution = &opts
 	if stat, err := os.Stat(input); err == nil {
 		if stat.IsDir() {

@@ -15,6 +15,7 @@ type taskRecord struct {
 	Name      string    `json:"name"`
 	Input     string    `json:"input"`
 	Result    string    `json:"result"`
+	LogPath   string    `json:"log_path,omitempty"`
 	Config    string    `json:"config"`
 	Created   time.Time `json:"created"`
 	ExitCode  *int      `json:"exit_code,omitempty"`

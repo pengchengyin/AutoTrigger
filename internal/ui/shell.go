@@ -40,7 +40,6 @@ var uiNavItems = []navItem{
 	{ID: pageHome, Icon: "⌂", Label: "首页"},
 	{ID: pageTask, Icon: "⚙", Label: "任务配置"},
 	{ID: pageTemplates, Icon: "▣", Label: "模板管理"},
-	{ID: pageLogs, Icon: "≡", Label: "日志查看"},
 	{ID: pageSettings, Icon: "◎", Label: "设置"},
 	{ID: pageHelp, Icon: "?", Label: "帮助与关于"},
 }

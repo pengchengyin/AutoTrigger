@@ -30,9 +30,10 @@ func TestRunningDetailOverridesIntermediateResult(t *testing.T) {
 		t.Fatalf("live log did not refresh: %q", got)
 	}
 	f.running = false
+	f.detailJSON = true
 	snap, ok = f.resultSnapshot()
-	if !ok || snap.PresentationState != "" || !strings.Contains(f.resultViewText(), "总体结论") {
-		t.Fatal("finished task did not restore result report")
+	if !ok || snap.PresentationState != "" || !strings.Contains(f.resultViewText(), `"task_id": "active"`) {
+		t.Fatal("finished task did not show formatted JSON")
 	}
 }
 

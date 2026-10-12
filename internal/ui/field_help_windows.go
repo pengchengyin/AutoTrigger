@@ -83,5 +83,13 @@ func (f *form) showFieldHelp(title, body string) {
 	setWindowTextRaw(p.body, body)
 	send(h, wmSize, 0, 0)
 	procShowWindow.Call(h, swShow)
+	if f.page == pageTaskDetail {
+		var owner rectT
+		user32.NewProc("GetWindowRect").Call(f.hwnd, uintptr(unsafe.Pointer(&owner)))
+		width, height := f.px(440), f.px(540)
+		x := int(owner.Right) - width - f.px(16)
+		y := int(owner.Top) + f.px(80)
+		procMoveWindow.Call(h, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 1)
+	}
 	procUpdateWindow.Call(h)
 }

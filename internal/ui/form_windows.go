@@ -120,6 +120,9 @@ const (
 	idDependencyDetails
 	idDetailRetry
 	idDetailStop
+	idDetailLogTab
+	idDetailJSONTab
+	idDetailPath
 )
 
 // 布局常量，单位为 96 DPI 下的像素（实际值经 scale 换算）。
@@ -196,6 +199,7 @@ type form struct {
 	historyStats        [3]int
 	activeTask          string
 	selectedResult      string
+	detailJSON          bool
 	settingsAdvanced    bool
 	settingsRecognition bool
 	loadingSettings     bool
@@ -480,6 +484,10 @@ func (f *form) createControls() {
 	f.button(idResultOpenDir, "打开目录")
 	f.button(idResultCopy, "复制")
 	f.button(idResultHelp, "?")
+	f.button(idDetailLogTab, "执行日志")
+	f.button(idDetailJSONTab, "结果 JSON")
+	f.button(idDetailPath, "")
+	send(f.ctrls[idResultView], emSetLimit, 0x7ffffffe, 0)
 	f.button(idTemplateAll, "全部模板")
 	f.button(idTemplateBuiltin, "内置模板")
 	f.button(idTemplateExternal, "自定义模板")
@@ -781,7 +789,20 @@ func (f *form) layoutResultControls(clientW, clientH int) {
 	}
 	if f.page == pageTaskDetail {
 		viewTop = top + rowH + f.px(10)
-		viewH = int(r.Bottom) - pad - viewTop
+		for _, id := range []int{idResultOpenFile, idResultOpenDir} {
+			procShowWindow.Call(f.ctrls[id], swHide)
+		}
+		f.showAt(idDetailLogTab, left, top, f.px(100), rowH)
+		f.showAt(idDetailJSONTab, left+f.px(106), top, f.px(110), rowH)
+		f.place(idResultRefresh, right-f.px(204), top, f.px(76), rowH)
+		f.place(idResultCopy, right-f.px(122), top, f.px(76), rowH)
+		f.place(idResultHelp, right-f.px(34), top, f.px(28), rowH)
+		if !f.detailJSON {
+			procShowWindow.Call(f.ctrls[idResultHelp], swHide)
+		}
+		viewH = maxInt(f.px(40), int(r.Bottom)-pad-viewTop-f.px(38))
+		f.showAt(idDetailPath, left, viewTop+viewH+f.px(6), right-left, f.px(28))
+		setWindowTextRaw(f.ctrls[idDetailPath], f.detailFilePath())
 	}
 	if viewH < f.px(120) && f.page != pageTaskDetail {
 		viewH = f.px(120)
@@ -967,7 +988,7 @@ func (f *form) showResultControls(visible bool) {
 	if visible {
 		cmd = swShow
 	}
-	for _, id := range []int{idResultView, idResultRefresh, idResultOpenFile, idResultOpenDir, idResultCopy, idResultHelp} {
+	for _, id := range []int{idResultView, idResultRefresh, idResultOpenFile, idResultOpenDir, idResultCopy, idResultHelp, idDetailLogTab, idDetailJSONTab, idDetailPath} {
 		if h := f.ctrls[id]; h != 0 {
 			procShowWindow.Call(h, cmd)
 		}
@@ -1135,7 +1156,7 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 			return 1
 		}
 	case wmCtlColorStatic, wmCtlColorBtn:
-		if uintptr(lparam) == f.ctrls[idResultView] && f.page == pageLogs {
+		if uintptr(lparam) == f.ctrls[idResultView] && (f.page == pageLogs || f.page == pageTaskDetail && !f.detailJSON) {
 			procSetBkMode.Call(wparam, opaqueBk)
 			procSetBkColor.Call(wparam, rgb(20, 27, 36))
 			procSetTextColor.Call(wparam, rgb(204, 231, 215))
@@ -1199,7 +1220,7 @@ func (f *form) onMouseDown(x, y int) {
 	case 1:
 		f.setPage(pageTemplates)
 	case 2:
-		f.setPage(pageLogs)
+		f.setPage(pageTask)
 	case 3:
 		f.setPage(pageSettings)
 	}
@@ -1430,6 +1451,9 @@ func (f *form) onCommand(id, code int) {
 		case idCfgValidate:
 			f.validateConfigEditor()
 		case idResultRefresh:
+			if f.page == pageTaskDetail {
+				f.resetDetailView()
+			}
 			f.refreshResultView()
 		case idResultOpenFile:
 			f.openResultFile()
@@ -1439,6 +1463,15 @@ func (f *form) onCommand(id, code int) {
 			f.copyResultView()
 		case idResultHelp:
 			f.showFieldHelp("结果 JSON 字段说明", fieldHelp(false))
+		case idDetailLogTab, idDetailJSONTab:
+			f.detailJSON = id == idDetailJSONTab
+			f.resetDetailView()
+			f.refreshResultView()
+			f.layout()
+		case idDetailPath:
+			if err := shellOpen(f.detailFilePath()); err != nil {
+				messageBox(f.hwnd, "文件暂不可用", err.Error(), mbOK|mbIconInfo)
+			}
 		case idConfigHelp:
 			f.showFieldHelp("高级配置字段说明", fieldHelp(true))
 		case idTemplateGuide:
@@ -1859,6 +1892,9 @@ func (f *form) runTaskOptions(opts Options) {
 		return
 	}
 	f.resultPath = opts.Output
+	if opts.Output != "" && opts.Output != "-" {
+		args = append(args, "--log-file", opts.Output+".log")
+	}
 	f.registerTask(opts)
 	f.launch("运行安装/触发", args, false)
 }
@@ -1956,7 +1992,7 @@ func (f *form) onRunDone(code int) {
 		} else if wasPrereq {
 			f.setStatusKind("未取得环境检测结果："+cli.ExitText(code)+"，请查看日志。", statusKindFail)
 		} else if code == 0 {
-			f.setStatusKind("√ 检查完成（详情见日志查看）", statusKindOK)
+			f.setStatusKind("√ 检查完成（可查看环境检测详情）", statusKindOK)
 		} else {
 			f.setStatusKind("× "+cli.ExitText(code)+"（退出码 "+strconv.Itoa(code)+"）", statusKindFail)
 		}
@@ -2148,6 +2184,9 @@ func (f *form) filteredLogText() string {
 }
 
 func (f *form) resultViewText() string {
+	if f.page == pageTaskDetail {
+		return f.detailViewText()
+	}
 	var b strings.Builder
 	if f.page == pageTaskDetail && f.selectedTaskRunning() {
 		f.mu.Lock()
