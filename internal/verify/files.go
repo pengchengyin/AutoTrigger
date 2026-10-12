@@ -88,7 +88,7 @@ func Files(ctx context.Context, c config.Verify) (map[string]ports.DirState, boo
 		walk(expanded, 0)
 	}
 	if truncated {
-		warnings = append(warnings, "文件系统快照达到条目数或 450ms 预算上限：负向文件计数证据已禁用")
+		warnings = append(warnings, "文件系统快照不完整（权限、条目数或 450ms 预算限制）：文件差异证据已禁用")
 	}
 	return out, truncated, warnings
 }

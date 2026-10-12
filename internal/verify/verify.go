@@ -88,7 +88,7 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 				}
 			}
 		}
-		if snapshot.Truncated || after.Truncated {
+		if base.Truncated || snapshot.Truncated || after.Truncated {
 			continue
 		}
 		for dir := range snapshot.Dirs {
@@ -146,6 +146,9 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 	}
 	newFiles, removed := 0, 0
 	for dir, s := range after.Dirs {
+		if base.Truncated || after.Truncated {
+			continue
+		}
 		old, exists := base.Dirs[dir]
 		if !exists {
 			newFiles += 1 + s.Files
@@ -169,6 +172,9 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		}
 	}
 	for dir, s := range base.Dirs {
+		if base.Truncated || after.Truncated {
+			continue
+		}
 		if _, ok := after.Dirs[dir]; !ok {
 			removed += 1 + s.Files
 		}
