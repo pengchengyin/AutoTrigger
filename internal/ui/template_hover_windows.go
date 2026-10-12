@@ -755,7 +755,12 @@ func hoverCaptureProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintpt
 			s.pane.capturing = false
 			s.pane.refreshCaptureRecords()
 			procShowWindow.Call(s.pane.owner.hwnd, swShow)
-			procShowWindow.Call(s.pane.hwnd, swShow)
+			if !s.pane.hub {
+				procShowWindow.Call(s.pane.hwnd, swShow)
+			} else {
+				s.pane.owner.refreshTemplateHub()
+				s.pane.owner.layout()
+			}
 			if s.cancelSession {
 				s.pane.status("已取消本次捕获，原有草稿和已发布版本未改变")
 			} else {

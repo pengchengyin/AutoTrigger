@@ -131,6 +131,18 @@ func (a *Automator) signal(text string) string {
 	}
 	return ""
 }
+
+func (a *Automator) controlAction(c ports.Control) string {
+	if a.semantic(c.Text) == "deny" {
+		return "deny"
+	}
+	if c.UserTemplate != "" && templates.SafeUserAction(c.RuleAction) {
+		return c.RuleAction
+	}
+	return a.semantic(c.Text)
+}
+
+func (a *Automator) ActionForText(text string) string { return a.semantic(text) }
 func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 	u := Update{Actions: []schema.GUIAction{}, Evidence: []schema.Evidence{}, Notes: []string{}}
 	windows, err := a.Native.Windows(pids)
@@ -167,6 +179,9 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			}
 		}
 		candidates := []ports.Control{}
+		if a.Templates != nil {
+			candidates = append(candidates, a.Templates.User.Controls(w, controls, a.semantic)...)
+		}
 		for _, c := range controls {
 			if c.Enabled && (c.Role == "button" || c.Role == "checkbox" || c.Role == "radio") {
 				action := a.semantic(c.Text)
@@ -179,8 +194,20 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			}
 		}
 		var shot image.Image
-		if len(candidates) == 0 {
+		if a.Templates != nil && a.Templates.User.HasImages(w) {
 			shot, err = a.Native.Screenshot(w)
+			if err == nil && shot != nil {
+				matchCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+				candidates = append(candidates, a.Templates.User.Images(matchCtx, w, shot)...)
+				cancel()
+			} else {
+				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 用户图片匹配截图失败：%v", w.Title, err))
+			}
+		}
+		if len(candidates) == 0 {
+			if shot == nil {
+				shot, err = a.Native.Screenshot(w)
+			}
 			if err != nil {
 				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 截图失败，无法进行模板/OCR 回退：%v", w.Title, err))
 			}
@@ -218,7 +245,7 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 				x := (candidate.Bounds.Left + candidate.Bounds.Right) / 2
 				y := (candidate.Bounds.Top + candidate.Bounds.Bottom) / 2
 				for _, control := range controls {
-					if (!control.Enabled || a.semantic(control.Text) == "deny") && x >= control.Bounds.Left && x < control.Bounds.Right && y >= control.Bounds.Top && y < control.Bounds.Bottom {
+					if (!control.Enabled || a.semantic(control.Text) == "deny" || control.Checked && (control.Role == "checkbox" || control.Role == "radio")) && x >= control.Bounds.Left && x < control.Bounds.Right && y >= control.Bounds.Top && y < control.Bounds.Bottom {
 						blocked = true
 					}
 				}
@@ -236,7 +263,10 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			continue
 		}
 		sort.SliceStable(candidates, func(i, j int) bool {
-			pi, pj := rank(a.semantic(candidates[i].Text)), rank(a.semantic(candidates[j].Text))
+			if (candidates[i].UserTemplate != "") != (candidates[j].UserTemplate != "") {
+				return candidates[i].UserTemplate != ""
+			}
+			pi, pj := rank(a.controlAction(candidates[i])), rank(a.controlAction(candidates[j]))
 			if pi != pj {
 				return pi < pj
 			}
@@ -289,7 +319,10 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 		s.lastControl = key
 		s.lastHash = hash
 		s.lastClick = time.Now()
-		action := a.semantic(c.Text)
+		action := a.controlAction(c)
+		if c.UserTemplate != "" {
+			u.Notes = append(u.Notes, fmt.Sprintf("用户模板命中：%s，方式=%s，分数=%.4f，动作=%s，点击已提交", c.UserTemplate, c.Source, c.Confidence, action))
+		}
 		g := schema.GUIAction{Window: w.Title, ControlText: c.Text, Source: c.Source, Action: "click", At: time.Now()}
 		if c.Source == "ocr" {
 			g.OCRScore = &c.Confidence

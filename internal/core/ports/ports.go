@@ -106,17 +106,19 @@ type Window struct {
 	Theme  string  `json:"theme"`
 }
 type Control struct {
-	ID          string  `json:"id"`
-	Text        string  `json:"text"`
-	Role        string  `json:"role"`
-	Bounds      Rect    `json:"bounds"`
-	Window      Window  `json:"window"`
-	Source      string  `json:"source"`
-	Confidence  float64 `json:"confidence"`
-	Enabled     bool    `json:"enabled"`
-	Checked     bool    `json:"checked"`
-	Native      uintptr `json:"-"`
-	RecognizeMS int64   `json:"recognize_ms"`
+	RuleAction   string  `json:"rule_action,omitempty"`
+	UserTemplate string  `json:"user_template,omitempty"`
+	ID           string  `json:"id"`
+	Text         string  `json:"text"`
+	Role         string  `json:"role"`
+	Bounds       Rect    `json:"bounds"`
+	Window       Window  `json:"window"`
+	Source       string  `json:"source"`
+	Confidence   float64 `json:"confidence"`
+	Enabled      bool    `json:"enabled"`
+	Checked      bool    `json:"checked"`
+	Native       uintptr `json:"-"`
+	RecognizeMS  int64   `json:"recognize_ms"`
 }
 type GUIAutomator interface {
 	Windows([]int) ([]Window, error)

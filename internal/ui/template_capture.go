@@ -17,6 +17,7 @@ import (
 )
 
 type captureRule struct {
+	Action        string  `json:"action,omitempty"`
 	Method        string  `json:"method"`
 	AutomationID  string  `json:"automation_id,omitempty"`
 	ControlType   int32   `json:"control_type,omitempty"`

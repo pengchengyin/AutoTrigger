@@ -199,6 +199,13 @@ type form struct {
 	historyStats        [3]int
 	activeTask          string
 	selectedResult      string
+	hubProjects         []templateProject
+	hubSelected         string
+	hubEditing          bool
+	hubPage             int
+	hubCaptures         []draftCapture
+	hubLegacy           []templates.Entry
+	hubEnabled          map[string]bool
 	detailJSON          bool
 	settingsAdvanced    bool
 	settingsRecognition bool
@@ -1205,6 +1212,18 @@ func (f *form) onMouseMove(x, y int) {
 }
 
 func (f *form) onMouseDown(x, y int) {
+	if f.page == pageTemplates && f.hubSelected == "" && !f.hubEditing {
+		w, h := f.clientSize()
+		for i, r := range f.hubCardRects(w, h) {
+			if pointInRect(x, y, r) {
+				at := f.hubPage*4 + i
+				if at < len(f.hubProjects) {
+					f.openHubProject(f.hubProjects[at].ID)
+				}
+				return
+			}
+		}
+	}
 	clientW, clientH := f.clientSize()
 	if action, ok := f.headerActionAt(x, y, clientW); ok {
 		f.performHeaderAction(action.ID)
@@ -1228,6 +1247,12 @@ func (f *form) onMouseDown(x, y int) {
 
 func (f *form) performHeaderAction(id string) {
 	switch id {
+	case "new-template":
+		f.hubSelected = ""
+		f.hubEditing = true
+		setWindowTextRaw(f.ctrls[hubName], "")
+		setWindowTextRaw(f.ctrls[hubDescription], "")
+		f.layout()
 	case "new-task":
 		f.beginNewTask()
 	case "back-tasks":
@@ -1362,6 +1387,9 @@ func (f *form) setPage(page pageID) {
 }
 
 func (f *form) onCommand(id, code int) {
+	if f.hubCommand(id, code) {
+		return
+	}
 	if id == idTemplateSelect && code == cbnSelChange {
 		f.selectedTemplateDetails()
 		return
@@ -2352,6 +2380,9 @@ func (f *form) setStatusKind(s, kind string) {
 		kind = statusKindInfo
 	}
 	f.statusKind = kind
+	if f.page == pageTemplates && f.ctrls[hubStatus] != 0 {
+		setWindowTextRaw(f.ctrls[hubStatus], s)
+	}
 	h := f.ctrls[idStatus]
 	if h == 0 {
 		return

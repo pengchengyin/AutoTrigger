@@ -66,7 +66,7 @@ func pageSubtitle(id pageID) string {
 	case pageTask:
 		return ""
 	case pageTemplates:
-		return "内置资源包与外部模板的查看入口"
+		return "模板项目"
 	case pageLogs:
 		return "任务日志、结果文件与诊断材料入口"
 	case pageConfig:
@@ -164,7 +164,7 @@ func headerActions(id pageID) []pageAction {
 	case pageNewTask:
 		return []pageAction{{ID: "back-tasks", Label: "返回列表", Kind: "normal"}}
 	case pageTemplates:
-		return []pageAction{{ID: "refresh-templates", Label: "刷新", Kind: "normal"}, {ID: "open-templates", Label: "打开模板目录", Kind: "normal"}}
+		return []pageAction{{ID: "new-template", Label: "+ 新建模板", Kind: "primary"}}
 	case pageLogs:
 		return nil
 	case pageConfig:

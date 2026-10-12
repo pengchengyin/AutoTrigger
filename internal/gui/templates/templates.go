@@ -41,6 +41,7 @@ type Index struct {
 	Entries []Entry `json:"entries"`
 }
 type Library struct {
+	User          UserIndex
 	Entries       []Entry
 	Masters       int
 	BuiltinCount  int
@@ -108,6 +109,27 @@ func Load(c config.GUI, root string) (*Library, error) {
 	}
 	if len(l.Entries) == 0 {
 		l.Warnings = append(l.Warnings, "内置图像模板为空：仍会使用 UIA/Win32 与 OCR 识别；如需更高命中率，请按 D17 补齐模板")
+	}
+	if user, err := LoadUserIndex(root); err == nil {
+		l.User = user
+	} else {
+		l.Warnings = append(l.Warnings, "用户模板加载失败，保留原识别流程："+err.Error())
+		if _, e := os.Stat(filepath.Join(root, "template-projects", "active.index.json")); e == nil {
+			l.User.Managed = true
+		}
+	}
+	if l.User.Managed {
+		kept := l.Entries[:0]
+		for _, entry := range l.Entries {
+			project := strings.SplitN(entry.ID, "__", 2)[0]
+			if entry.Source == "external" && strings.HasPrefix(project, "project-") {
+				if _, err := os.Stat(filepath.Join(root, "template-projects", project, "project.json")); err == nil {
+					continue
+				}
+			}
+			kept = append(kept, entry)
+		}
+		l.Entries = kept
 	}
 	return l, nil
 }

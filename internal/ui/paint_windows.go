@@ -321,7 +321,7 @@ func (f *form) paintPlaceholderPage(hdc uintptr, clientW, clientH int) {
 	}
 	switch f.page {
 	case pageTemplates:
-		f.paintTemplateGrid(hdc, r)
+		f.paintTemplateHub(hdc, r)
 	case pageLogs:
 		f.paintLogViewer(hdc, r)
 	case pageConfig:

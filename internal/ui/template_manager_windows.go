@@ -39,35 +39,7 @@ func (f *form) templateCardRects(w, h int) []rectT {
 }
 
 func (f *form) layoutTemplates(w, h int) {
-	r := f.taskSurfaceRect(w, h)
-	left, right, top := int(r.Left)+f.px(18), int(r.Right)-f.px(18), int(r.Top)
-	for i, id := range []int{idTemplateAll, idTemplateBuiltin, idTemplateExternal} {
-		f.showAt(id, left+f.px(i*106), top+f.px(12), f.px(98), f.px(30))
-	}
-	f.showAt(idTemplateImport, right-f.px(240), top+f.px(12), f.px(110), f.px(30))
-	f.showAt(idTemplateExport, right-f.px(122), top+f.px(12), f.px(122), f.px(30))
-	for i, card := range f.templateCardRects(w, h) {
-		if card.Right == 0 {
-			continue
-		}
-		f.showAt([]int{idTemplateUse, idTemplateUseBuiltin, idTemplateUseExternal}[i], int(card.Left)+f.px(14), int(card.Bottom)-f.px(42), f.px(72), f.px(28))
-		f.showAt(idTemplateDetailsMerged+i, int(card.Left)+f.px(94), int(card.Bottom)-f.px(42), f.px(72), f.px(28))
-	}
-	f.showAt(idTemplateCheck, right-f.px(110), top+f.px(244), f.px(110), f.px(28))
-	f.showAt(idTemplateGuide, right-f.px(218), top+f.px(244), f.px(100), f.px(28))
-	f.showAt(idTemplateCreate, right-f.px(326), top+f.px(244), f.px(100), f.px(28))
-	f.showAt(idTemplateStatus, left, top+f.px(244), right-left-f.px(338), f.px(28))
-	f.showAt(idTemplateSelect, left, top+f.px(282), right-left-f.px(120), f.comboDropH(f.px(28), 8))
-	f.showAt(idTemplatePreview, right-f.px(110), top+f.px(282), f.px(110), f.px(28))
-	f.showAt(idTemplateBody, left, top+f.px(322), right-left, maxInt(f.px(48), int(r.Bottom)-top-f.px(340)))
-	if windowText(f.ctrls[idTemplateBody]) == "" {
-		f.showTemplateDetails([]string{"merged", "builtin", "external"}[f.templateTab])
-	}
-	if f.templateChecking {
-		procEnableWindow.Call(f.ctrls[idTemplateCheck], 0)
-	} else {
-		procEnableWindow.Call(f.ctrls[idTemplateCheck], 1)
-	}
+	f.layoutTemplateHub(w, h)
 }
 
 func (f *form) showTemplateDetails(mode string) {

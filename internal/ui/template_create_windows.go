@@ -46,6 +46,7 @@ const (
 )
 
 type templateMakerPane struct {
+	hub                           bool
 	owner                         *form
 	hwnd                          uintptr
 	controls                      map[int]uintptr
@@ -70,9 +71,15 @@ var makerClassOnce sync.Once
 var makerClassName = utf16Ptr("AutoTriggerTemplateMaker")
 
 func (f *form) showTemplateMaker() {
+	f.createTemplateMaker(true)
+}
+
+func (f *form) createTemplateMaker(show bool) {
 	if f.templateMaker != 0 {
-		procShowWindow.Call(f.templateMaker, swShow)
-		user32.NewProc("SetForegroundWindow").Call(f.templateMaker)
+		if show {
+			procShowWindow.Call(f.templateMaker, swShow)
+			user32.NewProc("SetForegroundWindow").Call(f.templateMaker)
+		}
 		return
 	}
 	makerClassOnce.Do(func() {
@@ -141,11 +148,18 @@ func (f *form) showTemplateMaker() {
 		send(h, 0x80, 0, f.appIcon)
 		send(h, 0x80, 1, f.appIcon)
 	}
-	procShowWindow.Call(h, swShow)
-	procUpdateWindow.Call(h)
+	if show {
+		procShowWindow.Call(h, swShow)
+		procUpdateWindow.Call(h)
+	}
 }
 
-func (p *templateMakerPane) status(s string) { setWindowTextRaw(p.controls[makerStatus], s) }
+func (p *templateMakerPane) status(s string) {
+	setWindowTextRaw(p.controls[makerStatus], s)
+	if p.hub {
+		p.owner.setStatus(strings.ReplaceAll(s, "\r\n", " · "))
+	}
+}
 func (p *templateMakerPane) value(id int) string {
 	return strings.TrimSpace(windowText(p.controls[id]))
 }
