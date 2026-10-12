@@ -36,6 +36,7 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	m := activity.New(start, e.Config)
 	m.PassiveHost = cmd.Method == "document_host"
 	m.Last.PIDs = []int{p.PID()}
+	m.Last.Signature = verify.Digest(base)
 	tick := time.NewTicker(time.Duration(e.Config.GUI.PollIntervalMS) * time.Millisecond)
 	defer tick.Stop()
 	heartbeat := time.NewTicker(time.Duration(e.Config.ProgressIntervalSec) * time.Second)

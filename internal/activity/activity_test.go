@@ -27,6 +27,20 @@ func TestStartupAndIdle(t *testing.T) {
 	}
 }
 
+func TestInitialSnapshotIsNotProgress(t *testing.T) {
+	now := time.Now()
+	m := New(now, config.Defaults())
+	m.Last = ports.Activity{PIDs: []int{42}, Signature: "baseline"}
+	for i := 1; i <= 31; i++ {
+		if m.Update(now.Add(time.Duration(i)*time.Second), ports.Activity{PIDs: []int{42}, Signature: "baseline"}, "") {
+			t.Fatal("unchanged initial snapshot counted as progress")
+		}
+	}
+	if m.Timeout(now.Add(31*time.Second)) != "no_activity" {
+		t.Fatal("startup timeout lost")
+	}
+}
+
 func TestD04PassiveHostCPUCannotKeepIdleAlive(t *testing.T) {
 	c := config.Defaults()
 	now := time.Now()
