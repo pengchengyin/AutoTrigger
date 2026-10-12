@@ -467,7 +467,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		}
 		resolved := d.Status == "install_completed" && strong && a.Result == "exited" && a.ExitCode != nil && verify.MSICodeIsSuccess(*a.ExitCode) && !timeoutAttempt
 		if resolved {
-			unresolvedNegatives = nil
+			unresolvedNegatives = resolveAttemptFailures(unresolvedNegatives)
 		}
 		if len(unresolvedNegatives) > 0 {
 			d = verify.Decide(e.Config.Verify.JudgmentProfile, append(positive(allEvidence), unresolvedNegatives...), sideEffects, f.PreInstalled, everStarted, timedout, ev.Artifact)
@@ -499,6 +499,18 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 	// 临时目录随任务结束被删；先把手头这份"失败排查依据"搬出去。
 	e.keepFailureLogs(path, f)
 	return f
+}
+
+// A later successful attempt resolves an earlier exit failure, not rollback
+// observations. Retain those conflicts until an explicit resource recheck exists.
+func resolveAttemptFailures(evidence []schema.Evidence) []schema.Evidence {
+	out := []schema.Evidence{}
+	for _, item := range evidence {
+		if item.ID != "N1" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func positive(ev []schema.Evidence) []schema.Evidence {
