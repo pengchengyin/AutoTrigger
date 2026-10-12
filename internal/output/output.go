@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -90,6 +91,19 @@ func OpenJournal(path, taskID string) (*Journal, error) {
 	}
 	if _, err := os.Stat(path); err == nil {
 		backup := fmt.Sprintf("%s.interrupted-%d", path, time.Now().UnixNano())
+		header := strings.TrimSuffix(path, ".journal.ndjson")
+		if _, headerErr := os.Stat(header); headerErr == nil && header != path {
+			data, readErr := os.ReadFile(header)
+			if readErr != nil {
+				return nil, readErr
+			}
+			if err = Atomic(backup+".header.json", data); err != nil {
+				return nil, err
+			}
+			if err = RecoverJournal(backup+".header.json", path, backup+".recovered.json"); err != nil {
+				return nil, fmt.Errorf("recover prior journal: %w", err)
+			}
+		}
 		if err = os.Rename(path, backup); err != nil {
 			return nil, err
 		}

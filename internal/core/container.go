@@ -5,11 +5,11 @@ import (
 	"autotrigger/internal/core/layout"
 	"autotrigger/internal/core/ports"
 	"autotrigger/internal/logging"
+	"autotrigger/internal/output"
 	"autotrigger/pkg/schema"
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 )
@@ -211,7 +211,7 @@ func (e *Engine) container(ctx context.Context, f schema.FileResult, depth int, 
 		f.PlatformMeta["retained_extract_dir"] = root
 	}
 	if !mounted && !keep {
-		if err = os.RemoveAll(root); err != nil {
+		if err = output.RemoveWorkspace(root); err != nil {
 			e.Log.Stage(logging.LevelWarn, logging.StageCleanup, "解压目录清理失败：%s（%v）", root, err)
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"autotrigger/internal/core/layout"
 	"autotrigger/internal/core/ports"
 	"autotrigger/internal/logging"
+	"autotrigger/internal/output"
 	"autotrigger/internal/resources"
 	"autotrigger/internal/verify"
 	"autotrigger/pkg/schema"
@@ -62,7 +63,7 @@ func (e *Engine) Run(ctx context.Context, input string) error {
 	}
 	defer func() {
 		for _, dir := range e.temps {
-			if err := os.RemoveAll(dir); err != nil {
+			if err := output.RemoveWorkspace(dir); err != nil {
 				e.Log.Stage(logging.LevelWarn, logging.StageCleanup, "临时目录清理失败：%s（%v）", dir, err)
 			}
 		}
@@ -584,6 +585,9 @@ func (e *Engine) tempDir() (string, error) {
 	}
 	if err == nil {
 		e.temps = append(e.temps, dir)
+		if err = output.RegisterWorkspace(e.ResultPath, dir, e.Result); err != nil {
+			return "", fmt.Errorf("persist workspace ownership: %w", err)
+		}
 		e.Config.Verify.WatchExclude = append(e.Config.Verify.WatchExclude, dir)
 	}
 	return dir, err
