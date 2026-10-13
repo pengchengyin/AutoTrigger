@@ -7,6 +7,7 @@ import (
 	"autotrigger/internal/config"
 	"autotrigger/internal/datadir"
 	"autotrigger/internal/gui/templates"
+	"autotrigger/internal/remotetask"
 	"autotrigger/pkg/schema"
 	"bytes"
 	"context"
@@ -213,6 +214,12 @@ type form struct {
 	settingsAdvanced    bool
 	settingsRecognition bool
 	loadingSettings     bool
+	remoteEnabled       bool
+	remoteQueue         *remotetask.Queue
+	remoteServer        *remotetask.Server
+	remoteID            string
+	remoteCancelApplied bool
+	runAwaitingDone     bool
 
 	mu         sync.Mutex
 	logBuf     []byte
@@ -273,6 +280,7 @@ func newForm(deps cli.Dependencies) *form {
 	if p, err := loadPreferences(filepath.Dir(layout.Config())); err == nil {
 		f.opts.Recursive = p.Recursive
 		f.opts.NoArchive = p.NoArchive
+		f.remoteEnabled = p.RemoteTasks
 	}
 	return f
 }
@@ -330,6 +338,11 @@ func (f *form) create() error {
 func (f *form) show() {
 	procShowWindow.Call(f.hwnd, swShow)
 	procUpdateWindow.Call(f.hwnd)
+	if f.remoteEnabled {
+		if err := f.startRemoteTasks(); err != nil {
+			f.setStatusKind("远程接收未启动："+err.Error(), statusKindWarn)
+		}
+	}
 	if f.page != pageTask {
 		return
 	}
@@ -872,6 +885,7 @@ func (f *form) layoutSettingsControls(w, h int) {
 	procShowWindow.Call(f.ctrls[idStatus], swHide)
 	procShowWindow.Call(f.ctrls[idSettingsSave], swShow)
 	f.place(idSettingsSave, int(r.Right)-f.px(170), top+f.px(320), f.px(140), f.px(34))
+	f.showAt(idRemoteTasks, left, top+f.px(370), width, f.px(30))
 }
 
 func (f *form) saveSettings() bool {
@@ -951,7 +965,14 @@ func (f *form) saveSettings() bool {
 	if err = f.persistPreferences(path); err != nil {
 		f.setStatusKind("配置已保存，但界面偏好无法保存："+err.Error(), statusKindWarn)
 		f.appendLog([]byte("[警告] 界面偏好保存失败：" + err.Error() + "\n"))
+		if f.isChecked(idRemoteTasks) != f.remoteEnabled {
+			return false
+		}
 		return true
+	}
+	if err = f.applyRemoteSetting(); err != nil {
+		f.setStatusKind("远程任务设置失败："+err.Error(), statusKindFail)
+		return false
 	}
 	f.setStatusKind("设置已保存，下次启动和新建任务会沿用这些设置。", statusKindOK)
 	return true
@@ -1122,6 +1143,7 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 	switch msg {
 	case 0x113:
 		if wparam == 44 {
+			f.pollRemoteTasks()
 			f.updateLiveViews()
 			return 0
 		}
@@ -1132,6 +1154,10 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 	case wmClose:
 		return f.onClose()
 	case wmDestroy:
+		if f.remoteServer != nil {
+			f.remoteServer.Close()
+			f.remoteServer = nil
+		}
 		user32.NewProc("KillTimer").Call(f.hwnd, 44)
 		if f.appIcon != 0 {
 			user32.NewProc("DestroyIcon").Call(f.appIcon)
@@ -1484,6 +1510,13 @@ func (f *form) onCommand(id, code int) {
 		case idDetailStop:
 			if f.selectedTaskRunning() {
 				f.stopRun()
+			} else if record, ok := f.selectedTaskRecord(); ok && record.RemoteState == "queued" && f.remoteQueue != nil {
+				if _, err := f.remoteQueue.Cancel(record.RemoteID); err != nil {
+					f.setStatusKind(err.Error(), statusKindFail)
+				} else {
+					f.syncRemoteHistory(f.remoteQueue.List())
+					f.refreshResultView()
+				}
 			}
 		case idPrereq:
 			f.checkPrereq()
@@ -1560,6 +1593,12 @@ func (f *form) onCommand(id, code int) {
 			if !f.saveSettings() {
 				messageBox(f.hwnd, "设置保存失败", windowText(f.ctrls[idStatus]), mbOK|mbIconError)
 			}
+		case idRemoteTasks:
+			if f.isChecked(idRemoteTasks) && !f.remoteEnabled {
+				if messageBox(f.hwnd, "允许远程提交任务", "允许与桌面执行端相同的 Windows 账户提交安装任务。任务将以本工具权限执行。\n\n请仅向可信客户端授权 SSH，上传目录见 task health。保存设置后生效。是否允许？", mbYesNo|mbIconQuestion) != idYes {
+					send(f.ctrls[idRemoteTasks], bmSetCheck, 0, 0)
+				}
+			}
 		case idRecursive, idNoArchive, idNoOCR, idLock:
 			f.refreshCommand()
 		}
@@ -1585,6 +1624,9 @@ func (f *form) onClose() uintptr {
 		cancel := f.cancel
 		f.mu.Unlock()
 		if cancel != nil {
+			if f.remoteID != "" && f.remoteQueue != nil {
+				_ = f.remoteQueue.Interrupt(f.remoteID, "桌面执行端已关闭")
+			}
 			cancel()
 		}
 	}
@@ -1963,6 +2005,13 @@ func (f *form) stopRun() {
 	if cancel == nil {
 		return
 	}
+	if f.remoteID != "" && f.remoteQueue != nil {
+		if _, err := f.remoteQueue.Cancel(f.remoteID); err != nil {
+			f.appendLog([]byte("远程任务取消状态保存失败：" + err.Error() + "\n"))
+		} else {
+			f.remoteCancelApplied = true
+		}
+	}
 	fmt.Fprint(f.logSink(), "=== 请求中止：先优雅关闭，超时后终止进程树（F9.6）===\n")
 	cancel()
 }
@@ -1975,6 +2024,7 @@ func (f *form) launch(label string, args []string, aux bool) {
 	if f.isRunning() {
 		return
 	}
+	f.runAwaitingDone = true
 	ctx, cancel := context.WithCancel(context.Background())
 	f.mu.Lock()
 	f.cancel = cancel
@@ -1993,6 +2043,7 @@ func (f *form) launch(label string, args []string, aux bool) {
 	fmt.Fprintf(f.logSink(), "\n=== %s ===\n$ %s\n", label, display)
 
 	checking := f.checkingPrereq
+	remoteID, remoteQueue := f.remoteID, f.remoteQueue
 	go func() {
 		sink := f.logSink()
 		var report bytes.Buffer
@@ -2000,7 +2051,38 @@ func (f *form) launch(label string, args []string, aux bool) {
 		if checking {
 			stdout = io.MultiWriter(sink, &report)
 		}
-		code := cli.Run(ctx, args, stdout, sink, f.deps)
+		code := 0
+		var guard io.Closer
+		if remoteID != "" && remoteQueue != nil {
+			response := remoteQueue.Handle(remotetask.Request{Action: "status", ID: remoteID})
+			var err error
+			if response.Job == nil {
+				err = fmt.Errorf("远程任务记录不可用")
+			} else {
+				guard, err = remotetask.VerifyContext(ctx, *response.Job)
+			}
+			if err != nil {
+				fmt.Fprintln(sink, "[错误] 拒绝执行远程任务：", err)
+				code = 3
+				reason := err.Error()
+				if ctx.Err() != nil {
+					code = 1
+					reason = ""
+				}
+				_ = remoteQueue.Complete(remoteID, code, reason)
+			}
+		}
+		if code == 0 {
+			code = cli.Run(ctx, args, stdout, sink, f.deps)
+		}
+		if guard != nil {
+			guard.Close()
+		}
+		if remoteID != "" && remoteQueue != nil {
+			if err := remoteQueue.Complete(remoteID, code, ""); err != nil {
+				fmt.Fprintln(sink, "[错误] 远程任务状态保存失败：", err)
+			}
+		}
 		fmt.Fprintf(sink, "=== 结束：退出码 %d ===\n", code)
 		f.mu.Lock()
 		f.running = false
@@ -2015,6 +2097,7 @@ func (f *form) launch(label string, args []string, aux bool) {
 }
 
 func (f *form) onRunDone(code int) {
+	f.runAwaitingDone = false
 	f.mu.Lock()
 	aux := f.aux
 	resultPath := f.resultPath
@@ -2058,6 +2141,8 @@ func (f *form) onRunDone(code int) {
 		return
 	}
 	f.completeTask(code)
+	f.remoteID = ""
+	f.remoteCancelApplied = false
 	summary, ok := ReadResultSummary(resultPath)
 	var ref *ResultSummary
 	if ok {

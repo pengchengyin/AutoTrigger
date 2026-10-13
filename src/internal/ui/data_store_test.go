@@ -2,11 +2,49 @@ package ui
 
 import (
 	"autotrigger/internal/datadir"
+	"autotrigger/internal/remotetask"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestDataMigrationPreservesRemoteQueueSnapshots(t *testing.T) {
+	oldRoot, newRoot := t.TempDir(), t.TempDir()
+	q, err := remotetask.New(oldRoot, remotetask.Policy{Config: []byte(`{"timeout_sec":3}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(remotetask.Inbox(oldRoot), "setup.exe")
+	if err = os.WriteFile(input, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := remotetask.NewID()
+	j, err := q.Submit(remotetask.Request{ID: id, Input: input})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = migrateData(oldRoot, newRoot); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := remotetask.New(newRoot, remotetask.Policy{Config: []byte(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := loaded.List()
+	if len(jobs) != 1 || jobs[0].ID != j.ID || jobs[0].State != "queued" || !strings.HasPrefix(jobs[0].Input, newRoot) {
+		t.Fatal(jobs)
+	}
+	guard, err := remotetask.Verify(jobs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard.Close()
+	if _, err = os.Stat(j.Input); err != nil {
+		t.Fatal("migration removed source snapshot", err)
+	}
+}
 
 func TestDataMigrationRetainsSourceAndRebasesHistory(t *testing.T) {
 	old := t.TempDir()

@@ -40,6 +40,9 @@ func (f *form) applyDataDirectory() error {
 	if strings.EqualFold(filepath.Clean(root), filepath.Clean(old)) {
 		return f.dataLayout().Ensure()
 	}
+	if f.remoteServer != nil {
+		return fmt.Errorf("请先关闭远程任务接收并保存设置，再更改数据目录")
+	}
 	if f.isRunning() {
 		return fmt.Errorf("任务运行中不能修改数据目录")
 	}

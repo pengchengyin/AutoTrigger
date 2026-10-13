@@ -8,9 +8,10 @@ import (
 
 // GUI preferences preserve CLI-only options without adding config fields.
 type preferences struct {
-	ConfigPath string `json:"config_path"`
-	Recursive  bool   `json:"recursive"`
-	NoArchive  bool   `json:"no_archive"`
+	ConfigPath  string `json:"config_path"`
+	Recursive   bool   `json:"recursive"`
+	NoArchive   bool   `json:"no_archive"`
+	RemoteTasks bool   `json:"remote_tasks,omitempty"`
 }
 
 func loadPreferences(dir string) (preferences, error) {

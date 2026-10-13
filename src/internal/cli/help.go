@@ -22,6 +22,7 @@ const helpText = `用法:
   AutoTrigger --dump-ui --input <样本> [--out <目录>]
   AutoTrigger --dump-resources <目录> | --self-test templates | --version | --capabilities
   AutoTrigger --gui                             打开图形界面（双击本程序等效）
+  AutoTrigger.exe task --help                   SSH 提交、查询或取消桌面任务
 
 基本:
   --input <路径>            待触发/安装的样本文件或目录（除检查类命令外必填）

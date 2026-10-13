@@ -2,6 +2,7 @@ package ui
 
 import (
 	"autotrigger/internal/datadir"
+	"autotrigger/internal/remotetask"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -129,10 +130,16 @@ func migrateData(oldRoot, newRoot string) (err error) {
 	}
 	for i := range records {
 		r := &records[i]
+		if r.RemoteID != "" {
+			r.Input = rebaseDataPath(r.Input, oldRoot, newRoot)
+		}
 		r.Result = rebaseDataPath(r.Result, oldRoot, newRoot)
 		r.LogPath = rebaseDataPath(r.LogPath, oldRoot, newRoot)
 		r.Config = rebaseDataPath(r.Config, oldRoot, newRoot)
 		if r.Execution != nil {
+			if r.RemoteID != "" {
+				r.Execution.Input = rebaseDataPath(r.Execution.Input, oldRoot, newRoot)
+			}
 			r.Execution.Output = rebaseDataPath(r.Execution.Output, oldRoot, newRoot)
 			r.Execution.Config = rebaseDataPath(r.Execution.Config, oldRoot, newRoot)
 		}
@@ -166,6 +173,9 @@ func migrateData(oldRoot, newRoot string) (err error) {
 		return e
 	}
 	committed := []string{}
+	if err = remotetask.RebaseCopied(stage, oldRoot, newRoot); err != nil {
+		return err
+	}
 	locatorBackup := filepath.Join(stage, ".locator-backup")
 	backupSaved := false
 	defer func() {

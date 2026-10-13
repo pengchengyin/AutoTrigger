@@ -69,6 +69,9 @@ type Options struct {
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Dependencies) (code int) {
+	if len(args) > 0 && args[0] == "task" {
+		return runTaskCommand(ctx, args[1:], stdout, stderr)
+	}
 	// 帮助优先于一切初始化：在此处提前返回，可避免「无参数运行」时先在当前
 	// 目录留下结果 JSON 与日志文件（用户此时尚未开始任何任务）。
 	if len(args) == 0 {

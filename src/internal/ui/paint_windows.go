@@ -7,6 +7,7 @@ import (
 	"autotrigger/pkg/schema"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -529,6 +530,16 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 		message := status + " · " + schema.SummaryLine(snap.Summary.ByStatus, snap.Summary.Total)
 		if snap.PresentationState != "" {
 			message = status + " · 最终结果以执行结束后的 JSON 为准"
+			if selected.RemoteID != "" {
+				switch selected.RemoteState {
+				case "queued":
+					message = status + " · 等待桌面可交互、其他任务或捕获结束"
+				case "cancelled":
+					message = status + " · 不代表安装器已产生的变更已回滚"
+				case "interrupted":
+					message = status + " · 请检查日志和主机状态后再重试"
+				}
+			}
 		}
 		if snap.Error != "" && snap.PresentationState == "" {
 			message = "任务失败：" + snap.Error
@@ -649,6 +660,9 @@ func (f *form) resultSnapshot() (resultSnapshot, bool) {
 		record, _ := f.selectedTaskRecord()
 		snap, _ := readResultSnapshot(path)
 		snap.TaskID, snap.Path, snap.StartedAt = record.ID, path, record.Created
+		if record.RemoteStarted != nil {
+			snap.StartedAt = *record.RemoteStarted
+		}
 		snap.FinishedAt = nil
 		snap.PresentationState = "安装 / 触发进行中"
 		return snap, true
@@ -662,10 +676,24 @@ func (f *form) resultSnapshot() (resultSnapshot, bool) {
 				continue
 			}
 			state := "结果文件暂不可用"
+			if record.RemoteState != "" {
+				state = remoteStateText(record.RemoteState)
+				if record.RemoteReason != "" {
+					state += "：" + record.RemoteReason
+				}
+			}
 			if record.ID == f.activeTask && f.isRunning() {
 				state = "安装 / 触发进行中"
 			}
-			return resultSnapshot{TaskID: record.ID, Path: path, StartedAt: record.Created, PresentationState: state}, true
+			snap := resultSnapshot{TaskID: record.ID, Path: path, StartedAt: record.Created, PresentationState: state}
+			if record.RemoteID != "" {
+				snap.StartedAt = time.Time{}
+				if record.RemoteStarted != nil {
+					snap.StartedAt = *record.RemoteStarted
+				}
+				snap.FinishedAt = record.RemoteFinished
+			}
+			return snap, true
 		}
 	}
 	return resultSnapshot{}, false

@@ -56,6 +56,7 @@ func (f *form) createWorkflowControls() {
 	f.edit(idTaskSearch, "")
 	f.label(idTaskSearchLabel, "搜索任务")
 	f.edit(idOutputDir, f.dataLayout().Root)
+	f.check(idRemoteTasks, "允许通过 SSH 提交任务（仅同一 Windows 账户）", f.remoteEnabled)
 	setWindowTextRaw(f.ctrls[idLblOutput], "数据目录")
 	setWindowTextRaw(f.ctrls[idLblInput], "文件 / 文件夹")
 	setWindowTextRaw(f.ctrls[idBrowseOutput], "选择目录…")
@@ -109,6 +110,7 @@ func (f *form) createWorkflowControls() {
 var syscallComctl = syscall.NewLazyDLL("comctl32.dll")
 
 func (f *form) hideWorkflowControls() {
+	procShowWindow.Call(f.ctrls[idRemoteTasks], swHide)
 	procShowWindow.Call(f.ctrls[idDetailRetry], swHide)
 	procShowWindow.Call(f.ctrls[idDetailStop], swHide)
 	procShowWindow.Call(f.ctrls[idDependencyList], swHide)
@@ -189,6 +191,8 @@ func (f *form) refreshTaskList() {
 			if outcome == schema.OutcomeFailed {
 				f.historyStats[2]++
 			}
+		} else if record.RemoteState != "" {
+			status = remoteStateText(record.RemoteState)
 		} else if record.ExitCode != nil {
 			status = "结果文件不可用"
 		}
@@ -347,7 +351,7 @@ func (f *form) persistPreferences(path string) error {
 	if absolute, err := filepath.Abs(path); err == nil {
 		path = absolute
 	}
-	return savePreferences(filepath.Dir(f.dataLayout().Config()), preferences{Recursive: f.isChecked(idRecursive), NoArchive: f.isChecked(idNoArchive)})
+	return savePreferences(filepath.Dir(f.dataLayout().Config()), preferences{Recursive: f.isChecked(idRecursive), NoArchive: f.isChecked(idNoArchive), RemoteTasks: f.isChecked(idRemoteTasks)})
 }
 
 func (f *form) registerTask(opts Options) {
