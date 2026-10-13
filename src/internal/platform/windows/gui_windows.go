@@ -108,7 +108,7 @@ func (GUI) Controls(w ports.Window) ([]ports.Control, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
-	result, err := procutil.Run(ctx, Runner{}, ports.Command{Program: exe, Args: []string{"--internal-uia", strconv.FormatUint(uint64(w.Handle), 10)}})
+	result, err := procutil.Run(ctx, Runner{}, ports.Command{Program: exe, HideWindow: true, Args: []string{"--internal-uia", strconv.FormatUint(uint64(w.Handle), 10)}})
 	if err != nil {
 		return win32Controls(w), nil
 	}
@@ -297,7 +297,7 @@ func (GUI) Screenshot(w ports.Window) (image.Image, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
-	result, err := procutil.Run(ctx, Runner{}, ports.Command{Program: exe, Args: []string{"--internal-screenshot", strconv.FormatUint(uint64(w.Handle), 10)}})
+	result, err := procutil.Run(ctx, Runner{}, ports.Command{Program: exe, HideWindow: true, Args: []string{"--internal-screenshot", strconv.FormatUint(uint64(w.Handle), 10)}})
 	if err != nil {
 		return nil, err
 	}

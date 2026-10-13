@@ -105,7 +105,7 @@ func (p *Prereqs) checkEnvironment(ctx context.Context, c config.Config, deploy,
 	}
 	if path := zipPath; path != "" {
 		probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		result, err := procutil.Run(probeCtx, p.Runner, ports.Command{Program: path, Args: []string{"i"}})
+		result, err := procutil.Run(probeCtx, p.Runner, ports.Command{Program: path, HideWindow: true, Args: []string{"i"}})
 		cancel()
 		if err == nil {
 			report.ArchiveBackend = schema.String(path)

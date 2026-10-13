@@ -23,7 +23,7 @@ type SevenZip struct {
 func (s SevenZip) List(ctx context.Context, path string) ([]ports.ArchiveEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	e, err := procutil.Run(ctx, s.Runner, ports.Command{Program: s.Path, Args: []string{"l", "-slt", "-ba", "-sccUTF-8", "-p", "--", path}})
+	e, err := procutil.Run(ctx, s.Runner, ports.Command{Program: s.Path, HideWindow: true, Args: []string{"l", "-slt", "-ba", "-sccUTF-8", "-p", "--", path}})
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s SevenZip) Extract(ctx context.Context, path, dest string, limit int64) e
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := procutil.Run(ctx, s.Runner, ports.Command{Program: s.Path, Args: []string{"x", "-y", "-p", "-sccUTF-8", "-o" + dest, "--", path}})
+		_, err := procutil.Run(ctx, s.Runner, ports.Command{Program: s.Path, HideWindow: true, Args: []string{"x", "-y", "-p", "-sccUTF-8", "-o" + dest, "--", path}})
 		done <- err
 	}()
 	ticker := time.NewTicker(200 * time.Millisecond)

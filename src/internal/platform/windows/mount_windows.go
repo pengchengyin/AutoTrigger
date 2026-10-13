@@ -27,7 +27,7 @@ func (m Mounter) Mount(ctx context.Context, path string) (string, error) {
 		return "", fmt.Errorf("Win7 mounting requires a separately deployed and validated WinCDEmu adapter: %w", ports.ErrUnsupported)
 	}
 	script := "$ErrorActionPreference='Stop';$p=" + psQuote(path) + ";$old=Get-DiskImage -ImagePath $p -ErrorAction SilentlyContinue;if($old -and $old.Attached){throw 'image already mounted; ownership unknown'};$disk=Mount-DiskImage -ImagePath $p -PassThru;$v=$disk|Get-Volume;if(!$v.DriveLetter){Dismount-DiskImage -ImagePath $p;throw 'no drive letter'};[Console]::Out.Write(($v.DriveLetter+':\\'))"
-	e, err := procutil.Run(ctx, m.Runner, ports.Command{Program: systemExe("WindowsPowerShell\\v1.0\\powershell.exe"), Args: []string{"-NoProfile", "-NonInteractive", "-Command", script}})
+	e, err := procutil.Run(ctx, m.Runner, ports.Command{Program: systemExe("WindowsPowerShell\\v1.0\\powershell.exe"), HideWindow: true, Args: []string{"-NoProfile", "-NonInteractive", "-Command", script}})
 	if err != nil {
 		return "", err
 	}
@@ -38,7 +38,7 @@ func (m Mounter) Mount(ctx context.Context, path string) (string, error) {
 	return drive, nil
 }
 func (m Mounter) Dismount(ctx context.Context, path string) error {
-	_, err := procutil.Run(ctx, m.Runner, ports.Command{Program: systemExe("WindowsPowerShell\\v1.0\\powershell.exe"), Args: []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop';Dismount-DiskImage -ImagePath " + psQuote(path)}})
+	_, err := procutil.Run(ctx, m.Runner, ports.Command{Program: systemExe("WindowsPowerShell\\v1.0\\powershell.exe"), HideWindow: true, Args: []string{"-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop';Dismount-DiskImage -ImagePath " + psQuote(path)}})
 	return err
 }
 func (m Mounter) MotW(imagePath, root, policy string) error {

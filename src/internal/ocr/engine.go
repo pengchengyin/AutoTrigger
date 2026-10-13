@@ -91,7 +91,7 @@ func (e *Engine) start(ctx context.Context) (ports.OCRInfo, error) {
 			outputWrite.Close()
 			return info, fmt.Errorf("OCR transport incompatible with %s", e.Config.Engine)
 		}
-		p, err := e.Runner.Start(ctx, ports.Command{Program: e.Path, Args: args, Dir: filepath.Dir(e.Path), Stdin: inputRead, Stdout: outputWrite, Stderr: &procutil.Capture{Limit: 65536}})
+		p, err := e.Runner.Start(ctx, ports.Command{Program: e.Path, HideWindow: true, Args: args, Dir: filepath.Dir(e.Path), Stdin: inputRead, Stdout: outputWrite, Stderr: &procutil.Capture{Limit: 65536}})
 		inputRead.Close()
 		outputWrite.Close()
 		if err != nil {
@@ -142,12 +142,12 @@ func (e *Engine) start(ctx context.Context) (ports.OCRInfo, error) {
 			}
 		}
 	case "tesseract":
-		result, err := procutil.Run(ctx, e.Runner, ports.Command{Program: e.Path, Args: []string{"--version"}})
+		result, err := procutil.Run(ctx, e.Runner, ports.Command{Program: e.Path, HideWindow: true, Args: []string{"--version"}})
 		if err != nil {
 			return info, err
 		}
 		info.Version = strings.TrimSpace(strings.SplitN(result.Stdout, "\n", 2)[0])
-		langs, err := procutil.Run(ctx, e.Runner, ports.Command{Program: e.Path, Args: []string{"--list-langs"}})
+		langs, err := procutil.Run(ctx, e.Runner, ports.Command{Program: e.Path, HideWindow: true, Args: []string{"--list-langs"}})
 		if err != nil {
 			return info, err
 		}
@@ -261,7 +261,7 @@ func (e *Engine) Recognize(ctx context.Context, img image.Image) ([]ports.OCRTex
 	case "tesseract":
 		var result ports.Exit
 		langs := strings.Join(e.info.Languages, "+")
-		result, err = procutil.Run(ctx, e.Runner, ports.Command{Program: e.Path, Args: []string{path, "stdout", "-l", langs, "--psm", "11", "tsv"}})
+		result, err = procutil.Run(ctx, e.Runner, ports.Command{Program: e.Path, HideWindow: true, Args: []string{path, "stdout", "-l", langs, "--psm", "11", "tsv"}})
 		if err == nil {
 			var texts []ports.OCRText
 			texts, err = ParseTSV(result.Stdout)
