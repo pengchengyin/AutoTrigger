@@ -7,7 +7,22 @@ import (
 )
 
 func schemaOutcomeText(snap resultSnapshot) string {
+	if taskCancelledError(snap.Error) {
+		return "任务已取消"
+	}
 	return schema.OutcomeText(snapshotOutcome(snap))
+}
+
+func taskCancelledError(message string) bool {
+	text := strings.ToLower(strings.TrimSpace(message))
+	return text == "context canceled" || text == "content canceled" || strings.HasSuffix(text, ": context canceled")
+}
+
+func taskFailureMessage(message string) string {
+	if taskCancelledError(message) {
+		return "任务已取消，已产生的安装变更不会自动回滚。"
+	}
+	return "任务失败：" + message
 }
 
 func fileTypeText(kind string) string {

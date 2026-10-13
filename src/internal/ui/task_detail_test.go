@@ -36,6 +36,27 @@ func TestDetailEvidenceLinesAndOriginalPath(t *testing.T) {
 	}
 }
 
+func TestCancelledTaskFriendlyMessage(t *testing.T) {
+	for _, message := range []string{"context canceled", "content canceled", "执行: context canceled"} {
+		snap := resultSnapshot{Error: message}
+		if schemaOutcomeText(snap) != "任务已取消" {
+			t.Fatal("cancelled task shown as failure")
+		}
+		if got := taskFailureMessage(message); strings.Contains(got, "canceled") || !strings.Contains(got, "已取消") {
+			t.Fatal(got)
+		}
+		if snap.Error != message {
+			t.Fatal("raw error changed")
+		}
+	}
+	if got := taskFailureMessage("配置错误"); got != "任务失败：配置错误" {
+		t.Fatal(got)
+	}
+	if taskCancelledError("context deadline exceeded") {
+		t.Fatal("timeout mistaken for cancellation")
+	}
+}
+
 func TestDetailCardsUnknownAndMultipleConfidence(t *testing.T) {
 	if got := detailCards(resultSnapshot{}, taskRecord{})[2].Lines[0]; got != "置信度：未提供" {
 		t.Fatal(got)

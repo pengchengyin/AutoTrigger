@@ -545,7 +545,7 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 			}
 		}
 		if snap.Error != "" && snap.PresentationState == "" {
-			message = "任务失败：" + snap.Error
+			message = taskFailureMessage(snap.Error)
 		}
 		banner.Left += int32(f.px(12))
 		drawText(hdc, message, banner, statColor(outcomeKind(snap)), f.font, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
