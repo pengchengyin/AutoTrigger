@@ -160,7 +160,7 @@ func headerActions(id pageID) []pageAction {
 	case pageHome:
 		return []pageAction{{ID: "new-task", Label: "+ 新建任务", Kind: "primary"}, {ID: "check-prereq", Label: "检查环境", Kind: "normal"}}
 	case pageTask:
-		return []pageAction{{ID: "new-task", Label: "+ 新建任务", Kind: "primary"}, {ID: "import-history", Label: "导入结果", Kind: "normal"}}
+		return []pageAction{{ID: "new-task", Label: "+ 新建任务", Kind: "primary"}}
 	case pageNewTask:
 		return []pageAction{{ID: "back-tasks", Label: "返回列表", Kind: "normal"}}
 	case pageTemplates:

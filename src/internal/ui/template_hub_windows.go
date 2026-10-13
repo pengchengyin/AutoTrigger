@@ -29,7 +29,10 @@ const (
 
 var hubControlIDs = []int{hubName, hubDescription, hubSave, hubBack, hubCapture, hubImages, hubDelete, hubAction, hubMark, hubPrevious, hubNext, hubStatus, 5400, 5401, 5200, 5201, 5202, 5203, 5300, 5301, 5302, 5303}
 
-func init() { templateControlIDs = append(templateControlIDs, hubControlIDs...) }
+func init() {
+	hubControlIDs = append(hubControlIDs, 5500, 5501, 5502, 5503)
+	templateControlIDs = append(templateControlIDs, hubControlIDs...)
+}
 
 func (f *form) ensureHubControls() {
 	if f.ctrls[hubName] != 0 {
@@ -50,6 +53,7 @@ func (f *form) ensureHubControls() {
 	for i := 0; i < 4; i++ {
 		f.check(5200+i, "启用", false)
 		f.button(5300+i, "查看")
+		f.button(5500+i, "删除")
 	}
 	for _, id := range hubControlIDs {
 		procShowWindow.Call(f.ctrls[id], swHide)
@@ -165,8 +169,6 @@ func (f *form) layoutTemplateHub(w, h int) {
 		}
 		f.showAt(hubCapture, left, top+f.px(110), f.px(120), f.px(32))
 		f.showAt(hubDelete, left+f.px(130), top+f.px(110), f.px(110), f.px(32))
-		f.showAt(hubAction, left+f.px(250), top+f.px(110), f.px(170), f.comboDropH(f.px(32), 7))
-		f.showAt(hubMark, left+f.px(430), top+f.px(110), f.px(100), f.px(32))
 		f.showAt(hubImages, left, top+f.px(158), f.px(250), maxInt(f.px(40), int(r.Bottom)-top-f.px(212)))
 		for _, id := range []int{hubCapture, hubDelete, hubMark} {
 			enableWindow(f.ctrls[id], !f.isRunning())
@@ -182,6 +184,8 @@ func (f *form) layoutTemplateHub(w, h int) {
 		}
 		send(f.ctrls[5200+i], bmSetCheck, checked, 0)
 		f.showAt(5300+i, int(card.Left)+f.px(16), int(card.Bottom)-f.px(44), f.px(78), f.px(28))
+		f.showAt(5500+i, int(card.Left)+f.px(104), int(card.Bottom)-f.px(44), f.px(78), f.px(28))
+		enableWindow(f.ctrls[5500+i], !f.isRunning() && activeHover == nil)
 	}
 	f.showAt(hubPrevious, right-f.px(88), int(r.Bottom)-f.px(40), f.px(36), f.px(26))
 	f.showAt(hubNext, right-f.px(42), int(r.Bottom)-f.px(40), f.px(36), f.px(26))
@@ -281,6 +285,28 @@ func (f *form) pauseHubProject() error {
 func (f *form) hubCommand(id, code int) bool {
 	if f.page != pageTemplates {
 		return false
+	}
+	if code == bnClicked && id >= 5500 && id < 5504 {
+		at := f.hubPage*4 + id - 5500
+		if at < 0 || at >= len(f.hubProjects) {
+			return true
+		}
+		p := f.hubProjects[at]
+		if f.isRunning() || activeHover != nil {
+			f.setStatusKind("任务运行或捕获中，不能删除模板", statusKindWarn)
+			return true
+		}
+		if messageBox(f.hwnd, "确认删除模板", fmt.Sprintf("确定删除模板“%s”及其全部图片和项目版本？此操作无法撤销。", p.Name), mbYesNo|mbIconInfo) != idYes {
+			return true
+		}
+		if err := deleteTemplateProject(f.templateRoot(), p.ID, false); err != nil {
+			f.setStatusKind("删除失败："+err.Error(), statusKindFail)
+		} else {
+			f.setStatus("已删除模板：" + p.Name)
+		}
+		f.refreshTemplateHub()
+		f.layout()
+		return true
 	}
 	if code == bnClicked && (id >= 5200 && id < 5204 || id >= 5300 && id < 5304) {
 		i := id - 5200

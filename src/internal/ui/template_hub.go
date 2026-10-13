@@ -28,6 +28,36 @@ func selectedProjects(root string) (templates.UserIndex, error) {
 	return index, err
 }
 
+func deleteTemplateProject(root, id string, busy bool) error {
+	if busy {
+		return fmt.Errorf("任务运行或捕获中，不能删除模板")
+	}
+	projects, err := listTemplateProjects(root)
+	if err != nil {
+		return err
+	}
+	var found *templateProject
+	for i := range projects {
+		if projects[i].ID == id {
+			found = &projects[i]
+			break
+		}
+	}
+	if found == nil {
+		return fmt.Errorf("模板不存在")
+	}
+	if err = toggleTemplateProject(root, id, false, false); err != nil {
+		return err
+	}
+	unlock, err := acquireHistoryLock(projectDir(root, *found))
+	if err != nil {
+		return err
+	}
+	// Release the Windows lock handle before removing its directory.
+	unlock()
+	return os.RemoveAll(projectDir(root, *found))
+}
+
 func initializeTemplateSelection(root string) error {
 	if err := os.MkdirAll(projectRoot(root), 0755); err != nil {
 		return err
