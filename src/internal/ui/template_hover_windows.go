@@ -39,6 +39,7 @@ type captureWork struct {
 	item draftCapture
 	err  error
 	kind string
+	shot image.Image
 }
 type pendingCapture struct {
 	point    image.Point
@@ -66,11 +67,13 @@ type hoverCapture struct {
 	region                                image.Rectangle
 	frame                                 image.Rectangle
 	lastError                             string
+	lastNotice                            string
 	count                                 int
 	hookThread                            uint32
 	paused                                bool
 	queue                                 []pendingCapture
 	snapshotting                          atomic.Bool
+	annotation                            uintptr
 }
 
 var hoverOnce sync.Once
@@ -81,10 +84,11 @@ var hoverPanes = map[uintptr]*hoverCapture{}
 var mouseCaptureCallback, keyCaptureCallback uintptr
 
 type captureHookInput struct {
-	hwnd    uintptr
-	thread  uint32
-	buttons uint32 // Accessed only by the dedicated hook thread.
-	closing atomic.Bool
+	hwnd       uintptr
+	thread     uint32
+	buttons    uint32 // Accessed only by the dedicated hook thread.
+	closing    atomic.Bool
+	annotation atomic.Uintptr
 }
 
 var hookInput atomic.Pointer[captureHookInput]
@@ -230,14 +234,18 @@ func (p *templateMakerPane) startHoverCapture() {
 	procShowWindow.Call(p.owner.hwnd, swHide)
 	procShowWindow.Call(h, 4) // Do not steal focus from the observed window.
 	user32.NewProc("SetTimer").Call(h, 1, 50, 0)
-	s.notice("正在识别目标")
+	s.notice("移动鼠标选择窗口，点击后标记；可切换手动框选")
 }
 
 func (s *hoverCapture) notice(text string) {
 	if s.lastError != "" && !strings.Contains(text, s.lastError) {
 		text += " · 上次操作失败：" + s.lastError
 	}
-	setWindowTextRaw(s.controls[captureStatus], fmt.Sprintf("本次 %d 项 · %s", s.count, text))
+	message := fmt.Sprintf("本次 %d 项 · %s", s.count, text)
+	if s.lastNotice != message {
+		s.lastNotice = message
+		setWindowTextRaw(s.controls[captureStatus], message)
+	}
 }
 
 func captureToolbarAt(hwnd uintptr, p image.Point) bool {
@@ -290,7 +298,11 @@ func captureMouseHook(code, w uintptr, l unsafe.Pointer) uintptr {
 			}
 			return 1
 		}
-		if bit != 0 && down && !s.closing.Load() && !captureToolbarAt(s.hwnd, p) {
+		allowed := s.hwnd
+		if annotation := s.annotation.Load(); annotation != 0 {
+			allowed = annotation
+		}
+		if bit != 0 && down && !s.closing.Load() && !captureToolbarAt(allowed, p) {
 			s.buttons |= bit
 			if bit == 1 {
 				packed := uintptr(uint64(uint32(p.X)) | uint64(uint32(p.Y))<<32)
@@ -305,7 +317,13 @@ func captureMouseHook(code, w uintptr, l unsafe.Pointer) uintptr {
 
 func captureKeyboardHook(code, w uintptr, l unsafe.Pointer) uintptr {
 	s := hookInput.Load()
-	if int32(code) >= 0 && s != nil && !s.closing.Load() {
+	if int32(code) >= 0 && s != nil && s.annotation.Load() != 0 && *(*uint32)(l) == 27 {
+		if w == 0x100 || w == 0x104 {
+			procPostMessageW.Call(s.annotation.Load(), 0x100, 27, 0)
+		}
+		return 1
+	}
+	if int32(code) >= 0 && s != nil && !s.closing.Load() && s.annotation.Load() == 0 {
 		key := *(*uint32)(l)
 		ctrl, _, _ := user32.NewProc("GetAsyncKeyState").Call(17)
 		if key == 27 || key == 13 || key == 119 || key == 90 && ctrl&0x8000 != 0 {
@@ -452,6 +470,17 @@ func (s *hoverCapture) tick() {
 	select {
 	case work := <-s.work:
 		s.busy = false
+		if work.kind == "save" || work.err != nil && work.kind == "preview" {
+			s.paused = false
+		}
+		if work.kind == "preview" && work.err == nil && !s.closing {
+			if err := s.openAnnotation(work.item, work.shot); err != nil {
+				s.paused = false
+				s.lastError = err.Error()
+				s.notice(err.Error())
+			}
+			return
+		}
 		s.count = len(s.session.ids)
 		if !s.paused && !s.frame.Empty() {
 			procShowWindow.Call(s.highlight, 4)
@@ -500,24 +529,21 @@ func (s *hoverCapture) tick() {
 	if s.toolbarAt(point) {
 		return
 	}
-	// Drop stale regions immediately when geometry/ownership changes, even with a stationary mouse.
-	current, e := windows.WindowAtPoint(point.X, point.Y)
-	if e != nil || s.target.Window.Handle != current.Handle || s.target.Window.Bounds != current.Bounds || s.target.Control != nil && !s.target.Control.Bounds.Contains(point.X, point.Y) {
+	currentWindow, windowErr := windows.WindowAtPoint(point.X, point.Y)
+	if windowErr != nil || currentWindow.PID == os.Getpid() {
 		s.target = windows.PickTarget{}
 		s.setFrame(image.Rectangle{})
+		return
 	}
-	if !s.picking && time.Since(s.lastRequest) >= 300*time.Millisecond {
-		s.picking = true
-		s.lastRequest = time.Now()
-		go func() {
-			target, err := (windows.GUI{}).PickAtPoint(s.ctx, point.X, point.Y)
-			s.results <- hoverResult{point, target, err}
-		}()
-	}
+	s.target = windows.PickTarget{Window: currentWindow}
+	s.targetAt = time.Now()
+	b := windows.CaptureWindowBounds(currentWindow)
+	s.setFrame(image.Rect(b.Left, b.Top, b.Right, b.Bottom))
+	s.notice("选择窗口 · " + currentWindow.Title)
 }
 
 func (s *hoverCapture) choose(point image.Point) {
-	if s.closing {
+	if s.closing || s.paused {
 		return
 	}
 	choice := pendingCapture{point: point, target: s.target, manual: s.manual, region: s.region, observed: s.targetAt}
@@ -556,17 +582,12 @@ func (s *hoverCapture) captureChoice(choice pendingCapture) {
 		}
 		item.Bounds = ports.Rect{Left: region.Min.X, Top: region.Min.Y, Right: region.Max.X, Bottom: region.Max.Y}
 	} else {
-		if target.Control == nil || !choice.queued && time.Since(choice.observed) > 1500*time.Millisecond || target.Window.Handle != current.Handle || target.Window.PID != current.PID || target.Window.Bounds != current.Bounds || !target.Control.Bounds.Contains(point.X, point.Y) {
+		if !choice.queued && time.Since(choice.observed) > 1500*time.Millisecond || target.Window.Handle != current.Handle || target.Window.PID != current.PID || target.Window.Bounds != current.Bounds {
 			s.notice("目标已变化或尚未识别，请稍候或手动框选")
 			return
 		}
-		c := *target.Control
-		item.Control = &c
-		visible := true // RawPickAtPoint accepted only a successfully read IsOffscreen=false.
-		item.Visible = &visible
-		item.Name = c.Text
-		item.Bounds = c.Bounds
-		item.Rule = captureRule{Method: "uia", AutomationID: c.ID, ControlType: target.ControlType, Name: c.Text, ClassName: target.ClassName}
+		item.Name = current.Title
+		item.Bounds = windows.CaptureWindowBounds(current)
 	}
 	if item.Bounds.Width() < 1 || item.Bounds.Height() < 1 || item.Bounds.Width() > 10000 || item.Bounds.Height() > 10000 || int64(item.Bounds.Width())*int64(item.Bounds.Height()) > 25000000 {
 		s.lastError = "捕获区域为空或过大"
@@ -581,6 +602,7 @@ func (s *hoverCapture) captureChoice(choice pendingCapture) {
 		return
 	}
 	s.busy = true
+	s.paused = true
 	if !choice.queued {
 		s.lastError = ""
 	}
@@ -599,7 +621,7 @@ func (s *hoverCapture) captureChoice(choice pendingCapture) {
 				e = fmt.Errorf("UIA 控件在点击后已变化，请重新捕获")
 			}
 		}
-		var saved draftCapture
+		var preview image.Image
 		if e == nil {
 			s.snapshotting.Store(true)
 			procShowWindow.Call(s.highlight, swHide)
@@ -613,17 +635,17 @@ func (s *hoverCapture) captureChoice(choice pendingCapture) {
 				if ae != nil || after.Handle != current.Handle || after.PID != current.PID || after.Bounds != current.Bounds {
 					e = fmt.Errorf("截图过程中目标窗口已变化，本次未保存")
 				} else {
-					saved, e = s.session.save(item, shot)
+					preview = shot
 				}
 			}
 		}
-		s.work <- captureWork{saved, e, "save"}
+		s.work <- captureWork{item: item, err: e, kind: "preview", shot: preview}
 	}()
 }
 
 func (s *hoverCapture) refreshList() {
 	send(s.controls[captureList], 0x184, 0, 0)
-	index, err := readCaptureIndex(projectDir(s.pane.owner.exeDir, s.pane.project), s.pane.project.ID)
+	index, err := readCaptureIndex(projectDir(s.pane.owner.templateRoot(), s.pane.project), s.pane.project.ID)
 	if err != nil {
 		s.notice(err.Error())
 		return
@@ -644,9 +666,25 @@ func (s *hoverCapture) undo() {
 	s.busy = true
 	go func() { s.work <- captureWork{err: s.session.undo(), kind: "undo"} }()
 }
+
+func (s *hoverCapture) toggleManual() {
+	s.manual = !s.manual
+	s.dragging = false
+	s.setFrame(image.Rectangle{})
+	if s.manual {
+		setWindowTextRaw(s.controls[captureManual], "自动选窗")
+		s.notice("拖动框选窗口区域，松开后标记")
+	} else {
+		setWindowTextRaw(s.controls[captureManual], "手动框选")
+		s.notice("移动鼠标选择窗口，点击后标记")
+	}
+}
 func (s *hoverCapture) close(cancel bool) {
 	if s.closing {
 		return
+	}
+	if a := annotationPanes[s.annotation]; a != nil {
+		a.close()
 	}
 	s.closing = true
 	s.cancelSession = cancel
@@ -715,10 +753,7 @@ func hoverCaptureProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintpt
 			case 90:
 				s.undo()
 			case 119:
-				s.manual = !s.manual
-				s.dragging = false
-				s.setFrame(image.Rectangle{})
-				s.notice("手动框选模式已切换")
+				s.toggleManual()
 			}
 			return 0
 		case 0x111:
@@ -731,14 +766,7 @@ func hoverCaptureProc(h uintptr, msg uint32, w uintptr, l unsafe.Pointer) uintpt
 				case captureUndo:
 					s.undo()
 				case captureManual:
-					s.manual = !s.manual
-					s.dragging = false
-					s.setFrame(image.Rectangle{})
-					if s.manual {
-						s.notice("手动框选")
-					} else {
-						s.notice("UIA 自动识别")
-					}
+					s.toggleManual()
 				}
 			}
 			return 0

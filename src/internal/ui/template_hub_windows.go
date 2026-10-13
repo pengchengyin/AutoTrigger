@@ -27,7 +27,7 @@ const (
 	hubStatus
 )
 
-var hubControlIDs = []int{hubName, hubDescription, hubSave, hubBack, hubCapture, hubImages, hubDelete, hubAction, hubMark, hubPrevious, hubNext, hubStatus, 5200, 5201, 5202, 5203, 5300, 5301, 5302, 5303}
+var hubControlIDs = []int{hubName, hubDescription, hubSave, hubBack, hubCapture, hubImages, hubDelete, hubAction, hubMark, hubPrevious, hubNext, hubStatus, 5400, 5401, 5200, 5201, 5202, 5203, 5300, 5301, 5302, 5303}
 
 func init() { templateControlIDs = append(templateControlIDs, hubControlIDs...) }
 
@@ -37,6 +37,8 @@ func (f *form) ensureHubControls() {
 	}
 	f.edit(hubName, "")
 	f.edit(hubDescription, "")
+	f.label(5400, "模板名称（必填）")
+	f.label(5401, "模板描述（选填，例如：适用软件、窗口或用途）")
 	f.label(hubStatus, "")
 	send(f.ctrls[hubName], 0x1501, 1, uintptr(unsafe.Pointer(utf16Ptr("模板名称"))))
 	send(f.ctrls[hubDescription], 0x1501, 1, uintptr(unsafe.Pointer(utf16Ptr("模板描述"))))
@@ -151,18 +153,21 @@ func (f *form) layoutTemplateHub(w, h int) {
 	left, right, top := int(r.Left)+f.px(18), int(r.Right)-f.px(18), int(r.Top)+f.px(18)
 	f.showAt(hubStatus, left, int(r.Bottom)-f.px(40), right-left-f.px(100), f.px(26))
 	if f.hubEditing || f.hubSelected != "" {
+		f.showAt(5400, left, top, right-left-f.px(220), f.px(22))
+		f.showAt(5401, left, top+f.px(66), right-left, f.px(22))
+		top += f.px(26)
 		f.showAt(hubName, left, top, right-left-f.px(220), f.px(32))
 		f.showAt(hubSave, right-f.px(212), top, f.px(100), f.px(32))
 		f.showAt(hubBack, right-f.px(104), top, f.px(104), f.px(32))
-		f.showAt(hubDescription, left, top+f.px(44), right-left, f.px(32))
+		f.showAt(hubDescription, left, top+f.px(66), right-left, f.px(32))
 		if f.hubEditing {
 			return
 		}
-		f.showAt(hubCapture, left, top+f.px(92), f.px(120), f.px(32))
-		f.showAt(hubDelete, left+f.px(130), top+f.px(92), f.px(110), f.px(32))
-		f.showAt(hubAction, left+f.px(250), top+f.px(92), f.px(170), f.comboDropH(f.px(32), 7))
-		f.showAt(hubMark, left+f.px(430), top+f.px(92), f.px(100), f.px(32))
-		f.showAt(hubImages, left, top+f.px(140), f.px(250), maxInt(f.px(40), int(r.Bottom)-top-f.px(194)))
+		f.showAt(hubCapture, left, top+f.px(110), f.px(120), f.px(32))
+		f.showAt(hubDelete, left+f.px(130), top+f.px(110), f.px(110), f.px(32))
+		f.showAt(hubAction, left+f.px(250), top+f.px(110), f.px(170), f.comboDropH(f.px(32), 7))
+		f.showAt(hubMark, left+f.px(430), top+f.px(110), f.px(100), f.px(32))
+		f.showAt(hubImages, left, top+f.px(158), f.px(250), maxInt(f.px(40), int(r.Bottom)-top-f.px(212)))
 		for _, id := range []int{hubCapture, hubDelete, hubMark} {
 			enableWindow(f.ctrls[id], !f.isRunning())
 		}
@@ -190,7 +195,7 @@ func (f *form) paintTemplateHub(dc uintptr, r rectT) {
 	}
 	if f.hubSelected != "" {
 		p := makerPanes[f.templateMaker]
-		area := image.Rect(int(r.Left)+f.px(286), int(r.Top)+f.px(160), int(r.Right)-f.px(18), int(r.Bottom)-f.px(54))
+		area := image.Rect(int(r.Left)+f.px(286), int(r.Top)+f.px(202), int(r.Right)-f.px(18), int(r.Bottom)-f.px(54))
 		if p == nil || p.shot == nil {
 			drawText(dc, "选择图片查看", rectT{Left: int32(area.Min.X), Top: int32(area.Min.Y), Right: int32(area.Max.X), Bottom: int32(area.Max.Y)}, modernTheme.muted, f.font, dtCenter|dtVCenter)
 			return

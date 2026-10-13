@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"syscall"
 	"time"
 	"unsafe"
 )
@@ -24,6 +25,20 @@ type PickTarget struct {
 	ClassName    string         `json:"class_name,omitempty"`
 	Reason       string         `json:"reason,omitempty"`
 	CaptureError string         `json:"capture_error,omitempty"`
+}
+
+// Exclude invisible DWM resize margins when available; retain Win7 fallback.
+func CaptureWindowBounds(w ports.Window) ports.Rect {
+	var r nativeRect
+	proc := syscall.NewLazyDLL("dwmapi.dll").NewProc("DwmGetWindowAttribute")
+	if proc.Find() == nil {
+		result, _, _ := proc.Call(w.Handle, 9, uintptr(unsafe.Pointer(&r)), unsafe.Sizeof(r))
+		b := r.rect()
+		if result == 0 && b.Width() > 0 && b.Height() > 0 && b.Left >= w.Bounds.Left && b.Top >= w.Bounds.Top && b.Right <= w.Bounds.Right && b.Bottom <= w.Bounds.Bottom {
+			return b
+		}
+	}
+	return w.Bounds
 }
 
 // Capturing is not a way to bypass UIPI or the secure desktop. Keep the
@@ -63,7 +78,7 @@ func (GUI) PickAtPoint(ctx context.Context, x, y int) (PickTarget, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
 	defer cancel()
-	result, err := procutil.Run(ctx, Runner{}, ports.Command{Program: exe, Args: []string{"--internal-uia-point", strconv.Itoa(x) + "," + strconv.Itoa(y)}})
+	result, err := procutil.Run(ctx, Runner{}, ports.Command{Program: exe, HideWindow: true, Args: []string{"--internal-uia-point", strconv.Itoa(x) + "," + strconv.Itoa(y)}})
 	if err != nil {
 		return PickTarget{}, fmt.Errorf("UIA 点识别失败或超时：%w", err)
 	}

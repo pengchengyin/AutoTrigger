@@ -15,6 +15,7 @@ var ErrUnsupported = errors.New("platform capability unsupported")
 var ErrBusy = errors.New("another AutoTrigger instance holds the machine lock")
 
 type Command struct {
+	HideWindow  bool
 	CommandLine string
 	Program     string
 	Args        []string

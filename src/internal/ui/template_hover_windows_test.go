@@ -88,6 +88,8 @@ func TestWindowsHoverCaptureInstaller(t *testing.T) {
 	}
 	f := newForm(cli.Dependencies{})
 	f.exeDir = t.TempDir()
+	f.dataDir = f.exeDir
+	f.dataError = nil
 	f.historyDir = filepath.Join(f.exeDir, "history")
 	f.history = nil
 	f.opts = NewOptions(f.exeDir)
@@ -149,6 +151,7 @@ func TestWindowsHoverCaptureInstaller(t *testing.T) {
 			user32.NewProc("mouse_event").Call(2, 0, 0, 0, 0)
 			user32.NewProc("mouse_event").Call(4, 0, 0, 0, 0)
 		}
+		confirmCaptureAnnotation(t, s)
 		pumpCaptureUntil(t, func() bool { return s.count == i+1 && !s.busy })
 		t.Logf("captured %s as %s, bounds=%+v DPI=%d", c.Text, method, c.Bounds, target.DPI)
 	}
@@ -266,6 +269,28 @@ func pumpCaptureUntil(t *testing.T, ready func() bool) {
 	t.Fatal("native capture operation timed out")
 }
 
+func confirmCaptureAnnotation(t *testing.T, s *hoverCapture) {
+	t.Helper()
+	pumpCaptureUntil(t, func() bool { return s.annotation != 0 })
+	a := annotationPanes[s.annotation]
+	if a == nil {
+		t.Fatal("annotation not created")
+	}
+	width, height := annotationMin(32, a.shot.Bounds().Dx()), annotationMin(24, a.shot.Bounds().Dy())
+	send(a.hwnd, 0x201, 1, uintptr(a.bar<<16))
+	send(a.hwnd, 0x200, 1, uintptr(width|((a.bar+height)<<16)))
+	send(a.hwnd, 0x202, 0, uintptr(width|((a.bar+height)<<16)))
+	if a.selection != image.Rect(0, 0, width, height) {
+		t.Fatal("annotation drag did not select original pixels", a.selection)
+	}
+	send(a.action, 0x14e, 1, 0)
+	if shots := os.Getenv("AUTOTRIGGER_UI_SHOTS"); shots != "" {
+		captureNativeWindow(t, a.hwnd, filepath.Join(shots, fmt.Sprintf("annotation-%d.png", len(s.session.ids)+1)))
+	}
+	a.save()
+	pumpCaptureUntil(t, func() bool { return !s.busy && !s.paused })
+}
+
 func TestWindowsHoverCapture(t *testing.T) {
 	shots := os.Getenv("AUTOTRIGGER_UI_SHOTS")
 	if shots == "" {
@@ -300,6 +325,8 @@ func TestWindowsHoverCapture(t *testing.T) {
 	}
 	f := newForm(cli.Dependencies{})
 	f.exeDir = t.TempDir()
+	f.dataDir = f.exeDir
+	f.dataError = nil
 	f.historyDir = filepath.Join(f.exeDir, "history")
 	f.history = nil
 	f.opts = NewOptions(f.exeDir)
@@ -341,18 +368,25 @@ func TestWindowsHoverCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	user32.NewProc("SetForegroundWindow").Call(targetH)
+	user32.NewProc("SetWindowPos").Call(targetH, ^uintptr(0), 0, 0, 0, 0, 0x13)
+	defer user32.NewProc("SetWindowPos").Call(targetH, ^uintptr(1), 0, 0, 0, 0, 0x13)
 	move := func(h uintptr) {
 		v := center(h)
+		var bounds rectT
+		user32.NewProc("GetWindowRect").Call(targetH, uintptr(unsafe.Pointer(&bounds)))
 		user32.NewProc("SetCursorPos").Call(uintptr(v.X), uintptr(v.Y))
 		pumpCaptureUntil(t, func() bool {
-			return s.target.Control != nil && s.target.Control.Bounds.Contains(v.X, v.Y) && !s.picking
+			if hoverPanes[s.hwnd] == nil {
+				t.Fatalf("capture closed unexpectedly: %s / %s", s.lastError, p.value(makerStatus))
+			}
+			return s.target.Window.Handle == targetH && s.target.Window.Bounds == (ports.Rect{Left: int(bounds.Left), Top: int(bounds.Top), Right: int(bounds.Right), Bottom: int(bounds.Bottom)}) && s.target.Window.Bounds.Contains(v.X, v.Y) && !s.picking
 		})
 	}
 	move(button)
-	if s.target.Control.Role != "button" || s.target.Control.Source != "uia" {
-		t.Fatalf("not real UIA: %+v", s.target)
+	if s.target.Control != nil {
+		t.Fatalf("window selection mislabeled as UIA: %+v", s.target)
 	}
-	tool, e := filepath.Abs(filepath.Join("..", "..", "dist", "AutoTrigger.exe"))
+	tool, e := filepath.Abs(filepath.Join("..", "..", "..", "dist", "AutoTrigger.exe"))
 	if e == nil {
 		if _, e = os.Stat(tool); e == nil {
 			point := center(button)
@@ -405,10 +439,11 @@ func TestWindowsHoverCapture(t *testing.T) {
 	click := func() {
 		user32.NewProc("mouse_event").Call(2, 0, 0, 0, 0)
 		user32.NewProc("mouse_event").Call(4, 0, 0, 0, 0)
+		confirmCaptureAnnotation(t, s)
 	}
 	click()
 	pumpCaptureUntil(t, func() bool { return s.count == 1 && !s.busy })
-	// Rapid consecutive clicks must be queued, not discarded while writing.
+	// Each confirmed annotation returns to the same continuous capture session.
 	click()
 	click()
 	pumpCaptureUntil(t, func() bool { return s.count == 3 && !s.busy && len(s.queue) == 0 })
@@ -443,6 +478,7 @@ func TestWindowsHoverCapture(t *testing.T) {
 	pumpCaptureUntil(t, func() bool { return s.dragging })
 	user32.NewProc("SetCursorPos").Call(1130, 540)
 	user32.NewProc("mouse_event").Call(4, 0, 0, 0, 0)
+	confirmCaptureAnnotation(t, s)
 	pumpCaptureUntil(t, func() bool { return s.count == 2 && !s.busy })
 	if p.captures[1].Rule.Method != "image" {
 		t.Fatal("manual fallback mislabeled UIA")
@@ -453,7 +489,7 @@ func TestWindowsHoverCapture(t *testing.T) {
 	if activeHover != nil || p.capturing || s.mouseHook != 0 || s.keyHook != 0 {
 		t.Fatal("hooks not released")
 	}
-	index, err := readCaptureIndex(projectDir(f.exeDir, p.project), p.project.ID)
+	index, err := readCaptureIndex(projectDir(f.templateRoot(), p.project), p.project.ID)
 	if err != nil || len(index.Items) != 2 || !index.Items[0].Confirmed || !index.Items[1].Confirmed {
 		t.Fatal("finish did not persist captures")
 	}
@@ -471,7 +507,7 @@ func TestWindowsHoverCapture(t *testing.T) {
 	pumpCaptureUntil(t, func() bool { return s.count == 1 && !s.busy })
 	send(s.controls[captureCancel], 0xf5, 0, 0)
 	pumpCaptureUntil(t, func() bool { return hoverPanes[s.hwnd] == nil })
-	index, err = readCaptureIndex(projectDir(f.exeDir, p.project), p.project.ID)
+	index, err = readCaptureIndex(projectDir(f.templateRoot(), p.project), p.project.ID)
 	if err != nil || len(index.Items) != 2 {
 		t.Fatal("cancel removed prior session")
 	}

@@ -44,6 +44,15 @@ func TestSuspendedJobCapturesOutput(t *testing.T) {
 		t.Fatal(exit)
 	}
 }
+
+func TestHiddenHelperCapturesOutput(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	exit, err := procutil.Run(ctx, Runner{}, ports.Command{Program: systemExe("cmd.exe"), Args: []string{"/d", "/c", "echo hidden-output"}, HideWindow: true})
+	if err != nil || exit.Code != 0 || !strings.Contains(exit.Stdout, "hidden-output") {
+		t.Fatal(exit, err)
+	}
+}
 func TestJobKeepsChildrenAfterParentExit(t *testing.T) {
 	t.Setenv("AT_NATIVE_TEST_HELPER", "parent")
 	executable, _ := os.Executable()

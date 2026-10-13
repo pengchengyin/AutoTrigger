@@ -194,6 +194,10 @@ func (Runner) Start(ctx context.Context, c ports.Command) (ports.Process, error)
 	cmd.WaitDelay = 500 * time.Millisecond
 	// Suspend before user code runs so child processes cannot escape job assignment.
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x4 | 0x200, HideWindow: false, CmdLine: c.CommandLine}
+	if c.HideWindow {
+		cmd.SysProcAttr.HideWindow = true
+		cmd.SysProcAttr.CreationFlags |= 0x08000000 // CREATE_NO_WINDOW, only for internal helpers.
+	}
 	p.cmd = cmd
 	if err = cmd.Start(); err != nil {
 		syscall.CloseHandle(p.job)

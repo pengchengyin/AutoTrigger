@@ -54,6 +54,12 @@ func TestWindowsUnifiedDataSettingsAndTemplateControls(t *testing.T) {
 	}
 	f.setPage(pageTemplates)
 	f.performHeaderAction("new-template")
+	for id, text := range map[int]string{5400: "模板名称（必填）", 5401: "模板描述（选填，例如：适用软件、窗口或用途）"} {
+		visible, _, _ := user32.NewProc("IsWindowVisible").Call(f.ctrls[id])
+		if visible == 0 || windowText(f.ctrls[id]) != text {
+			t.Fatal("template form label missing", id)
+		}
+	}
 	setWindowTextRaw(f.ctrls[hubName], "Native data layout test")
 	f.onCommand(hubSave, bnClicked)
 	projects, err := listTemplateProjects(f.dataLayout().Templates())
