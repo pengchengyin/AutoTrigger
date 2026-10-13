@@ -396,11 +396,7 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 			}
 		}
 	}
-	methods := make([]string, 0, len(commands))
-	for _, cmd := range commands {
-		methods = append(methods, cmd.Method)
-	}
-	e.Log.Stage(logging.LevelInfo, logging.StageRun, "准备按 %d 种方式依次尝试安装：%s", len(commands), strings.Join(methods, "、"))
+	e.Log.Stage(logging.LevelInfo, logging.StageRun, "准备依次尝试执行，最多 %d 次：%s", len(commands), attemptPlanText(commands))
 	allEvidence := []schema.Evidence{}
 	unresolvedNegatives := []schema.Evidence{}
 	sideEffects := false
