@@ -209,6 +209,13 @@ func (f *form) paintTemplateHub(dc uintptr, r rectT) {
 		b := p.shot.Bounds()
 		info := makerBitmapInfo{Size: 40, Width: int32(b.Dx()), Height: -int32(b.Dy()), Planes: 1, Bits: 32}
 		gdi32.NewProc("StretchDIBits").Call(dc, uintptr(d.Min.X), uintptr(d.Min.Y), uintptr(d.Dx()), uintptr(d.Dy()), 0, 0, uintptr(b.Dx()), uintptr(b.Dy()), uintptr(unsafe.Pointer(&p.pixels[0])), uintptr(unsafe.Pointer(&info)), 0, 0xcc0020)
+		if !p.bounds.Empty() {
+			mark := rectT{Left: int32(d.Min.X + p.bounds.Min.X*d.Dx()/b.Dx()), Top: int32(d.Min.Y + p.bounds.Min.Y*d.Dy()/b.Dy()), Right: int32(d.Min.X + p.bounds.Max.X*d.Dx()/b.Dx()), Bottom: int32(d.Min.Y + p.bounds.Max.Y*d.Dy()/b.Dy())}
+			fillSolid(dc, rectT{Left: mark.Left, Top: mark.Top, Right: mark.Right, Bottom: mark.Top + 2}, modernTheme.primary)
+			fillSolid(dc, rectT{Left: mark.Left, Top: mark.Bottom - 2, Right: mark.Right, Bottom: mark.Bottom}, modernTheme.primary)
+			fillSolid(dc, rectT{Left: mark.Left, Top: mark.Top, Right: mark.Left + 2, Bottom: mark.Bottom}, modernTheme.primary)
+			fillSolid(dc, rectT{Left: mark.Right - 2, Top: mark.Top, Right: mark.Right, Bottom: mark.Bottom}, modernTheme.primary)
+		}
 		return
 	}
 	w, h := f.clientSize()
@@ -318,7 +325,7 @@ func (f *form) hubCommand(id, code int) bool {
 			item := f.hubCaptures[i]
 			name = item.Name
 			action = item.Rule.Action
-			shot, err = captureImage(projectDir(f.templateRoot(), p.project), item)
+			shot, err = capturePreview(projectDir(f.templateRoot(), p.project), item)
 		} else {
 			entry := f.hubLegacy[i-len(f.hubCaptures)]
 			name = entry.ID
@@ -335,6 +342,17 @@ func (f *form) hubCommand(id, code int) bool {
 			f.setStatusKind(err.Error(), statusKindFail)
 		} else {
 			p.setImage(shot, name)
+			p.bounds = image.Rectangle{}
+			if i < len(f.hubCaptures) {
+				item := f.hubCaptures[i]
+				if item.SourceBounds != nil {
+					b := item.SourceBounds
+					p.bounds = image.Rect(item.Bounds.Left-b.Left, item.Bounds.Top-b.Top, item.Bounds.Right-b.Left, item.Bounds.Bottom-b.Top)
+					f.setStatusKind("原图完整 · 标记区域已显示", statusKindOK)
+				} else {
+					f.setStatusKind("旧记录：只保存了标记图，原图需重新捕获", statusKindWarn)
+				}
+			}
 		}
 		f.setComboSel(hubAction, 0)
 		for at, candidate := range []string{"", "next", "install", "accept", "ok", "yes", "finish"} {

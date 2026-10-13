@@ -5,7 +5,32 @@ import (
 	"image"
 	"image/color"
 	"testing"
+	"time"
 )
+
+func TestLowContrastCheckboxWithinBudget(t *testing.T) {
+	screen := image.NewGray(image.Rect(0, 0, 566, 409))
+	for i := range screen.Pix {
+		screen.Pix[i] = 240
+	}
+	needle := image.NewGray(image.Rect(0, 0, 34, 37))
+	for y := 0; y < 37; y++ {
+		for x := 0; x < 34; x++ {
+			v := uint8(240)
+			if x >= 7 && x <= 27 && y >= 9 && y <= 29 && (x <= 8 || x >= 26 || y <= 10 || y >= 28) {
+				v = 20
+			}
+			needle.SetGray(x, y, color.Gray{Y: v})
+			screen.SetGray(x+36, y+267, color.Gray{Y: v})
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	r, score, ok := MatchContext(ctx, screen, needle, .95)
+	if !ok || score < .99999 || r != image.Rect(36, 267, 70, 304) {
+		t.Fatalf("checkbox lost: %v %.4f %t %v", r, score, ok, ctx.Err())
+	}
+}
 
 func TestMatchAndCancellation(t *testing.T) {
 	screen := image.NewGray(image.Rect(0, 0, 240, 100))

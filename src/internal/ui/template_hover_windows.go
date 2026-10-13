@@ -249,6 +249,10 @@ func (s *hoverCapture) notice(text string) {
 }
 
 func captureToolbarAt(hwnd uintptr, p image.Point) bool {
+	visible, _, _ := user32.NewProc("IsWindowVisible").Call(hwnd)
+	if visible == 0 {
+		return false
+	}
 	var r rectT
 	procGetWindowRect := user32.NewProc("GetWindowRect")
 	procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r)))
@@ -470,11 +474,15 @@ func (s *hoverCapture) tick() {
 	select {
 	case work := <-s.work:
 		s.busy = false
+		if work.kind == "preview" && work.err != nil {
+			procShowWindow.Call(s.hwnd, 4)
+		}
 		if work.kind == "save" || work.err != nil && work.kind == "preview" {
 			s.paused = false
 		}
 		if work.kind == "preview" && work.err == nil && !s.closing {
 			if err := s.openAnnotation(work.item, work.shot); err != nil {
+				procShowWindow.Call(s.hwnd, 4)
 				s.paused = false
 				s.lastError = err.Error()
 				s.notice(err.Error())
@@ -594,19 +602,16 @@ func (s *hoverCapture) captureChoice(choice pendingCapture) {
 		s.notice(s.lastError)
 		return
 	}
-	var toolbar rectT
-	user32.NewProc("GetWindowRect").Call(s.hwnd, uintptr(unsafe.Pointer(&toolbar)))
-	if !image.Rect(item.Bounds.Left, item.Bounds.Top, item.Bounds.Right, item.Bounds.Bottom).Intersect(image.Rect(int(toolbar.Left), int(toolbar.Top), int(toolbar.Right), int(toolbar.Bottom))).Empty() {
-		s.lastError = "目标区域被捕获工具栏遮挡，请移动工具栏后重试"
-		s.notice(s.lastError)
-		return
-	}
 	s.busy = true
 	s.paused = true
 	if !choice.queued {
 		s.lastError = ""
 	}
 	s.notice("正在保存截图和控件信息")
+	// Hide our surfaces and raise only z-order; never move, resize, activate or click the installer.
+	procShowWindow.Call(s.highlight, swHide)
+	procShowWindow.Call(s.hwnd, swHide)
+	user32.NewProc("SetWindowPos").Call(current.Handle, 0, 0, 0, 0, 0, 0x13)
 	// Frames are outside the crop. Capture is performed off-thread so hooks keep pumping.
 	go func() {
 		check, e := windows.WindowAtPoint(point.X, point.Y)
@@ -626,7 +631,14 @@ func (s *hoverCapture) captureChoice(choice pendingCapture) {
 			s.snapshotting.Store(true)
 			procShowWindow.Call(s.highlight, swHide)
 			time.Sleep(20 * time.Millisecond)
-			shot, se := (windows.GUI{}).RawScreenshot(ports.Window{Bounds: item.Bounds})
+			var shot image.Image
+			se := windows.CaptureRegionVisible(current, item.Bounds)
+			if se == nil {
+				shot, se = (windows.GUI{}).RawScreenshot(ports.Window{Bounds: item.Bounds})
+			}
+			if se == nil {
+				se = windows.CaptureRegionVisible(current, item.Bounds)
+			}
 			s.snapshotting.Store(false)
 			if se != nil {
 				e = se

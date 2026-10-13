@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type UserRule struct {
@@ -169,7 +170,9 @@ func (index UserIndex) Images(ctx context.Context, w ports.Window, shot image.Im
 		if rule.Method != "image" && rule.Method != "legacy_image" || rule.WindowTitle != "" && rule.WindowTitle != w.Title || rule.DPI != w.DPI || rule.Theme != "" && rule.Theme != w.Theme || rule.Image == nil {
 			continue
 		}
-		r, score, ok := MatchContext(ctx, haystack, rule.Image, rule.Threshold)
+		matchCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		r, score, ok := MatchContext(matchCtx, haystack, rule.Image, rule.Threshold)
+		cancel()
 		if !ok {
 			continue
 		}

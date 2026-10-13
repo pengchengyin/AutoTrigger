@@ -139,6 +139,8 @@ func (a *captureAnnotation) save() {
 	}
 	region := a.selection.Intersect(image.Rect(0, 0, a.shot.Bounds().Dx(), a.shot.Bounds().Dy()))
 	item := a.item
+	sourceBounds := item.Bounds
+	item.SourceBounds = &sourceBounds
 	item.Control = nil
 	item.Visible = nil
 	item.Rule = captureRule{Method: "image", Action: actions[index], MinSimilarity: 0.95}
@@ -153,7 +155,7 @@ func (a *captureAnnotation) save() {
 	a.s.busy = true
 	a.s.paused = true
 	go func() {
-		saved, err := a.s.session.save(item, img)
+		saved, err := a.s.session.saveWithSource(item, img, a.shot)
 		a.s.work <- captureWork{item: saved, err: err, kind: "save"}
 	}()
 }

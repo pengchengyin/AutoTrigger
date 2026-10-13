@@ -326,7 +326,10 @@ func (GUI) RawScreenshot(w ports.Window) (image.Image, error) {
 	defer gdi32.NewProc("DeleteObject").Call(bmp)
 	old, _, _ := gdi32.NewProc("SelectObject").Call(dc, bmp)
 	defer gdi32.NewProc("SelectObject").Call(dc, old)
-	ok, _, _ := user32.NewProc("PrintWindow").Call(w.Handle, dc, winver.Current().PrintFlags())
+	var ok uintptr
+	if w.Handle != 0 {
+		ok, _, _ = user32.NewProc("PrintWindow").Call(w.Handle, dc, winver.Current().PrintFlags())
+	}
 	if ok == 0 {
 		ok, _, _ = gdi32.NewProc("BitBlt").Call(dc, 0, 0, uintptr(width), uintptr(height), screen, uintptr(w.Bounds.Left), uintptr(w.Bounds.Top), 0x40cc0020)
 	}

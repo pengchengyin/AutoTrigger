@@ -216,10 +216,56 @@ func MatchContext(ctx context.Context, haystack, needle *image.Gray, min float64
 	}
 	best := 0.0
 	var rect image.Rectangle
+	// Integral moments reject uniform backgrounds without rescanning each patch.
+	stride := haystack.Bounds().Dx() + 1
+	var sums, squares []int64
+	if int64(stride)*int64(haystack.Bounds().Dy()+1) <= 2000000 {
+		sums = make([]int64, stride*(haystack.Bounds().Dy()+1))
+		squares = make([]int64, len(sums))
+		for y := 0; y < haystack.Bounds().Dy(); y++ {
+			if ctx.Err() != nil {
+				return image.Rectangle{}, 0, false
+			}
+			var s, q int64
+			for x := 0; x < haystack.Bounds().Dx(); x++ {
+				v := int64(haystack.GrayAt(x, y).Y)
+				s += v
+				q += v * v
+				at := (y+1)*stride + x + 1
+				sums[at] = sums[at-stride] + s
+				squares[at] = squares[at-stride] + q
+			}
+		}
+	}
+	histogram := [256]int{}
+	for sy := 0; sy < h; sy++ {
+		if ctx.Err() != nil {
+			return image.Rectangle{}, 0, false
+		}
+		for sx := 0; sx < w; sx++ {
+			histogram[needle.GrayAt(sx, sy).Y]++
+		}
+	}
+	uniform := [256]float64{}
+	for v := 0; v < 256; v++ {
+		var errorSum int
+		for value, count := range histogram {
+			errorSum += abs(v-value) * count
+		}
+		uniform[v] = 1 - float64(errorSum)/float64(255*w*h)
+	}
 	for y := 0; y <= haystack.Bounds().Dy()-h; y++ {
 		for x := 0; x <= haystack.Bounds().Dx()-w; x++ {
 			if x%16 == 0 && ctx.Err() != nil {
 				return image.Rectangle{}, 0, false
+			}
+			if sums != nil {
+				a, b, c, d := y*stride+x, y*stride+x+w, (y+h)*stride+x, (y+h)*stride+x+w
+				s := sums[d] - sums[b] - sums[c] + sums[a]
+				q := squares[d] - squares[b] - squares[c] + squares[a]
+				if q*int64(w*h) == s*s && uniform[int(s/int64(w*h))] < min {
+					continue
+				}
 			}
 			sum, n := 0, 0
 			for sy := 0; sy < h; sy += 4 {
@@ -231,7 +277,7 @@ func MatchContext(ctx context.Context, haystack, needle *image.Gray, min float64
 			if float64(sum)/float64(n) > 42 {
 				continue
 			}
-			score := Similarity(haystack, needle, x, y)
+			score := similarityFloor(haystack, needle, x, y, math.Max(min, best))
 			if score > best {
 				best = score
 				rect = image.Rect(x, y, x+w, y+h)
@@ -244,11 +290,16 @@ func MatchContext(ctx context.Context, haystack, needle *image.Gray, min float64
 	return rect, best, best >= min
 }
 func Similarity(a, b *image.Gray, ox, oy int) float64 {
+	return similarityFloor(a, b, ox, oy, 0)
+}
+
+func similarityFloor(a, b *image.Gray, ox, oy int, floor float64) float64 {
 	n := float64(b.Bounds().Dx() * b.Bounds().Dy())
 	if n == 0 {
 		return 0
 	}
 	var sa, sb, saa, sbb, sab, mae float64
+	maxError := (1 - floor) * 255 * n
 	for y := 0; y < b.Bounds().Dy(); y++ {
 		for x := 0; x < b.Bounds().Dx(); x++ {
 			av, bv := float64(a.GrayAt(x+ox, y+oy).Y), float64(b.GrayAt(x, y).Y)
@@ -258,6 +309,10 @@ func Similarity(a, b *image.Gray, ox, oy int) float64 {
 			sbb += bv * bv
 			sab += av * bv
 			mae += math.Abs(av - bv)
+			// The final score cannot exceed 1-MAE/(255*n).
+			if mae > maxError {
+				return 0
+			}
 		}
 	}
 	den := math.Sqrt((saa - sa*sa/n) * (sbb - sb*sb/n))

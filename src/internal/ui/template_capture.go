@@ -27,19 +27,22 @@ type captureRule struct {
 }
 
 type draftCapture struct {
-	ID        string         `json:"id"`
-	ProjectID string         `json:"project_id"`
-	SessionID string         `json:"session_id"`
-	Name      string         `json:"name"`
-	CreatedAt time.Time      `json:"created_at"`
-	Confirmed bool           `json:"confirmed"`
-	Window    ports.Window   `json:"window"`
-	Bounds    ports.Rect     `json:"screen_bounds"`
-	Control   *ports.Control `json:"control,omitempty"`
-	Visible   *bool          `json:"visible,omitempty"`
-	Rule      captureRule    `json:"rule"`
-	File      string         `json:"file"`
-	SHA256    string         `json:"sha256"`
+	ID           string         `json:"id"`
+	ProjectID    string         `json:"project_id"`
+	SessionID    string         `json:"session_id"`
+	Name         string         `json:"name"`
+	CreatedAt    time.Time      `json:"created_at"`
+	Confirmed    bool           `json:"confirmed"`
+	Window       ports.Window   `json:"window"`
+	Bounds       ports.Rect     `json:"screen_bounds"`
+	Control      *ports.Control `json:"control,omitempty"`
+	Visible      *bool          `json:"visible,omitempty"`
+	Rule         captureRule    `json:"rule"`
+	File         string         `json:"file"`
+	SHA256       string         `json:"sha256"`
+	SourceFile   string         `json:"source_file,omitempty"`
+	SourceSHA256 string         `json:"source_sha256,omitempty"`
+	SourceBounds *ports.Rect    `json:"source_bounds,omitempty"`
 }
 
 type captureIndex struct {
@@ -121,6 +124,10 @@ func captureHex(value string, length int) bool {
 }
 
 func (s *captureSession) save(item draftCapture, shot image.Image) (draftCapture, error) {
+	return s.saveWithSource(item, shot, nil)
+}
+
+func (s *captureSession) saveWithSource(item draftCapture, shot, source image.Image) (draftCapture, error) {
 	if s.closed {
 		return item, fmt.Errorf("捕获会话已结束")
 	}
@@ -135,6 +142,20 @@ func (s *captureSession) save(item draftCapture, shot image.Image) (draftCapture
 	}
 	if item.Rule.Method == "image" && (item.Rule.MinSimilarity <= 0 || item.Rule.MinSimilarity > 1) {
 		return item, fmt.Errorf("图像匹配阈值无效")
+	}
+	var original bytes.Buffer
+	if source != nil {
+		b := item.SourceBounds
+		if b == nil || b.Width() != source.Bounds().Dx() || b.Height() != source.Bounds().Dy() || b.Width() < 1 || b.Height() < 1 || int64(b.Width())*int64(b.Height()) > 25000000 || item.Bounds.Left < b.Left || item.Bounds.Top < b.Top || item.Bounds.Right > b.Right || item.Bounds.Bottom > b.Bottom {
+			return item, fmt.Errorf("原图与标记范围不一致")
+		}
+		if err := png.Encode(&original, source); err != nil {
+			return item, err
+		}
+	} else {
+		item.SourceBounds = nil
+		item.SourceFile = ""
+		item.SourceSHA256 = ""
 	}
 	dir := projectDir(s.root, s.project)
 	unlock, err := acquireHistoryLock(dir)
@@ -155,6 +176,10 @@ func (s *captureSession) save(item draftCapture, shot image.Image) (draftCapture
 		item.Name = "区域 " + fmt.Sprint(len(index.Items)+1)
 	}
 	item.File = "captures/" + id + "/image.png"
+	if source != nil {
+		item.SourceFile = "captures/" + id + "/source.png"
+		item.SourceSHA256 = fmt.Sprintf("%x", sha256.Sum256(original.Bytes()))
+	}
 	var data bytes.Buffer
 	if err = png.Encode(&data, shot); err != nil {
 		return item, err
@@ -171,6 +196,12 @@ func (s *captureSession) save(item draftCapture, shot image.Image) (draftCapture
 	if err = atomicTemplateFile(filepath.Join(asset, "image.png"), data.Bytes()); err != nil {
 		os.RemoveAll(asset)
 		return item, err
+	}
+	if source != nil {
+		if err = atomicTemplateFile(filepath.Join(asset, "source.png"), original.Bytes()); err != nil {
+			os.RemoveAll(asset)
+			return item, err
+		}
 	}
 	index.Items = append(index.Items, item)
 	b, err := json.MarshalIndent(index, "", "  ")
@@ -253,6 +284,11 @@ func (s *captureSession) finish(cancel bool) error {
 }
 
 func captureImage(dir string, item draftCapture) (image.Image, error) {
+	if item.SourceFile != "" || item.SourceBounds != nil || item.SourceSHA256 != "" {
+		if _, err := captureSource(dir, item); err != nil {
+			return nil, err
+		}
+	}
 	if !fs.ValidPath(item.File) || item.File != "captures/"+item.ID+"/image.png" {
 		return nil, fmt.Errorf("捕获资源路径无效")
 	}
@@ -268,4 +304,33 @@ func captureImage(dir string, item draftCapture) (image.Image, error) {
 		return nil, fmt.Errorf("捕获图片无效或过大")
 	}
 	return png.Decode(bytes.NewReader(b))
+}
+
+func captureSource(dir string, item draftCapture) (image.Image, error) {
+	bounds := item.SourceBounds
+	if item.SourceFile != "captures/"+item.ID+"/source.png" || !captureHex(item.SourceSHA256, 64) || bounds == nil {
+		return nil, fmt.Errorf("原图索引无效")
+	}
+	b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(item.SourceFile)))
+	if err != nil {
+		return nil, err
+	}
+	if fmt.Sprintf("%x", sha256.Sum256(b)) != item.SourceSHA256 {
+		return nil, fmt.Errorf("原图完整性校验失败")
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(b))
+	if err != nil || cfg.Width != bounds.Width() || cfg.Height != bounds.Height() || cfg.Width < 1 || cfg.Height < 1 || int64(cfg.Width)*int64(cfg.Height) > 25000000 || item.Bounds.Left < bounds.Left || item.Bounds.Top < bounds.Top || item.Bounds.Right > bounds.Right || item.Bounds.Bottom > bounds.Bottom {
+		return nil, fmt.Errorf("原图尺寸或标记范围无效")
+	}
+	return png.Decode(bytes.NewReader(b))
+}
+
+func capturePreview(dir string, item draftCapture) (image.Image, error) {
+	if _, err := captureImage(dir, item); err != nil {
+		return nil, err
+	}
+	if item.SourceFile != "" {
+		return captureSource(dir, item)
+	}
+	return captureImage(dir, item)
 }

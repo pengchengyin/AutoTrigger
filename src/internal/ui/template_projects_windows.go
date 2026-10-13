@@ -85,12 +85,16 @@ func (p *templateMakerPane) previewCaptureRecord() {
 		return
 	}
 	item := p.captures[i]
-	shot, err := captureImage(projectDir(p.owner.templateRoot(), p.project), item)
+	shot, err := capturePreview(projectDir(p.owner.templateRoot(), p.project), item)
 	if err != nil {
 		p.status("无法查看捕获图片：" + err.Error())
 		return
 	}
 	p.setImage(shot, item.Name)
+	if item.SourceBounds != nil {
+		b := item.SourceBounds
+		p.bounds = image.Rect(item.Bounds.Left-b.Left, item.Bounds.Top-b.Top, item.Bounds.Right-b.Left, item.Bounds.Bottom-b.Top)
+	}
 	p.capturePreview = true
 	p.layout()
 	enableWindow(p.controls[makerSave], false)

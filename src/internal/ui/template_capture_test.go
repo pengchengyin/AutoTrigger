@@ -10,6 +10,45 @@ import (
 	"testing"
 )
 
+func TestCaptureSourcePreservation(t *testing.T) {
+	root := t.TempDir()
+	p, err := newTemplateProject(root, "原图")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := newCaptureSession(root, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := ports.Rect{Left: -100, Top: 20, Right: 100, Bottom: 120}
+	item := draftCapture{Bounds: ports.Rect{Left: -90, Top: 30, Right: -70, Bottom: 50}, SourceBounds: &b, Rule: captureRule{Method: "image", Action: "next", MinSimilarity: .95}}
+	saved, err := s.saveWithSource(item, image.NewRGBA(image.Rect(0, 0, 20, 20)), image.NewRGBA(image.Rect(0, 0, 200, 100)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := projectDir(root, p)
+	preview, err := capturePreview(dir, saved)
+	if err != nil || preview.Bounds().Size() != image.Pt(200, 100) {
+		t.Fatalf("source preview: %v", err)
+	}
+	patch, err := captureImage(dir, saved)
+	if err != nil || patch.Bounds().Size() != image.Pt(20, 20) {
+		t.Fatalf("match patch: %v", err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, filepath.FromSlash(saved.SourceFile)), []byte("broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = captureImage(dir, saved); err == nil {
+		t.Fatal("corrupt source accepted")
+	}
+	if err = s.undo(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(filepath.Join(dir, "captures", saved.ID)); !os.IsNotExist(err) {
+		t.Fatal("undo left source behind")
+	}
+}
+
 func TestCaptureSessionIsolation(t *testing.T) {
 	root := t.TempDir()
 	p, err := newTemplateProject(root, "连续捕获")

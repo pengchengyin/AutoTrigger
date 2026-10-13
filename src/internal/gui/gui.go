@@ -197,9 +197,7 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 		if a.Templates != nil && a.Templates.User.HasImages(w) {
 			shot, err = a.Native.Screenshot(w)
 			if err == nil && shot != nil {
-				matchCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-				candidates = append(candidates, a.Templates.User.Images(matchCtx, w, shot)...)
-				cancel()
+				candidates = append(candidates, a.Templates.User.Images(ctx, w, shot)...)
 			} else {
 				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 用户图片匹配截图失败：%v", w.Title, err))
 			}
