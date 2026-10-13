@@ -29,6 +29,9 @@ func selectedProjects(root string) (templates.UserIndex, error) {
 }
 
 func initializeTemplateSelection(root string) error {
+	if err := os.MkdirAll(projectRoot(root), 0755); err != nil {
+		return err
+	}
 	unlock, err := acquireHistoryLock(projectRoot(root))
 	if err != nil {
 		return err

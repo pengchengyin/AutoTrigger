@@ -28,7 +28,10 @@ func TestWindowsUnifiedDataSettingsAndTemplateControls(t *testing.T) {
 	defer procDestroyWindow.Call(f.hwnd)
 	f.show()
 	f.setPage(pageSettings)
-	for _, id := range []int{idConfig, idBrowseConfig} {
+	if f.ctrls[5901] != 0 {
+		t.Fatal("directory convention hint still created")
+	}
+	for _, id := range []int{idConfig, idBrowseConfig, idStatus} {
 		if visible, _, _ := user32.NewProc("IsWindowVisible").Call(f.ctrls[id]); visible != 0 {
 			t.Fatal("separate config path still visible")
 		}

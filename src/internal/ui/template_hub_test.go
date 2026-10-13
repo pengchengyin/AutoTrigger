@@ -12,6 +12,29 @@ import (
 	"testing"
 )
 
+func TestInitializeTemplateSelectionFreshDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "templates")
+	if err := initializeTemplateSelection(root); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(projectRoot(root), "active.index.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := selectedProjects(root)
+	if err != nil || index.Version != 1 || len(index.Projects) != 0 || len(index.Rules) != 0 {
+		t.Fatal(index, err)
+	}
+	if err := initializeTemplateSelection(root); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("initialization changed existing selection", err)
+	}
+}
+
 func hubFixture(t *testing.T, root, name string) (templateProject, draftCapture) {
 	t.Helper()
 	p, err := newTemplateProject(root, name)

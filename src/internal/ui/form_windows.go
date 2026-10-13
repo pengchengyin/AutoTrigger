@@ -857,7 +857,6 @@ func (f *form) layoutSettingsControls(w, h int) {
 		}
 		f.place(id, int(r.Right)-f.px(150), top+f.px(i*48), f.px(120), height)
 	}
-	f.showAt(5901, left, top+f.px(144), width, f.px(30))
 	for i, id := range []int{idRecursive, idNoArchive, idNoOCR, idLock} {
 		procShowWindow.Call(f.ctrls[id], swShow)
 		f.place(id, left+f.px((i%2)*260), top+f.px(220+(i/2)*38), f.px(250), f.px(30))
@@ -870,8 +869,7 @@ func (f *form) layoutSettingsControls(w, h int) {
 		procShowWindow.Call(f.ctrls[id], swShow)
 		f.place(id, left+f.px(i*150), top+f.px(320), f.px(140), f.px(34))
 	}
-	procShowWindow.Call(f.ctrls[idStatus], swShow)
-	f.place(idStatus, left, top+f.px(366), width, f.px(48))
+	procShowWindow.Call(f.ctrls[idStatus], swHide)
 	procShowWindow.Call(f.ctrls[idSettingsSave], swShow)
 	f.place(idSettingsSave, int(r.Right)-f.px(170), top+f.px(320), f.px(140), f.px(34))
 }
@@ -1559,7 +1557,9 @@ func (f *form) onCommand(id, code int) {
 		case idTemplateCheck:
 			f.checkTemplates()
 		case idSettingsSave:
-			f.saveSettings()
+			if !f.saveSettings() {
+				messageBox(f.hwnd, "设置保存失败", windowText(f.ctrls[idStatus]), mbOK|mbIconError)
+			}
 		case idRecursive, idNoArchive, idNoOCR, idLock:
 			f.refreshCommand()
 		}

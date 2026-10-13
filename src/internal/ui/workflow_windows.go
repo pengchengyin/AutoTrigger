@@ -56,7 +56,6 @@ func (f *form) createWorkflowControls() {
 	f.edit(idTaskSearch, "")
 	f.label(idTaskSearchLabel, "搜索任务")
 	f.edit(idOutputDir, f.dataLayout().Root)
-	f.label(5901, "logs · results · templates · third_parties · config")
 	setWindowTextRaw(f.ctrls[idLblOutput], "数据目录")
 	setWindowTextRaw(f.ctrls[idLblInput], "文件 / 文件夹")
 	setWindowTextRaw(f.ctrls[idBrowseOutput], "选择目录…")
@@ -110,7 +109,6 @@ func (f *form) createWorkflowControls() {
 var syscallComctl = syscall.NewLazyDLL("comctl32.dll")
 
 func (f *form) hideWorkflowControls() {
-	procShowWindow.Call(f.ctrls[5901], swHide)
 	procShowWindow.Call(f.ctrls[idDetailRetry], swHide)
 	procShowWindow.Call(f.ctrls[idDetailStop], swHide)
 	procShowWindow.Call(f.ctrls[idDependencyList], swHide)
