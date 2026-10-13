@@ -67,12 +67,34 @@ func TestSubmitSnapshotIdempotencyAndFIFO(t *testing.T) {
 		t.Fatal(job, ok, err)
 	}
 }
-func TestRejectOutsideUploadAndHashMismatch(t *testing.T) {
+func TestSubmitOutsideUpload(t *testing.T) {
 	q, r := fixture(t)
-	outside := filepath.Join(t.TempDir(), "outside.exe")
-	os.WriteFile(outside, []byte("x"), 0600)
-	if _, err := q.Submit(Request{ID: r.ID, Input: outside}); err == nil {
-		t.Fatal("outside file accepted")
+	outside := filepath.Join(t.TempDir(), "安装包 带空格.exe")
+	if err := os.WriteFile(outside, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	job, err := q.Submit(Request{ID: r.ID, Input: outside})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Source != outside || job.Input == outside {
+		t.Fatal("external input not frozen")
+	}
+	if err = os.WriteFile(outside, []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(job.Input)
+	if err != nil || string(data) != "x" {
+		t.Fatal("snapshot changed", err)
+	}
+}
+
+func TestRejectInvalidPathAndHashMismatch(t *testing.T) {
+	q, r := fixture(t)
+	for _, path := range []string{"relative.exe", `\\server\share\setup.exe`, filepath.Join(t.TempDir(), "missing.exe"), t.TempDir()} {
+		if _, err := q.Submit(Request{ID: r.ID, Input: path}); err == nil {
+			t.Fatalf("invalid input accepted: %s", path)
+		}
 	}
 	r.SHA256 = string(make([]byte, 64))
 	if _, err := q.Submit(r); err == nil {

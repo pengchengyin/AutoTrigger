@@ -175,19 +175,14 @@ func (q *Queue) SubmitContext(ctx context.Context, r Request) (Job, error) {
 		return Job{}, fmt.Errorf("任务名称或输入路径过长")
 	}
 	if !filepath.IsAbs(r.Input) || strings.HasPrefix(r.Input, `\\`) {
-		return Job{}, fmt.Errorf("输入须为主机上传目录中的本地绝对路径")
+		return Job{}, fmt.Errorf("输入须为目标主机上的本地绝对路径")
 	}
 	resolved, err := filepath.EvalSymlinks(r.Input)
 	if err != nil {
 		return Job{}, err
 	}
-	inbox, err := filepath.EvalSymlinks(Inbox(q.layout.Root))
-	if err != nil {
-		return Job{}, err
-	}
-	rel, err := filepath.Rel(inbox, resolved)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return Job{}, fmt.Errorf("只接受上传目录内的文件：%s", inbox)
+	if !filepath.IsAbs(resolved) || strings.HasPrefix(resolved, `\\`) {
+		return Job{}, fmt.Errorf("解析后的输入须为目标主机上的本地绝对路径")
 	}
 	base := filepath.Base(resolved)
 	if strings.ContainsAny(base, ":\\/") {
