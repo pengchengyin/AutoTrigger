@@ -506,6 +506,9 @@ func (f *form) paintTaskDetailPage(hdc uintptr, bounds rectT) {
 			}
 		}
 		cards := detailCards(snap, selected)
+		f.updateDetailMetadata(snap, selected)
+		cards[0].Lines[0] = ""
+		cards[2].Lines = nil
 		pad, gap := f.px(18), f.px(12)
 		left, right := bounds.Left+int32(pad), bounds.Right-int32(pad)
 		status := schemaOutcomeText(snap)

@@ -3,6 +3,7 @@ package ui
 import (
 	"autotrigger/pkg/schema"
 	"fmt"
+	"strings"
 )
 
 func schemaOutcomeText(snap resultSnapshot) string {
@@ -77,9 +78,17 @@ func detailCards(snap resultSnapshot, record taskRecord) []infoCard {
 	if snap.PresentationState != "" {
 		status = snap.PresentationState
 	}
+	evidenceLines := []string{"置信度：" + confidence, "最终状态：" + status}
+	for i, part := range strings.Split(evidence, "；") {
+		prefix := ""
+		if i == 0 {
+			prefix = "证据："
+		}
+		evidenceLines = append(evidenceLines, prefix+strings.TrimSpace(part))
+	}
 	return []infoCard{
 		{Title: "文件信息", Kind: "info", Lines: []string{"路径：" + input, "类型：" + fileType, "大小：" + size, "触发方式：" + method}},
 		{Title: "执行信息", Kind: "info", Lines: []string{"开始：" + started, "结束：" + finished, "执行时长：" + duration, "任务退出码：" + exit}},
-		{Title: "结果可信度", Kind: "info", Lines: []string{"置信度：" + confidence, "最终状态：" + status, "证据：" + evidence}},
+		{Title: "结果可信度", Kind: "info", Lines: evidenceLines},
 	}
 }

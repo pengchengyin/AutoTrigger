@@ -184,6 +184,7 @@ type form struct {
 	templateMaker       uintptr
 	templateEntries     []templates.Entry
 	tooltipTexts        []*uint16
+	tooltipEntries      map[int]tooltipEntry
 	templateChecking    bool
 	templateCheckResult chan templateCheckResult
 	terminalBrush       uintptr
@@ -794,6 +795,7 @@ func (f *form) layoutResultControls(clientW, clientH int) {
 	right := int(r.Right) - pad
 	top := int(r.Top) + pad
 	if f.page == pageTaskDetail {
+		f.layoutDetailMetadata(r)
 		f.showAt(idDetailRetry, right-f.px(210), int(r.Top)+f.px(14), f.px(112), f.px(30))
 		f.showAt(idDetailStop, right-f.px(90), int(r.Top)+f.px(14), f.px(90), f.px(30))
 		f.updateDetailButtons()

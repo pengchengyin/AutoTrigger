@@ -23,6 +23,19 @@ func TestDetailCardsUseRealValues(t *testing.T) {
 	}
 }
 
+func TestDetailEvidenceLinesAndOriginalPath(t *testing.T) {
+	path := `C:\样本目录\很长的安装包名称.exe`
+	snap := resultSnapshot{Rows: []resultRow{{Path: `C:\config\remote\jobs\id\input\snapshot.exe`, Evidence: "S1:注册表；A1:文件；B1:进程"}}}
+	cards := detailCards(snap, taskRecord{Input: path})
+	if cards[0].Lines[0] != "路径："+path {
+		t.Fatal("snapshot path shown instead of source")
+	}
+	lines := cards[2].Lines
+	if len(lines) != 5 || lines[2] != "证据：S1:注册表" || lines[3] != "A1:文件" || lines[4] != "B1:进程" {
+		t.Fatalf("evidence not separated: %v", lines)
+	}
+}
+
 func TestDetailCardsUnknownAndMultipleConfidence(t *testing.T) {
 	if got := detailCards(resultSnapshot{}, taskRecord{})[2].Lines[0]; got != "置信度：未提供" {
 		t.Fatal(got)

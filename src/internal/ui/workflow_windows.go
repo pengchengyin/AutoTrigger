@@ -49,6 +49,8 @@ func maxInt(a, b int) int {
 }
 
 func (f *form) createWorkflowControls() {
+	f.addControl(5960, "EDIT", "", wsChild|wsTabStop|esReadOnly|esAutoHScroll, 0)
+	f.addControl(5961, "EDIT", "", wsChild|wsTabStop|wsVScroll|esReadOnly|esMultiline|esAutoVScroll, 0)
 	f.button(idDetailRetry, "重新安装")
 	f.button(idDetailStop, "停止")
 	f.label(idTaskNameLabel, "任务名称")
@@ -110,6 +112,8 @@ func (f *form) createWorkflowControls() {
 var syscallComctl = syscall.NewLazyDLL("comctl32.dll")
 
 func (f *form) hideWorkflowControls() {
+	procShowWindow.Call(f.ctrls[5960], swHide)
+	procShowWindow.Call(f.ctrls[5961], swHide)
 	procShowWindow.Call(f.ctrls[idRemoteTasks], swHide)
 	procShowWindow.Call(f.ctrls[idDetailRetry], swHide)
 	procShowWindow.Call(f.ctrls[idDetailStop], swHide)

@@ -158,14 +158,14 @@ func (f *form) syncRemoteHistory(jobs []remotetask.Job) {
 				break
 			}
 		}
-		if index >= 0 && f.history[index].RemoteState == job.State && f.history[index].RemoteReason == job.Reason && sameExit(f.history[index].ExitCode, job.ExitCode) {
+		if index >= 0 && f.history[index].Input == job.Source && f.history[index].RemoteState == job.State && f.history[index].RemoteReason == job.Reason && sameExit(f.history[index].ExitCode, job.ExitCode) {
 			continue
 		}
 		var record taskRecord
 		if index >= 0 {
 			record = f.history[index]
 		} else {
-			record = taskRecord{ID: job.ID, RemoteID: job.ID, Name: job.Name, Input: job.Input, Result: job.Result, LogPath: job.Log, Config: job.Config, Created: job.Created}
+			record = taskRecord{ID: job.ID, RemoteID: job.ID, Name: job.Name, Input: job.Source, Result: job.Result, LogPath: job.Log, Config: job.Config, Created: job.Created}
 			if stat, err := os.Stat(job.Input); err == nil {
 				size := stat.Size()
 				record.FileSize = &size
@@ -174,6 +174,7 @@ func (f *form) syncRemoteHistory(jobs []remotetask.Job) {
 				}
 			}
 		}
+		record.Input = job.Source
 		record.RemoteState, record.RemoteReason, record.ExitCode = job.State, job.Reason, job.ExitCode
 		record.RemoteStarted, record.RemoteFinished = job.Started, job.Finished
 		if index >= 0 {
