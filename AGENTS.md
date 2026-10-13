@@ -20,7 +20,7 @@ GUI 采用现代化蓝白色设计，参考 `docs/ui-design.png`，提供首页�
 ## 3. 技术约束
 
 * 使用 Go。
-* Windows 工具构建、打包与交付名称统一为 `AutoTrigger.exe`，不得使用小写 `autotrigger.exe`；根目录与 `dist` 下的工具产物均遵循此约定。
+* Windows 工具构建、打包与交付名称统一为 AutoTrigger.exe，不得使用小写 autotrigger.exe。Go 模块、源码、测试夹具和开发工具集中在 src；运行程序、测试产物及运行数据使用 dist，不将 EXE 和运行配置写入 src。
 * 保持 Windows 7 SP1 x64 及以上兼容目标。
 * GUI 使用 Win32 原生窗口及控件，并通过局部自绘实现现代化视觉效果。
 * 严格遵守 PRD 关于 CGO、第三方依赖、离线运行和单文件交付的约束。
@@ -253,6 +253,10 @@ GUI 采用现代化蓝白色设计，参考 `docs/ui-design.png`，提供首页�
 如果当前环境无法运行 Windows GUI 或无法验证某个目标系统，必须明确标注未验证项，不得声称测试已经通过。
 
 ## 11. Codex 工作规范
+
+目录整理约定：README.md 是简短用户入口，部署和环境检查统一由 EXE 提供，不再维护 DEPLOY.md、install-windows 或 verify-ocr 部署脚本。src/scripts 中构建、冒烟与 schema 校验脚本是开发工具，保留但不分发。普通构建生成 dist/AutoTrigger.exe，测试覆盖率和夹具产物放在 dist/test，离线依赖物料仍保留；显式打包生成新的交付目录。不要将用户配置、模板、原始测试证据或其他代理的项目配置当作临时文件删除。
+
+执行 Go 命令前先进入 src（或将工具工作目录设为 src），模块导入路径仍为 autotrigger。Windows 可从项目根目录调用 src/scripts/build.ps1；Linux/WSL 使用 src/scripts/build.sh。PRD、设计稿与文档仍在根目录 docs，git 操作在仓库根目录进行。
 
 每次开发前：
 

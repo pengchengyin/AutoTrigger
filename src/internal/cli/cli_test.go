@@ -213,7 +213,7 @@ func TestNoArgumentsPrintsUsageWithoutArtifacts(t *testing.T) {
 }
 func TestUnknownFlagPointsToHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run(context.Background(), []string{"--input", "x", "--typo"}, &stdout, &stderr, stubDeps())
+	code := Run(context.Background(), []string{"--input", "x", "--output", filepath.Join(t.TempDir(), "invalid.json"), "--typo"}, &stdout, &stderr, stubDeps())
 	if code != 2 || !strings.Contains(stderr.String(), "typo") || !strings.Contains(stderr.String(), "--help") {
 		t.Fatalf("code=%d stderr=%s", code, stderr.String())
 	}

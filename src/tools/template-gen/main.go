@@ -52,7 +52,7 @@ func generate(root, dest string, release bool) error {
 		return err
 	}
 	if len(files) == 0 {
-		return fmt.Errorf("no real installer captures in %s; see docs/图像模板制作说明.md", root)
+		return fmt.Errorf("no real installer captures in %s; see ../docs/图像模板制作说明.md", root)
 	}
 	for _, path := range files {
 		name := strings.TrimSuffix(filepath.Base(path), ".png")

@@ -741,10 +741,6 @@ func (f *form) logPreviewLines() []string {
 	}
 }
 
-func schemaOutcomeText(snap resultSnapshot) string {
-	return schema.OutcomeText(snapshotOutcome(snap))
-}
-
 func outcomeKind(snap resultSnapshot) string {
 	if snap.PresentationState == "安装 / 触发进行中" {
 		return "run"

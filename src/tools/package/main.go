@@ -32,12 +32,12 @@ type material struct {
 	Source        string `json:"-"`
 }
 
-func materialSource(path string) string {
-	current := filepath.Join("dist", filepath.FromSlash(path))
+func materialSource(root, path string) string {
+	current := filepath.Join(root, "dist", filepath.FromSlash(path))
 	if _, err := os.Stat(current); err == nil {
 		return current
 	}
-	return filepath.Join("dist", filepath.FromSlash(strings.Replace(path, "third_parties/", "third_party/", 1)))
+	return filepath.Join(root, "dist", filepath.FromSlash(strings.Replace(path, "third_parties/", "third_party/", 1)))
 }
 
 func main() {
@@ -50,28 +50,36 @@ func main() {
 	}
 }
 func assemble(dest string, release bool) error {
-	root, err := os.Getwd()
+	sourceRoot, err := os.Getwd()
 	if err != nil {
 		return err
+	}
+	if filepath.Base(sourceRoot) != "src" {
+		return fmt.Errorf("run packaging from the src directory")
+	}
+	root := filepath.Dir(sourceRoot)
+	if !filepath.IsAbs(dest) {
+		dest = filepath.Join(root, dest)
 	}
 	absolute, err := filepath.Abs(dest)
 	if err != nil {
 		return err
 	}
-	if absolute == root || !strings.HasPrefix(absolute, root+string(filepath.Separator)) {
-		return fmt.Errorf("delivery output must be a new directory inside this workspace")
+	runtimeDir := filepath.Join(root, "dist")
+	if absolute == runtimeDir || !strings.HasPrefix(absolute, runtimeDir+string(filepath.Separator)) {
+		return fmt.Errorf("delivery output must be a new directory inside dist")
 	}
 	materials := []material{{Path: "third_parties/7zip/7z2603-x64.exe", URL: "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.exe", ExpectedBytes: 0}, {Path: "third_parties/ocr/PaddleOCR-json_v1.4.1_windows_x64.7z", URL: "https://github.com/hiroi-sora/PaddleOCR-json/releases/download/v1.4.1/PaddleOCR-json_v1.4.1_windows_x64.7z", ExpectedBytes: 92736768}, {Path: "third_parties/ocr/RapidOCR-json_v0.2.0.7z", URL: "https://github.com/hiroi-sora/RapidOCR-json/releases/download/v0.2.0/RapidOCR-json_v0.2.0.7z", ExpectedBytes: 73461693}}
 	missing := []string{}
 	for i, m := range materials {
-		materials[i].Source = materialSource(m.Path)
+		materials[i].Source = materialSource(root, m.Path)
 		s, e := os.Stat(materials[i].Source)
 		materials[i].Present = e == nil && !s.IsDir() && (m.ExpectedBytes == 0 || s.Size() == m.ExpectedBytes)
 		if !materials[i].Present {
 			missing = append(missing, m.Path)
 		}
 	}
-	library, err := templates.Load(config.Defaults().GUI, root)
+	library, err := templates.LoadAt(config.Defaults().GUI, filepath.Join(root, "dist"), filepath.Join(root, "dist", "templates"))
 	if err != nil {
 		return err
 	}
@@ -84,13 +92,13 @@ func assemble(dest string, release bool) error {
 	if err = os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
-	for src, target := range map[string]string{"dist/AutoTrigger.exe": "AutoTrigger.exe", "README.md": "README.md", "DEPLOY.md": "DEPLOY.md", "pkg/schema/result.schema.json": "result.schema.json"} {
-		if err = copyFile(src, filepath.Join(dest, target)); err != nil {
+	for src, target := range map[string]string{"dist/AutoTrigger.exe": "AutoTrigger.exe", "README.md": "README.md", "src/pkg/schema/result.schema.json": "result.schema.json"} {
+		if err = copyFile(filepath.Join(root, filepath.FromSlash(src)), filepath.Join(dest, target)); err != nil {
 			return err
 		}
 	}
-	for _, dir := range []string{"docs", "scripts"} {
-		if err = copyTree(dir, filepath.Join(dest, dir)); err != nil {
+	for _, dir := range []string{"docs"} {
+		if err = copyTree(filepath.Join(root, dir), filepath.Join(dest, dir)); err != nil {
 			return err
 		}
 	}

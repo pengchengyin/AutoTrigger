@@ -1,5 +1,8 @@
 /dist/
 /coverage.out
+/src/coverage.out
+/src/AutoTrigger.exe
+/src/AutoTrigger.exe~
 autotrigger-result.json*
 autotrigger-result.json.log*
 *.journal.ndjson

@@ -6,7 +6,7 @@ const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '../pkg/schema/re
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
 const validate = ajv.compile(schema);
-if (process.argv.length < 3) throw new Error('Usage: node scripts/validate-schema.cjs result.json [...]');
+if (process.argv.length < 3) throw new Error('Usage: node src/scripts/validate-schema.cjs result.json [...]');
 for (const file of process.argv.slice(2)) {
   const result = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!validate(result)) throw new Error(`${file}: ${JSON.stringify(validate.errors)}`);

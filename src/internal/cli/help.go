@@ -77,7 +77,7 @@ const helpText = `用法:
   AutoTrigger --input setup.exe --no-archive --no-ocr --output -
   AutoTrigger --gui
 
-文档: README.md · docs\图像模板制作说明.md · DEPLOY.md
+文档: README.md · docs\图像模板制作说明.md
 `
 
 // helpRequested 判断是否显式请求帮助。

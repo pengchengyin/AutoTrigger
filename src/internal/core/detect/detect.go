@@ -29,9 +29,9 @@ func (Detector) Detect(path string) (ports.FileType, error) {
 	buf = buf[:n]
 	kind := ""
 	switch {
-	case bytes.HasPrefix(buf, []byte{0x7f,'E','L','F'}):
+	case bytes.HasPrefix(buf, []byte{0x7f, 'E', 'L', 'F'}):
 		kind, ft.Family = "unknown", "unsupported_elf"
-	case bytes.HasPrefix(buf, []byte{0xfe,0xed,0xfa,0xce}), bytes.HasPrefix(buf, []byte{0xce,0xfa,0xed,0xfe}), bytes.HasPrefix(buf, []byte{0xfe,0xed,0xfa,0xcf}), bytes.HasPrefix(buf, []byte{0xcf,0xfa,0xed,0xfe}):
+	case bytes.HasPrefix(buf, []byte{0xfe, 0xed, 0xfa, 0xce}), bytes.HasPrefix(buf, []byte{0xce, 0xfa, 0xed, 0xfe}), bytes.HasPrefix(buf, []byte{0xfe, 0xed, 0xfa, 0xcf}), bytes.HasPrefix(buf, []byte{0xcf, 0xfa, 0xed, 0xfe}):
 		kind, ft.Family = "unknown", "unsupported_macho"
 	case bytes.HasPrefix(buf, []byte("MZ")):
 		kind = "pe_executable"

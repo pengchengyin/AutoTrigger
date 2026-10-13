@@ -1,5 +1,8 @@
-param([string]$Executable = '.\dist\AutoTrigger.exe', [string]$Fixture = '.\dist\wizard-fixture.exe', [switch]$Gui, [switch]$Archive)
+param([string]$Executable = '', [string]$Fixture = '', [switch]$Gui, [switch]$Archive)
 $ErrorActionPreference = 'Stop'
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+if (-not $Executable) { $Executable = Join-Path $repoRoot 'dist\AutoTrigger.exe' }
+if (-not $Fixture) { $Fixture = Join-Path $repoRoot 'dist\test\wizard-fixture.exe' }
 $Executable = (Resolve-Path $Executable).Path
 $Fixture = (Resolve-Path $Fixture).Path
 $root = Join-Path ([IO.Path]::GetTempPath()) ('AT-smoke-' + [Guid]::NewGuid().ToString('N'))

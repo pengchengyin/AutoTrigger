@@ -396,7 +396,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		return 0
 	}
 	if cfg.OCR.RequireOCR && result.Prereq.OCREngineStatus != "ok" {
-		return finish(5, fmt.Errorf("required OCR engine unavailable; see third_party/ocr and DEPLOY.md"))
+		return finish(5, fmt.Errorf("required OCR engine unavailable; see data directory third_parties/ocr and README.md"))
 	}
 	if cfg.Lock.Enabled {
 		unlock, err := deps.Lock.Acquire(ctx, time.Duration(cfg.Lock.WaitSec)*time.Second)

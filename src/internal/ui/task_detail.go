@@ -1,6 +1,13 @@
 package ui
 
-import "fmt"
+import (
+	"autotrigger/pkg/schema"
+	"fmt"
+)
+
+func schemaOutcomeText(snap resultSnapshot) string {
+	return schema.OutcomeText(snapshotOutcome(snap))
+}
 
 func fileTypeText(kind string) string {
 	labels := map[string]string{"exe": "可执行程序", "pe_executable": "可执行程序", "pe_dll": "动态链接库", "dll": "动态链接库", "msi": "Windows 安装包", "script": "脚本", "archive": "压缩包", "disk_image": "光盘映像", "shortcut": "快捷方式", "document": "文档", "directory": "文件夹", "unknown": "未知文件"}
