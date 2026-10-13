@@ -4,6 +4,14 @@ Windows 离线自动安装/触发工具，可处理文件或文件夹，尝试�
 
 项目源码在 `src/`，本地运行与测试目录为 `dist/`，文档在 `docs/`。构建后运行 `dist/AutoTrigger.exe`；交付包中程序直接位于包根目录。
 
+安装 Go 1.20.x 后，在项目根目录的 PowerShell 中执行（包含测试与构建）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\src\scripts\build.ps1
+```
+
+Go 不在 PATH 中时，在命令末尾加 `-Go "D:\gc3\bin\go.exe"`，替换为实际路径。成功后生成 `dist/AutoTrigger.exe`。
+
 ## 简单使用
 
 1. 双击 `AutoTrigger.exe`，建议以管理员身份运行。
