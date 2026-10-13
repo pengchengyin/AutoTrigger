@@ -169,7 +169,6 @@ type form struct {
 	exeDir              string
 	dataDir             string
 	dataError           error
-	legacyPrompted      bool
 	opts                Options
 	ctrls               map[int]uintptr
 	page                pageID
@@ -331,7 +330,6 @@ func (f *form) create() error {
 func (f *form) show() {
 	procShowWindow.Call(f.hwnd, swShow)
 	procUpdateWindow.Call(f.hwnd)
-	f.offerLegacyMigration()
 	if f.page != pageTask {
 		return
 	}

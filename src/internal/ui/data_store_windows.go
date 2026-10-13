@@ -5,7 +5,6 @@ package ui
 import (
 	"autotrigger/internal/datadir"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -26,48 +25,6 @@ func (f *form) templateRoot() string {
 }
 func (f *form) taskLogPath(result string) string {
 	return filepath.Join(f.dataLayout().Logs(), filepath.Base(result)+".log")
-}
-
-func (f *form) offerLegacyMigration() {
-	if f.legacyPrompted || f.dataDir == "" {
-		return
-	}
-	f.legacyPrompted = true
-	if !strings.EqualFold(f.dataDir, f.exeDir) || fileExists(filepath.Join(f.dataDir, "config", "legacy-layout-imported.json")) {
-		return
-	}
-	oldHistory := ""
-	if dir, e := os.UserConfigDir(); e == nil {
-		oldHistory = filepath.Join(dir, "AutoTrigger", "history")
-	}
-	found := false
-	for _, move := range legacyDataMoves(f.exeDir, oldHistory) {
-		if _, e := os.Stat(move[0]); e == nil {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return
-	}
-	if messageBox(f.hwnd, "发现旧版工具数据", "新版统一使用 logs、results、templates、third_parties、config。\n是否复制旧版任务历史、结果、日志、模板项目及 third_party 到对应目录？\n原文件保留；已有新版数据不覆盖。\n请先关闭其他正在执行任务的工具。", 4|mbIconInfo) != 6 {
-		return
-	}
-	if err := migrateLegacyData(f.exeDir, oldHistory); err != nil {
-		messageBox(f.hwnd, "旧数据迁移失败", err.Error(), mbOK|mbIconError)
-		return
-	}
-	f.history, _ = loadHistory(f.historyDir)
-	if fileExists(f.dataLayout().Config()) {
-		setWindowTextRaw(f.ctrls[idConfig], f.dataLayout().Config())
-	}
-	f.loadSettingsFields()
-	f.refreshTaskList()
-	if f.ctrls[hubName] != 0 {
-		f.refreshTemplateHub()
-		f.layout()
-	}
-	f.setStatusKind("旧数据已复制迁移，原目录保留。", statusKindOK)
 }
 
 func (f *form) applyDataDirectory() error {

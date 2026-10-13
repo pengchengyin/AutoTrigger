@@ -18,7 +18,6 @@ func TestWindowsUnifiedDataSettingsAndTemplateControls(t *testing.T) {
 	f.exeDir = t.TempDir()
 	f.dataDir = t.TempDir()
 	f.dataError = nil
-	f.legacyPrompted = true
 	f.historyDir = f.dataLayout().History()
 	f.history = nil
 	f.opts.Config = ""
@@ -67,5 +66,41 @@ func TestWindowsUnifiedDataSettingsAndTemplateControls(t *testing.T) {
 	}
 	if got := f.taskLogPath(filepath.Join(f.dataLayout().Results(), "result.json")); got != filepath.Join(f.dataDir, "logs", "result.json.log") {
 		t.Fatal(got)
+	}
+}
+
+func TestWindowsStartupDoesNotPromptOrImportLegacyData(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	f := newForm(cli.Dependencies{})
+	f.exeDir = t.TempDir()
+	f.dataDir = f.exeDir
+	f.dataError = nil
+	f.historyDir = f.dataLayout().History()
+	f.history = nil
+	f.opts.Config = ""
+	f.opts.Output = filepath.Join(f.dataLayout().Results(), DefaultResultName)
+	legacy := filepath.Join(f.exeDir, "config.json")
+	if err := os.WriteFile(legacy, []byte(`{"timeout_sec":123}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := hubFixture(t, f.exeDir, "旧模板")
+	if err := os.MkdirAll(filepath.Join(f.exeDir, "third_party"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.create(); err != nil {
+		t.Fatal(err)
+	}
+	defer procDestroyWindow.Call(f.hwnd)
+	f.show()
+	if fileExists(f.dataLayout().Config()) {
+		t.Fatal("startup silently migrated old config")
+	}
+	projects, err := listTemplateProjects(f.templateRoot())
+	if err != nil || len(projects) != 0 {
+		t.Fatal("startup migrated old templates", projects, err)
+	}
+	if !fileExists(filepath.Join(projectDir(f.exeDir, p), "project.json")) || !fileExists(legacy) {
+		t.Fatal("startup removed legacy data")
 	}
 }
