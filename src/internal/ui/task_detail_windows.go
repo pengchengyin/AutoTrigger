@@ -14,8 +14,9 @@ func (f *form) layoutDetailMetadata(bounds rectT) {
 	width := (int(bounds.Right-bounds.Left) - 2*pad - 2*gap) / 3
 	left := int(bounds.Left) + pad
 	top := int(bounds.Top) + f.px(118)
-	f.showAt(5960, left+f.px(16), top, width-f.px(28), f.px(20))
-	f.showAt(5961, left+2*(width+gap)+f.px(16), top, width-f.px(28), f.px(92))
+	f.showAt(5960, left+f.px(64), top, width-f.px(76), f.px(20))
+	f.showAt(5961, left+2*(width+gap)+f.px(16), top+f.px(40), width-f.px(28), f.px(52))
+	user32.NewProc("ShowScrollBar").Call(f.ctrls[5961], 1, 0)
 }
 
 func (f *form) updateDetailMetadata(snap resultSnapshot, record taskRecord) {
@@ -23,7 +24,7 @@ func (f *form) updateDetailMetadata(snap resultSnapshot, record taskRecord) {
 	for _, entry := range []struct {
 		id   int
 		text string
-	}{{5960, strings.TrimPrefix(cards[0].Lines[0], "路径：")}, {5961, strings.Join(cards[2].Lines, "\r\n")}} {
+	}{{5960, strings.TrimPrefix(cards[0].Lines[0], "路径：")}, {5961, strings.Join(cards[2].Lines[2:], "\r\n")}} {
 		if windowText(f.ctrls[entry.id]) != entry.text {
 			setWindowTextRaw(f.ctrls[entry.id], entry.text)
 		}

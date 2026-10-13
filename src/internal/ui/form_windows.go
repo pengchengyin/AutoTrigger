@@ -1215,6 +1215,14 @@ func (f *form) handle(hwnd uintptr, msg uint32, wparam uintptr, lparam unsafe.Po
 			return 1
 		}
 	case wmCtlColorStatic, wmCtlColorBtn:
+		if uintptr(lparam) == f.ctrls[5960] || uintptr(lparam) == f.ctrls[5961] {
+			procSetBkMode.Call(wparam, opaqueBk)
+			procSetBkColor.Call(wparam, modernTheme.surfaceAlt)
+			procSetTextColor.Call(wparam, modernTheme.muted)
+			gdi32.NewProc("SetDCBrushColor").Call(wparam, modernTheme.surfaceAlt)
+			brush, _, _ := gdi32.NewProc("GetStockObject").Call(18)
+			return brush
+		}
 		if uintptr(lparam) == f.ctrls[idResultView] && (f.page == pageLogs || f.page == pageTaskDetail && !f.detailJSON) {
 			procSetBkMode.Call(wparam, opaqueBk)
 			procSetBkColor.Call(wparam, rgb(20, 27, 36))
