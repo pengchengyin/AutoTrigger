@@ -505,6 +505,17 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		f.Notes = "terminated on timeout; installation evidence still collected"
 		e.Log.Stage(logging.LevelWarn, logging.StageRun, "安装进程因超时被终止，但仍采集到安装证据：%s", path)
 	}
+	if f.FinalStatus == "killed_on_timeout" && !sideEffects && len(positive(allEvidence)) == 0 && len(f.Attempts) > 0 {
+		allNoActivity := true
+		for _, attempt := range f.Attempts {
+			allNoActivity = allNoActivity && attempt.Error != nil && *attempt.Error == "no_activity"
+		}
+		if allNoActivity {
+			f.FinalStatus = "failed"
+			f.InstallConfidence = nil
+			f.Notes = "no_activity: 安装进程启动后未产生有效活动"
+		}
+	}
 	// 临时目录随任务结束被删；先把手头这份"失败排查依据"搬出去。
 	e.keepFailureLogs(path, f)
 	return f
