@@ -50,7 +50,16 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	observed := &ports.Baseline{Registry: map[string]ports.UninstallEntry{}, Dirs: map[string]ports.DirState{}}
 	var exit ports.Exit
 	terminated := false
+	lastSample := start
+	checkSamplingGap := func() {
+		now := time.Now()
+		if gap, unexpected := unexpectedSamplingGap(lastSample, now, time.Duration(e.Config.GUI.PollIntervalMS)*time.Millisecond); unexpected {
+			e.Log.Stage(logging.LevelWarn, logging.StageRun, "进度采样间隔异常：%.1f 秒。可能发生系统挂起或识别阻塞；本次耗时未自动扣除此间隔，超时仍按原配置执行。", gap.Seconds())
+		}
+		lastSample = now
+	}
 	finish := func(reason string) {
+		checkSamplingGap()
 		timedout = reason != "dump_ui" && reason != "requires_reboot"
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 		mode, err := p.Terminate(cleanupCtx)
@@ -78,6 +87,7 @@ loop:
 	for {
 		select {
 		case exit = <-p.Done():
+			checkSamplingGap()
 			a.Result = "exited"
 			break loop
 		case <-ctx.Done():
@@ -86,6 +96,7 @@ loop:
 		case <-heartbeat.C:
 			e.Log.Stage(logging.LevelInfo, logging.StageRun, "执行等待中：已用时 %.0f 秒，无进展 %.0f 秒，最近信号=%s，监控PID=%v（活动信号不代表安装成功）", time.Since(start).Seconds(), time.Since(m.LastProgress).Seconds(), m.Signal, m.Last.PIDs)
 		case <-tick.C:
+			checkSamplingGap()
 			progress, err := p.Activity()
 			if err != nil {
 				progress = ports.Activity{PIDs: []int{p.PID()}}
