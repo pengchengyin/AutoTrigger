@@ -199,6 +199,7 @@ loop:
 		}
 	}
 	// A later successful GUI finish supersedes earlier transient failure-page observations.
+	network = network || outputRequiresNetwork(e.Pack, a.StdoutSummary+"\n"+a.StderrSummary)
 	finishAt := time.Time{}
 	for _, ev := range guiEvidence {
 		if ev.ID == "A2" && ev.At.After(finishAt) {
