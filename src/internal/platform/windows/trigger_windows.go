@@ -188,7 +188,7 @@ func association(path string) (string, error) {
 	}
 	command := syscall.UTF16ToString(buf)
 	args, err := splitCommand(command)
-	if err != nil || len(args) == 0 || strings.EqualFold(filepath.Base(args[0]), "OpenWith.exe") {
+	if err != nil || len(args) == 0 || !associationHasRealHost(args[0], path) {
 		return "", fmt.Errorf("no associated host for %s", path)
 	}
 	return command, nil
@@ -206,7 +206,26 @@ func (Opener) OpenCommand(path string) (ports.Command, error) {
 	if err != nil || len(args) == 0 {
 		return ports.Command{}, fmt.Errorf("invalid association command")
 	}
+	if !associationHasRealHost(args[0], path) {
+		return ports.Command{}, fmt.Errorf("no associated host for %s", path)
+	}
 	return ports.Command{Program: args[0], Args: args[1:], Dir: filepath.Dir(path), Method: "document_host"}, nil
+}
+
+func associationHasRealHost(program, path string) bool {
+	placeholder := strings.ToLower(strings.TrimSpace(program))
+	if placeholder == "" || placeholder == "%1" || placeholder == "%l" || placeholder == "%*" || placeholder == "%v" || strings.EqualFold(filepath.Base(program), "OpenWith.exe") {
+		return false
+	}
+	p, err := filepath.Abs(program)
+	if err != nil {
+		return false
+	}
+	target, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	return !strings.EqualFold(filepath.Clean(p), filepath.Clean(target))
 }
 func splitCommand(s string) ([]string, error) {
 	var n int32

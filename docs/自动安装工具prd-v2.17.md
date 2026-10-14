@@ -618,6 +618,7 @@ F15 的 **S/A/B 分级、基线快照、反证据、冲突仲裁属于"方法"�
 2026-10-10 D05 修正：宿主正常执行记 `triggered`，失败或超时如实记录，`install_confidence` 为 null，不采集安装证据、不参与安装收敛。安装路径若超时且只有 A/B 级证据，最多 `install_partial`，不能判 `install_completed`；S 级及反证据继续按 F15 仲裁。
 
 - 通过 `FileOpener.HasAssociation` 判断关联程序：无则记录 `skipped: no_host_app` 并跳过
+- ISSUE-10：关联命令的程序必须是独立宿主，拒绝以 %1/%L 等文件占位符、文件本体或 OpenWith.exe 作为宿主。内容识别为文档但扩展名伪装成 .exe 时，不经系统 exefile 关联直接执行文件；无独立宿主按既有 no_host_app 处理，不修改原文件或全局关联。
 - 有关联则打开文件，由预装 Office / PDF 阅读器触发宏或漏洞链；若弹出"启用宏/允许编辑"类确认框，由 F14 接管点击
 - 超时后强制结束关联进程树；记录关联程序进程名到 `platform_meta`
 
