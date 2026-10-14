@@ -58,7 +58,7 @@ func (f *form) createWorkflowControls() {
 	f.edit(idTaskSearch, "")
 	f.label(idTaskSearchLabel, "搜索任务")
 	f.edit(idOutputDir, f.dataLayout().Root)
-	f.check(idRemoteTasks, "允许通过 SSH 提交任务（仅同一 Windows 账户）", f.remoteEnabled)
+	f.check(idRemoteTasks, "允许通过 SSH 提交任务（仅同一 Windows 账户，保存后生效）", f.remoteEnabled)
 	setWindowTextRaw(f.ctrls[idLblOutput], "数据目录")
 	setWindowTextRaw(f.ctrls[idLblInput], "文件 / 文件夹")
 	setWindowTextRaw(f.ctrls[idBrowseOutput], "选择目录…")

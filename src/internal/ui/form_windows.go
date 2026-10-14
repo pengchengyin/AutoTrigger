@@ -213,6 +213,7 @@ type form struct {
 	hubEnabled          map[string]bool
 	detailJSON          bool
 	settingsAdvanced    bool
+	settingsBaseline    *settingsDraftState
 	settingsRecognition bool
 	loadingSettings     bool
 	remoteEnabled       bool
@@ -882,15 +883,20 @@ func (f *form) layoutSettingsControls(w, h int) {
 	f.place(idOCREngine, left+f.px(120), top+f.px(184), width-f.px(150), f.comboDropH(f.px(30), 6))
 	for i, id := range []int{idPrereq, idValidate, idMakeConfig} {
 		procShowWindow.Call(f.ctrls[id], swShow)
-		f.place(id, left+f.px(i*150), top+f.px(320), f.px(140), f.px(34))
+		f.place(id, left+f.px(i*150), top+f.px(336), f.px(140), f.px(34))
 	}
 	procShowWindow.Call(f.ctrls[idStatus], swHide)
 	procShowWindow.Call(f.ctrls[idSettingsSave], swShow)
-	f.place(idSettingsSave, int(r.Right)-f.px(170), top+f.px(320), f.px(140), f.px(34))
-	f.showAt(idRemoteTasks, left, top+f.px(370), width, f.px(30))
+	f.place(idSettingsSave, int(r.Right)-f.px(170), top+f.px(336), f.px(140), f.px(34))
+	f.showAt(idRemoteTasks, left, top+f.px(292), width, f.px(30))
 }
 
-func (f *form) saveSettings() bool {
+func (f *form) saveSettings() (saved bool) {
+	defer func() {
+		if saved {
+			f.rememberSettingsDraft()
+		}
+	}()
 	if err := f.applyDataDirectory(); err != nil {
 		f.setStatusKind(err.Error(), statusKindFail)
 		return false
@@ -967,10 +973,7 @@ func (f *form) saveSettings() bool {
 	if err = f.persistPreferences(path); err != nil {
 		f.setStatusKind("配置已保存，但界面偏好无法保存："+err.Error(), statusKindWarn)
 		f.appendLog([]byte("[警告] 界面偏好保存失败：" + err.Error() + "\n"))
-		if f.isChecked(idRemoteTasks) != f.remoteEnabled {
-			return false
-		}
-		return true
+		return false
 	}
 	if err = f.applyRemoteSetting(); err != nil {
 		f.setStatusKind("远程任务设置失败："+err.Error(), statusKindFail)
@@ -1393,6 +1396,9 @@ func (f *form) setPage(page pageID) {
 	if page == pageNone || page == f.page {
 		return
 	}
+	if f.page == pageSettings && !f.confirmLeaveSettings() {
+		return
+	}
 	f.page = page
 	f.hoverPage = pageNone
 	if page == pageLogs || page == pageTaskDetail {
@@ -1447,6 +1453,7 @@ func (f *form) setPage(page pageID) {
 				break
 			}
 		}
+		f.rememberSettingsDraft()
 	}
 }
 
@@ -1844,7 +1851,11 @@ func (f *form) saveConfigEditor() {
 	f.prereqReport = nil
 	f.templates = loadTemplateInfoWithConfig(f.dataLayout().Root, path)
 	if prefErr := f.persistPreferences(path); prefErr != nil {
-		warnings = append(warnings, "界面偏好保存失败："+prefErr.Error())
+		f.setStatusKind("配置已保存，但界面偏好保存失败："+prefErr.Error(), statusKindFail)
+		return
+	} else if err := f.applyRemoteSetting(); err != nil {
+		f.setStatusKind("远程任务设置失败："+err.Error(), statusKindFail)
+		return
 	}
 	if len(warnings) > 0 {
 		status = "已保存，存在 warning：" + strings.Join(warnings, "；")
@@ -1853,6 +1864,9 @@ func (f *form) saveConfigEditor() {
 		f.setStatusKind("配置已保存并通过校验。", statusKindOK)
 	}
 	setWindowTextRaw(f.ctrls[idCfgStatus], status)
+	if f.page == pageSettings {
+		f.rememberSettingsDraft()
+	}
 }
 
 func (f *form) importConfigEditor() {
