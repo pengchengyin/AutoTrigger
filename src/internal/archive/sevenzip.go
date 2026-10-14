@@ -7,6 +7,7 @@ import (
 	"autotrigger/internal/procutil"
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,9 +26,13 @@ func (s SevenZip) List(ctx context.Context, path string) ([]ports.ArchiveEntry, 
 	defer cancel()
 	e, err := procutil.Run(ctx, s.Runner, ports.Command{Program: s.Path, HideWindow: true, Args: []string{"l", "-slt", "-ba", "-sccUTF-8", "-p", "--", path}})
 	if err != nil {
-		return nil, err
+		return nil, extractionError("list", e, err)
 	}
-	return ParseList(e.Stdout)
+	entries, err := ParseList(e.Stdout)
+	if err != nil {
+		return nil, extractionError("list", e, err)
+	}
+	return entries, nil
 }
 func ParseList(output string) ([]ports.ArchiveEntry, error) {
 	out := []ports.ArchiveEntry{}
@@ -96,8 +101,8 @@ func (s SevenZip) Extract(ctx context.Context, path, dest string, limit int64) e
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := procutil.Run(ctx, s.Runner, ports.Command{Program: s.Path, HideWindow: true, Args: []string{"x", "-y", "-p", "-sccUTF-8", "-o" + dest, "--", path}})
-		done <- err
+		exit, err := procutil.Run(ctx, s.Runner, ports.Command{Program: s.Path, HideWindow: true, Args: []string{"x", "-y", "-p", "-sccUTF-8", "-o" + dest, "--", path}})
+		done <- extractionError("extract", exit, err)
 	}()
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
@@ -125,6 +130,26 @@ func (s SevenZip) Extract(ctx context.Context, path, dest string, limit int64) e
 			}
 		}
 	}
+}
+
+type extractionFailure struct {
+	cause      error
+	diagnostic string
+}
+
+func (e extractionFailure) Error() string { return e.diagnostic }
+func (e extractionFailure) Unwrap() error { return e.cause }
+
+func extractionError(stage string, exit ports.Exit, err error) error {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	detail := strings.TrimSpace(err.Error() + "\n" + exit.Stdout + "\n" + exit.Stderr)
+	runes := []rune(detail)
+	if len(runes) > 4096 {
+		detail = string(runes[:3072]) + "\n[diagnostics truncated]\n" + string(runes[len(runes)-1024:])
+	}
+	return extractionFailure{cause: err, diagnostic: "extract_failed: " + stage + ": " + detail}
 }
 func ValidateTree(root string, limit int64) error {
 	var size int64
