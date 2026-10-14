@@ -1,0 +1,56 @@
+{
+    "version":  1,
+    "projects":  [
+                     "project-20261013-221525.085776100"
+                 ],
+    "rules":  [
+                  {
+                      "project_id":  "project-20261013-221525.085776100",
+                      "id":  "03c5dcf690fe4e6a80a2c6a349451c73",
+                      "method":  "image",
+                      "window_title":  "自绘界面安装向导 Synthetic",
+                      "name":  "接受协议",
+                      "action":  "accept",
+                      "dpi":  96,
+                      "threshold":  0.95,
+                      "file":  "template-projects/project-20261013-221525.085776100/captures/03c5dcf690fe4e6a80a2c6a349451c73/image.png",
+                      "sha256":  "ff50dff76a009befa956823d588d6a833b999e9ad008f124062c149c4542cc41"
+                  },
+                  {
+                      "project_id":  "project-20261013-221525.085776100",
+                      "id":  "f075cbe2b3b9bf386965a35781d70bc2",
+                      "method":  "image",
+                      "window_title":  "自绘界面安装向导 Synthetic",
+                      "name":  "下一步",
+                      "action":  "next",
+                      "dpi":  96,
+                      "threshold":  0.95,
+                      "file":  "template-projects/project-20261013-221525.085776100/captures/f075cbe2b3b9bf386965a35781d70bc2/image.png",
+                      "sha256":  "f86990608ec67d0c3160fe63ac171e1a40c94ad3e37881359baf5333022074ab"
+                  },
+                  {
+                      "project_id":  "project-20261013-221525.085776100",
+                      "id":  "4129c2a5990c45df181deedacf49b7fe",
+                      "method":  "image",
+                      "window_title":  "自绘界面安装向导 Synthetic",
+                      "name":  "安装",
+                      "action":  "install",
+                      "dpi":  96,
+                      "threshold":  0.95,
+                      "file":  "template-projects/project-20261013-221525.085776100/captures/4129c2a5990c45df181deedacf49b7fe/image.png",
+                      "sha256":  "3f8eefa6b49393fe7330229bdd752dadbfd0fcbc9f92cc143df8fa9bbbef5ecb"
+                  },
+                  {
+                      "project_id":  "project-20261013-221525.085776100",
+                      "id":  "611dafc12f9a4323fea87cb151465e3d",
+                      "method":  "image",
+                      "window_title":  "自绘界面安装向导 Synthetic",
+                      "name":  "完成",
+                      "action":  "finish",
+                      "dpi":  96,
+                      "threshold":  0.95,
+                      "file":  "template-projects/project-20261013-221525.085776100/captures/611dafc12f9a4323fea87cb151465e3d/image.png",
+                      "sha256":  "c564c3b079540d8f5376454885eb104487d93709ad96c6c482f7f2314b7b4a59"
+                  }
+              ]
+}

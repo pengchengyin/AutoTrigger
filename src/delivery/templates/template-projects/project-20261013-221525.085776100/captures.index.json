@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "project_id": "project-20261013-221525.085776100",
+  "items": [
+    {
+      "id": "03c5dcf690fe4e6a80a2c6a349451c73",
+      "project_id": "project-20261013-221525.085776100",
+      "session_id": "971214befe0345e577e6057be13bb676",
+      "name": "接受协议",
+      "created_at": "2026-10-13T14:46:46.7247218Z",
+      "confirmed": true,
+      "window": {
+        "handle": 11541350,
+        "pid": 1924,
+        "title": "自绘界面安装向导 Synthetic",
+        "bounds": {
+          "left": 677,
+          "top": 371,
+          "right": 1243,
+          "bottom": 780
+        },
+        "dpi": 96,
+        "theme": ""
+      },
+      "screen_bounds": {
+        "left": 712,
+        "top": 642,
+        "right": 746,
+        "bottom": 668
+      },
+      "rule": {
+        "action": "accept",
+        "method": "image",
+        "min_similarity": 0.95
+      },
+      "file": "captures/03c5dcf690fe4e6a80a2c6a349451c73/image.png",
+      "sha256": "ff50dff76a009befa956823d588d6a833b999e9ad008f124062c149c4542cc41",
+      "source_file": "captures/03c5dcf690fe4e6a80a2c6a349451c73/source.png",
+      "source_sha256": "3192d2a32331397f76cd15fddb0db5333af657f9e2f556d10574390a9e9e9e30",
+      "source_bounds": {
+        "left": 679,
+        "top": 371,
+        "right": 1241,
+        "bottom": 778
+      }
+    },
+    {
+      "id": "f075cbe2b3b9bf386965a35781d70bc2",
+      "project_id": "project-20261013-221525.085776100",
+      "session_id": "971214befe0345e577e6057be13bb676",
+      "name": "下一步",
+      "created_at": "2026-10-13T14:46:58.1144471Z",
+      "confirmed": true,
+      "window": {
+        "handle": 11541350,
+        "pid": 1924,
+        "title": "自绘界面安装向导 Synthetic",
+        "bounds": {
+          "left": 677,
+          "top": 371,
+          "right": 1243,
+          "bottom": 780
+        },
+        "dpi": 96,
+        "theme": ""
+      },
+      "screen_bounds": {
+        "left": 1082,
+        "top": 710,
+        "right": 1212,
+        "bottom": 762
+      },
+      "rule": {
+        "action": "next",
+        "method": "image",
+        "min_similarity": 0.95
+      },
+      "file": "captures/f075cbe2b3b9bf386965a35781d70bc2/image.png",
+      "sha256": "f86990608ec67d0c3160fe63ac171e1a40c94ad3e37881359baf5333022074ab",
+      "source_file": "captures/f075cbe2b3b9bf386965a35781d70bc2/source.png",
+      "source_sha256": "3192d2a32331397f76cd15fddb0db5333af657f9e2f556d10574390a9e9e9e30",
+      "source_bounds": {
+        "left": 679,
+        "top": 371,
+        "right": 1241,
+        "bottom": 778
+      }
+    },
+    {
+      "id": "4129c2a5990c45df181deedacf49b7fe",
+      "project_id": "project-20261013-221525.085776100",
+      "session_id": "3fb94df23f9ef112007b2d2f43a0e99b",
+      "name": "安装",
+      "created_at": "2026-10-13T14:48:54.6916926Z",
+      "confirmed": true,
+      "window": {
+        "handle": 11541350,
+        "pid": 1924,
+        "title": "自绘界面安装向导 Synthetic",
+        "bounds": {
+          "left": 677,
+          "top": 371,
+          "right": 1243,
+          "bottom": 780
+        },
+        "dpi": 96,
+        "theme": ""
+      },
+      "screen_bounds": {
+        "left": 1080,
+        "top": 715,
+        "right": 1213,
+        "bottom": 753
+      },
+      "rule": {
+        "action": "install",
+        "method": "image",
+        "min_similarity": 0.95
+      },
+      "file": "captures/4129c2a5990c45df181deedacf49b7fe/image.png",
+      "sha256": "3f8eefa6b49393fe7330229bdd752dadbfd0fcbc9f92cc143df8fa9bbbef5ecb",
+      "source_file": "captures/4129c2a5990c45df181deedacf49b7fe/source.png",
+      "source_sha256": "a6cf083abb5712997664ba20bb5aba59f69da335e02009493c2a633f4c5470b4",
+      "source_bounds": {
+        "left": 679,
+        "top": 371,
+        "right": 1241,
+        "bottom": 778
+      }
+    },
+    {
+      "id": "611dafc12f9a4323fea87cb151465e3d",
+      "project_id": "project-20261013-221525.085776100",
+      "session_id": "5a66d8503fa7b1b6db2b1ffd32cabe17",
+      "name": "完成",
+      "created_at": "2026-10-13T14:50:28.9534552Z",
+      "confirmed": true,
+      "window": {
+        "handle": 17896658,
+        "pid": 34892,
+        "title": "自绘界面安装向导 Synthetic",
+        "bounds": {
+          "left": 677,
+          "top": 371,
+          "right": 1243,
+          "bottom": 780
+        },
+        "dpi": 96,
+        "theme": ""
+      },
+      "screen_bounds": {
+        "left": 1080,
+        "top": 713,
+        "right": 1212,
+        "bottom": 756
+      },
+      "rule": {
+        "action": "finish",
+        "method": "image",
+        "min_similarity": 0.95
+      },
+      "file": "captures/611dafc12f9a4323fea87cb151465e3d/image.png",
+      "sha256": "c564c3b079540d8f5376454885eb104487d93709ad96c6c482f7f2314b7b4a59",
+      "source_file": "captures/611dafc12f9a4323fea87cb151465e3d/source.png",
+      "source_sha256": "e9edc1b09a2b06b94ac2b74258229dbcd8ce5b56d2e8f5a06a655819f268a947",
+      "source_bounds": {
+        "left": 679,
+        "top": 371,
+        "right": 1241,
+        "bottom": 778
+      }
+    }
+  ]
+}

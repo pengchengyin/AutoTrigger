@@ -102,6 +102,10 @@ func assemble(dest string, release bool) error {
 			return err
 		}
 	}
+	bundledRules, err := copyBundledTemplates(filepath.Join(sourceRoot, "delivery", "templates"), filepath.Join(dest, "templates"))
+	if err != nil {
+		return err
+	}
 	if err = resources.Export(filepath.Join(dest, "resources")); err != nil {
 		return err
 	}
@@ -142,6 +146,7 @@ func assemble(dest string, release bool) error {
 		return err
 	}
 	manifest := map[string]interface{}{"tool_version": "0.1.0", "schema_version": "2.8", "resource_pack_version": resources.Version, "built_at": time.Now(), "go_version_requirement": "1.20.x", "files": files, "materials": materials, "missing_materials": missing, "release_ready": false, "win7_runtime_verified": false, "builtin_template_variants": library.BuiltinCount, "real_master_count": library.Masters, "limitations": []string{"real installer template captures not available", "Win7 clean VM acceptance pending", "see docs/验收状态.md"}}
+	manifest["bundled_user_template_rules"] = bundledRules
 	data, err = json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
