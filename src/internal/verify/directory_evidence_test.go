@@ -35,3 +35,36 @@ func TestFileEvidenceIdentifiesDistinctDirectories(t *testing.T) {
 		t.Fatal(o)
 	}
 }
+
+func TestA3HasRealDirectoryAndNoPhantomFileChange(t *testing.T) {
+	base := &ports.Baseline{Registry: map[string]ports.UninstallEntry{"key": {DisplayName: "App", DisplayVersion: "1"}}, Dirs: map[string]ports.DirState{"actual": {Files: 1, Bytes: 10}}}
+	after := &ports.Baseline{Registry: map[string]ports.UninstallEntry{"key": {DisplayName: "App", DisplayVersion: "2"}}, Dirs: map[string]ports.DirState{"actual": {Files: 1, Bytes: 20}}}
+	cfg := config.Defaults().Verify
+	cfg.SettleMaxSec = 0
+	o, err := (Verifier{Source: source{b: after}, Config: cfg}).Observe(context.Background(), "app.exe", base, ports.Command{}, nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range o.Evidence {
+		if e.Type == "filesystem_changed" {
+			found = true
+			if e.Source != "actual" || !strings.Contains(e.Detail, "10→20") || !strings.Contains(e.Detail, "不代表进程归因") {
+				t.Fatal(e)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("changed directory not diagnosed")
+	}
+	after.Dirs = base.Dirs
+	o, err = (Verifier{Source: source{b: after}, Config: cfg}).Observe(context.Background(), "app.exe", base, ports.Command{}, nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range o.Evidence {
+		if e.Type == "filesystem_changed" {
+			t.Fatal("registry change fabricated file evidence", e)
+		}
+	}
+}

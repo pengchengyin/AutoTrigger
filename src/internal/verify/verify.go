@@ -147,6 +147,7 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 	}
 	newFiles, removed := 0, 0
 	addedByDir, removedByDir := map[string]int{}, map[string]int{}
+	changedByDir := map[string]int{}
 	for dir, s := range after.Dirs {
 		if base.Truncated || after.Truncated {
 			continue
@@ -171,6 +172,7 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 			}
 		}
 		if !exists || s.Files != old.Files || s.Bytes != old.Bytes || s.Modified != old.Modified {
+			changedByDir[dir] = 1
 			for _, n := range s.Names {
 				artifacts = append(artifacts, filepath.Join(dir, n))
 			}
@@ -190,7 +192,10 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 			add("S2", "S", "filesystem_diff", dir, fmt.Sprintf("目录 %s 新增 %d 个文件或目录实体（快照差异，不代表进程归因）", dir, addedByDir[dir]))
 		}
 	} else if o.SideEffects && len(newReg) == 0 {
-		add("A3", "A", "filesystem_changed", "filesystem", "监控文件或目录发生变化")
+		for _, dir := range sortedDirectories(changedByDir) {
+			old, current := base.Dirs[dir], after.Dirs[dir]
+			add("A3", "A", "filesystem_changed", dir, fmt.Sprintf("目录 %s 文件数 %d→%d，字节数 %d→%d，修改时间记录 %d→%d（快照差异，不代表进程归因）", dir, old.Files, current.Files, old.Bytes, current.Bytes, old.Modified, current.Modified))
+		}
 	}
 	if !base.Truncated && !after.Truncated && removed > v.Config.ShrinkTolerance && len(newReg) == 0 {
 		for _, dir := range sortedDirectories(removedByDir) {
