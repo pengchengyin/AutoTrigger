@@ -201,6 +201,9 @@ func (v Verifier) Observe(ctx context.Context, path string, base *ports.Baseline
 		if cmd.MSI && MSICodeIsSuccess(*exit) {
 			add("S3", "S", "msi_success_code", "msiexec", fmt.Sprint(*exit))
 			o.RequiresReboot = *exit == 3010 || *exit == 1641
+		} else if !cmd.NonInstall && (cmd.Method == "silent_install" || cmd.Method == "no_param_run") && (*exit == 3010 || *exit == 1641) {
+			add("A1", "A", "generic_success_reboot_code", "process", fmt.Sprintf("安装进程返回成功重启码 %d，仍需其他证据确认安装成果", *exit))
+			o.RequiresReboot = true
 		} else if *exit == 0 {
 			add("A1", "A", "generic_exit_code_zero", "process", "进程正常退出（退出码 0），不单独证明安装成功")
 		} else {
