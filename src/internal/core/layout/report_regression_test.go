@@ -49,7 +49,11 @@ func TestD14ReadmeOnlyProvidesHintsNeverEntrance(t *testing.T) {
 			}
 			continue
 		}
-		if v.Reason != "non_executable_entry" || v.Priority != 5 {
+		expectedReason := "entry_hint_document"
+		if v.Relative == "resource.dat" {
+			expectedReason = "non_executable_entry"
+		}
+		if v.Reason != expectedReason || v.Priority != 5 {
 			t.Fatal(v)
 		}
 	}

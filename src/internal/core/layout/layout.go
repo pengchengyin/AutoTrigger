@@ -178,7 +178,7 @@ func (a Analyzer) Analyze(root string, entries []ports.ArchiveEntry, readHints b
 }
 
 func (a Analyzer) applyHints(root string, candidates []Candidate) {
-	for _, c := range candidates {
+	for at, c := range candidates {
 		name := strings.ToLower(filepath.Base(c.Relative))
 		autorun := name == "autorun.inf" && a.Config.ISO.AutorunAsP0
 		readme := a.Config.PackageLayout.ReadmeHints && (strings.Contains(name, "readme") || strings.Contains(name, "安装说明") || strings.Contains(name, "使用说明"))
@@ -193,6 +193,9 @@ func (a Analyzer) applyHints(root string, candidates []Candidate) {
 		n, _ := f.Read(buf)
 		f.Close()
 		text := strings.ToLower(string(buf[:n]))
+		if !executable(c.Type.Kind) && (autorun || readme && entryHintText(text)) {
+			candidates[at].Reason = "entry_hint_document"
+		}
 		for i := range candidates {
 			target := &candidates[i]
 			if target.Reason == "excluded_blacklist" || !executable(target.Type.Kind) {
@@ -230,6 +233,19 @@ func (a Analyzer) applyHints(root string, candidates []Candidate) {
 			}
 		}
 	}
+}
+
+func entryHintText(text string) bool {
+	command := strings.Contains(text, "双击") || strings.Contains(text, "运行") || strings.Contains(text, "执行") || strings.Contains(text, "run ")
+	if !command {
+		return false
+	}
+	for _, extension := range []string{".exe", ".msi", ".bat", ".cmd", ".ps1", ".lnk"} {
+		if strings.Contains(text, extension) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a Analyzer) MediaKind(entries []ports.ArchiveEntry, roots ...string) (string, error) {

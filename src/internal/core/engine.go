@@ -144,7 +144,7 @@ func (e *Engine) packageRun(ctx context.Context, root string, entries []ports.Ar
 		if e.Err != nil {
 			return converged
 		}
-		if c.Reason == "excluded_blacklist" || (packageScope && c.Reason == "non_executable_entry") {
+		if c.Reason == "excluded_blacklist" || c.Reason == "entry_hint_document" || (packageScope && c.Reason == "non_executable_entry") {
 			f := schema.NewFile(c.Path, e.Config.Verify.JudgmentProfile)
 			f.FileSizeBytes = c.Size
 			f.DetectedType = c.Type.Kind

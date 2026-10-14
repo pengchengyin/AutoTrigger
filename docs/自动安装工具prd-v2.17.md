@@ -618,6 +618,7 @@ F15 的 **S/A/B 分级、基线快照、反证据、冲突仲裁属于"方法"�
 2026-10-10 D05 修正：宿主正常执行记 `triggered`，失败或超时如实记录，`install_confidence` 为 null，不采集安装证据、不参与安装收敛。安装路径若超时且只有 A/B 级证据，最多 `install_partial`，不能判 `install_completed`；S 级及反证据继续按 F15 仲裁。
 
 - 通过 `FileOpener.HasAssociation` 判断关联程序：无则记录 `skipped: no_host_app` 并跳过
+- ISSUE-24：目录入口分析中用于入口提示的 autorun.inf，以及包含执行词和安装入口扩展名的 README/安装说明/使用说明，标记 entry_hint_document 并跳过自身启动，即使所指目标不存在也不打开宿主空等。独立直接输入的文档仍遵循 F7，普通不含入口提示的文档不受影响。
 - ISSUE-01 诊断修正：Windows 启动返回 ERROR_ELEVATION_REQUIRED(740) 时，保留 requires_elevation 原因及中文管理员提示，停止同一样本的后续参数重试；不自动 runas、不修改清单为强制提权、不修改 UAC 策略。若已有实际副作用保留部分完成，否则记录失败。
 - ISSUE-02：明确检测到目标完整性高于工具而触发 UIPI 时，GUI 识别链保留类型化权限错误，执行层立即结束当前尝试并停止同一样本的后续参数重试，记录 requires_elevation 和管理员提示；不把权限阻止记为等待超时，也不尝试绕过安全桌面。既有实际操作与安装证据仍保留。
 - ISSUE-10：关联命令的程序必须是独立宿主，拒绝以 %1/%L 等文件占位符、文件本体或 OpenWith.exe 作为宿主。内容识别为文档但扩展名伪装成 .exe 时，不经系统 exefile 关联直接执行文件；无独立宿主按既有 no_host_app 处理，不修改原文件或全局关联。
