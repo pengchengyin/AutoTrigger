@@ -7,6 +7,7 @@ import (
 	"autotrigger/internal/core/ports"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -201,6 +202,9 @@ func (Runner) Start(ctx context.Context, c ports.Command) (ports.Process, error)
 	p.cmd = cmd
 	if err = cmd.Start(); err != nil {
 		syscall.CloseHandle(p.job)
+		if errors.Is(err, syscall.Errno(740)) {
+			return nil, fmt.Errorf("%w: 安装器要求管理员权限，请以管理员身份运行工具后重新执行（%v）", ports.ErrElevationRequired, err)
+		}
 		return nil, err
 	}
 	h, e := syscall.OpenProcess(0x1f0fff, false, uint32(cmd.Process.Pid))

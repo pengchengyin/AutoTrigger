@@ -422,6 +422,18 @@ func (e *Engine) file(ctx context.Context, path, reason string, depth int, seen 
 		e.Log.Stage(logging.LevelInfo, logging.StageRun, "第 %d/%d 次尝试：方法=%s，命令=%s", i+1, len(commands), cmd.Method, commandText(cmd))
 		a, ev, startedAttempt, timeoutAttempt, reboot, network := e.attempt(fileCtx, cmd, base, triggerPath)
 		f.Attempts = append(f.Attempts, a)
+		if a.Error != nil && strings.HasPrefix(*a.Error, "requires_elevation") {
+			f.Notes = *a.Error
+			if sideEffects || ev.SideEffects {
+				f.FinalStatus = "install_partial"
+				f.InstallConfidence = schema.String("low")
+			} else {
+				f.FinalStatus = "failed"
+				f.InstallConfidence = nil
+			}
+			e.Log.Stage(logging.LevelWarn, logging.StageRun, "权限不足，停止本样本的后续参数重试：%s", f.Notes)
+			break
+		}
 		everStarted = everStarted || startedAttempt
 		timedout = timedout || timeoutAttempt
 		f.RequiresReboot = f.RequiresReboot || reboot

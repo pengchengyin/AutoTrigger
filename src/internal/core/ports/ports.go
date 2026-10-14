@@ -13,6 +13,7 @@ import (
 
 var ErrUnsupported = errors.New("platform capability unsupported")
 var ErrBusy = errors.New("another AutoTrigger instance holds the machine lock")
+var ErrElevationRequired = errors.New("requires_elevation")
 
 type Command struct {
 	HideWindow  bool

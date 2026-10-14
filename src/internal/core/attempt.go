@@ -8,6 +8,7 @@ import (
 	"autotrigger/internal/verify"
 	"autotrigger/pkg/schema"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -26,6 +27,9 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	p, err := e.Runner.Start(ctx, cmd)
 	if err != nil {
 		a.Error = schema.String(err.Error())
+		if errors.Is(err, ports.ErrElevationRequired) {
+			a.Error = schema.String("requires_elevation: 当前权限无法启动安装器，请以管理员身份运行工具后重试。" + err.Error())
+		}
 		a.DurationSec = time.Since(start).Seconds()
 		e.Log.Stage(logging.LevelWarn, logging.StageRun, "无法启动安装进程（方法=%s）：%v", cmd.Method, err)
 		return a, obs, false, false, false, false
