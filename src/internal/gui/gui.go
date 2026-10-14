@@ -29,6 +29,7 @@ type state struct {
 	lastHash    [32]byte
 	lastClick   time.Time
 	retries     int
+	exhausted   map[string][32]byte
 }
 type Automator struct {
 	Native    ports.GUIAutomator
@@ -203,6 +204,16 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 用户图片匹配截图失败：%v", w.Title, err))
 			}
 		}
+		if a.states[w.Handle] != nil && len(candidates) > 0 {
+			if shot == nil {
+				shot, err = a.Native.Screenshot(w)
+			}
+			before := len(candidates)
+			candidates = a.availableCandidates(w, shot, candidates)
+			if len(candidates) < before {
+				u.Notes = append(u.Notes, fmt.Sprintf("窗口 %q 已排除 %d 个无变化且耗尽重试的候选，继续其他候选或识别回退", w.Title, before-len(candidates)))
+			}
+		}
 		if len(candidates) == 0 {
 			if shot == nil {
 				shot, err = a.Native.Screenshot(w)
@@ -254,6 +265,7 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 			}
 		}
 		candidates = filtered
+		candidates = a.availableCandidates(w, shot, candidates)
 		if len(candidates) == 0 {
 			if a.Config.GUI.DumpFailedShots && shot != nil {
 				a.saveFailed(w, shot)
@@ -345,6 +357,33 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 		return u, clickError
 	}
 	return u, nil
+}
+
+func (a *Automator) availableCandidates(w ports.Window, shot image.Image, candidates []ports.Control) []ports.Control {
+	s := a.states[w.Handle]
+	if s == nil || shot == nil {
+		return candidates
+	}
+	hash := shotHash(shot)
+	if hash != s.lastHash {
+		s.exhausted = nil
+		return candidates
+	}
+	if s.exhausted == nil {
+		s.exhausted = map[string][32]byte{}
+	}
+	kept := make([]ports.Control, 0, len(candidates))
+	for _, c := range candidates {
+		key := c.ID + ":" + Normalize(c.Text)
+		if key == s.lastControl && (c.Role == "checkbox" || c.Role == "radio" || s.retries >= 2) {
+			s.exhausted[key] = hash
+		}
+		if old, found := s.exhausted[key]; found && old == hash {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept
 }
 func rank(action string) int {
 	switch action {

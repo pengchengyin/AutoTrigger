@@ -42,6 +42,37 @@ func TestUnchangedButtonRetriesAreBounded(t *testing.T) {
 	}
 }
 
+func TestExhaustedCandidateDoesNotStarveNextAction(t *testing.T) {
+	n := &native{controls: []ports.Control{{ID: "ok", Text: "确定", Role: "button", Enabled: true}}}
+	a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
+	if err := a.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if s := a.states[1]; s != nil {
+			s.lastClick = time.Now().Add(-4 * time.Second)
+		}
+		if _, err := a.Step(context.Background(), []int{1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n.controls = append(n.controls, ports.Control{ID: "finish", Text: "完成", Role: "button", Enabled: true})
+	a.states[1].lastClick = time.Now().Add(-4 * time.Second)
+	if _, err := a.Step(context.Background(), []int{1}); err != nil {
+		t.Fatal(err)
+	}
+	if len(n.clicked) != 4 || n.clicked[3].ID != "finish" {
+		t.Fatalf("exhausted OK blocked finish: %+v", n.clicked)
+	}
+	a.states[1].lastClick = time.Now().Add(-4 * time.Second)
+	if _, err := a.Step(context.Background(), []int{1}); err != nil {
+		t.Fatal(err)
+	}
+	if n.clicked[len(n.clicked)-1].ID == "ok" {
+		t.Fatal("exhausted candidate re-enabled on unchanged frame")
+	}
+}
+
 func TestUnchangedAgreementDoesNotToggleAgain(t *testing.T) {
 	n := &native{controls: []ports.Control{{ID: "agree", Text: "Accept", Role: "checkbox", Enabled: true}}}
 	a := Automator{Native: n, Config: config.Defaults(), Pack: resources.Pack{Mode: "builtin"}}
