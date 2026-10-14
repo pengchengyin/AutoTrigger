@@ -60,10 +60,84 @@ ssh installer@host 'D:\AutoTrigger\AutoTrigger.exe task cancel --id TASK_ID'
 
 远程任务也出现在任务配置列表，可查看详情、实时日志及结果；排队任务可通过详情中的停止按钮取消。远程任务 ID 与结果 JSON 内的 CLI `task_id` 是两种标识，使用 `task.id` 查询远程任务，使用结果中的 `task_id` 对接已有结果契约。
 
+### 4.1 响应字段
+
+以下是 `AutoTrigger.exe task ...` 返回的 JSON 外层结构。除 `ok` 外，字段按命令及实际内容出现；空值通常省略，而不是固定输出 null。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `ok` | boolean | 本次请求是否成功。不是安装成功标志。false 时先处理 error。 |
+| `error` | string，可省略 | 请求或业务失败原因。参数错误、通信失败可能仅写标准错误，不返回此 JSON。 |
+| `task` | object，可省略 | 单个远程任务记录，字段见下节。失败响应中即使出现此对象，也不能据此认为已接收任务。 |
+| `tasks` | array，可省略 | list 返回的任务记录数组；没有任务时省略，响应可能只有 `{"ok":true}`。 |
+| `inbox` | string，可省略 | health 返回的可选上传目录，不限制安装包必须位于此目录。 |
+| `waiting_reason` | string，可省略 | 执行端当前等待原因。health 可返回；status/logs/result 仅在查询任务排队时返回。它不是安装失败原因。 |
+| `logs` | string，可省略 | logs 返回的本次 UTF-8 日志片段。没有新内容时可能省略，不是完整日志文件。 |
+| `next_offset` | integer，可省略 | 下次 logs 查询使用的字节偏移，不是字符数量；值为 0 时省略。 |
+| `result` | object，可省略 | result 返回的安装/触发结果 JSON 对象，不是路径或 JSON 字符串，字段见[结果 JSON 字段说明](结果JSON字段说明.md)。 |
+
+| 命令 | 成功时主要字段 |
+|---|---|
+| `health` | ok、inbox、可选 waiting_reason |
+| `submit` / `cancel` | ok、task |
+| `list` | ok、可选 tasks |
+| `status` | ok、task、可选 waiting_reason |
+| `logs` | ok、task、可选 logs / next_offset / waiting_reason |
+| `result` | ok、task、result、可选 waiting_reason |
+
+`task result` 的 ok=true 只表示成功读取有效 JSON，不表示里面所有样本安装成功，也不保证任务已经完成。请先核对 task.state，再处理 result.error、result.truncated 和 result.results[].final_status。
+
+### 4.2 任务记录 task / tasks[]
+
+任务元数据结构版本当前为 `version=1`，与安装结果的 `schema_version=2.8` 不同。所有路径均属于执行主机。时间采用 RFC3339 格式，包含时区，可带小数秒。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `version` | integer | 远程任务记录格式版本，当前为 1。 |
+| `id` | string | 32 位小写十六进制远程任务 ID，用于 status/logs/result/cancel 和幂等重试，不等于结果中的 CLI task_id。 |
+| `name` | string | 任务名称；未指定时使用源文件名。 |
+| `source` | string | 原始提交文件的解析后路径。 |
+| `input` | string | 冻结的安装包快照路径，实际执行使用此文件，不直接使用 source。 |
+| `sha256` | string | 安装包快照 SHA-256。 |
+| `config_sha256` | string | 配置快照 SHA-256。 |
+| `config` | string | 此任务使用的配置快照文件路径。 |
+| `result_path` | string | 预定结果文件路径；出现路径不表示文件已经生成。 |
+| `log_path` | string | 预定过程日志路径；排队时文件可能尚不存在。 |
+| `created` | string | 创建时间。 |
+| `started` | string，可省略 | 实际开始时间；未开始时省略。 |
+| `finished` | string，可省略 | 结束时间；尚未结束时省略。 |
+| `state` | string | 调度生命周期状态，见第 5 节，不是逐样本安装状态。 |
+| `reason` | string，可省略 | 取消、中断或执行异常等补充原因。保留原始诊断信息，可能包含英文。 |
+| `cancel_requested` | boolean，可省略 | 是否请求取消；false 时省略。true 不表示进程已经停止，应继续查询 state。 |
+| `exit_code` | integer，可省略 | 执行工具返回的真实退出码；尚未取得时省略，不可默认为 0。即使为 0 也需检查安装结果。 |
+| `recursive` | boolean | 此任务继承的递归处理设置。 |
+| `no_archive` | boolean | 此任务是否跳过解压处理。 |
+
+### 4.3 日志与结果读取约定
+
+首次读取日志使用 `--offset 0`；后续成功响应有 next_offset 时，按该值继续。没有 next_offset 时保留原偏移。没有 logs 不代表执行结束，需结合 task.state 判断；运行期间可以定期查询。不要用日志字符串长度推算偏移，中文 UTF-8 字符占多个字节。
+
+常见响应示例（仅展示关键字段，非完整任务对象）：
+
+```json
+{
+  "ok": true,
+  "task": {
+    "id": "7745273878c29e8a829b78c13138ae73",
+    "state": "running"
+  },
+  "logs": "正在执行安装任务\r\n",
+  "next_offset": 1234
+}
+```
+
+对接时先检查命令退出码和 ok，再读取字段；允许可选字段缺省和未来新增字段。completed、cancelled、interrupted 都应结合结果与日志处理，不能直接当成安装成功或系统变更已回滚。
+
 ## 5. 状态与运行限制
 
 | 状态 | 含义 |
 |---|---|
+| `staging` | 正在复制并冻结文件；同 ID 正在接收时不能另建重复任务 |
 | `queued` | 已接收，等待桌面空闲和可交互 |
 | `running` | 已开始处理；不代表安装成功 |
 | `completed` | 执行流程结束，必须查看退出码和结果 JSON |
