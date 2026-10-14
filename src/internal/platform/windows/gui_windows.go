@@ -427,7 +427,7 @@ func (GUI) Click(c ports.Control) error {
 		return fmt.Errorf("sample window owner changed")
 	}
 	if own, target := processIntegrityRID(os.Getpid()), processIntegrityRID(int(owner)); target > own && own != 0 {
-		return fmt.Errorf("窗口 %q 的权限高于本工具（目标 0x%x，本工具 0x%x），输入可能被 Windows UIPI 拦截；请以管理员身份运行本工具后重试", c.Window.Title, target, own)
+		return fmt.Errorf("%w: 窗口 %q 的权限高于本工具（目标 0x%x，本工具 0x%x），输入被 Windows UIPI 拦截；请以管理员身份运行本工具后重试", ports.ErrElevationRequired, c.Window.Title, target, own)
 	}
 	var probe uintptr
 	if e := callOK(user32.NewProc("SendMessageTimeoutW"), c.Window.Handle, 0, 0, 0, 2, 300, uintptr(unsafe.Pointer(&probe))); e != nil {

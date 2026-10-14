@@ -64,7 +64,7 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 	}
 	finish := func(reason string) {
 		checkSamplingGap()
-		timedout = reason != "dump_ui" && reason != "requires_reboot"
+		timedout = reason != "dump_ui" && reason != "requires_reboot" && reason != "requires_elevation"
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 		mode, err := p.Terminate(cleanupCtx)
 		cancel()
@@ -74,7 +74,7 @@ func (e *Engine) attempt(ctx context.Context, cmd ports.Command, base *ports.Bas
 		}
 		a.TerminationMode = mode
 		a.Result = "killed_on_timeout"
-		if reason == "no_activity" {
+		if reason == "no_activity" || reason == "requires_elevation" {
 			a.Result = "failed"
 		}
 		if reason == "dump_ui" || reason == "requires_reboot" {
@@ -118,6 +118,14 @@ loop:
 			if e.GUI != nil && e.Config.GUI.Enabled && e.DumpDir == "" {
 				update, err := e.GUI.Step(ctx, progress.PIDs)
 				if err != nil {
+					if errors.Is(err, ports.ErrElevationRequired) {
+						a.GUIActions = append(a.GUIActions, update.Actions...)
+						guiEvidence = append(guiEvidence, update.Evidence...)
+						e.Log.Stage(logging.LevelWarn, logging.StageGUI, "权限阻止自动操作，停止本样本：%v", err)
+						finish("requires_elevation")
+						a.Error = schema.String("requires_elevation: 请以管理员身份运行工具后重新执行。" + err.Error())
+						break loop
+					}
 					// 首次出现按警告提示（如 UIPI 权限拦截、窗口无响应），重复出现降为调试，避免刷屏。
 					if err.Error() != guiErrorText {
 						guiErrorText = err.Error()

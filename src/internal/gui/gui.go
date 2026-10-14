@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -306,6 +307,9 @@ func (a *Automator) Step(ctx context.Context, pids []int) (Update, error) {
 		}
 		if err = a.Native.Click(c); err != nil {
 			clickError = fmt.Errorf("窗口 %q 的按钮 %q（%s）点击失败：%w", w.Title, c.Text, c.Source, err)
+			if errors.Is(err, ports.ErrElevationRequired) {
+				return u, clickError
+			}
 			continue
 		}
 		if key == s.lastControl && hash == s.lastHash {

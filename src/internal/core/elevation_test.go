@@ -26,3 +26,29 @@ func TestElevationFailureDoesNotRetryAllParameters(t *testing.T) {
 		t.Fatalf("%+v commands=%d", f, len(r.commands))
 	}
 }
+
+type privilegeBlockedGUI struct{}
+
+func (privilegeBlockedGUI) Step(context.Context, []int) (ports.GUIUpdate, error) {
+	return ports.GUIUpdate{}, fmt.Errorf("%w: UIPI", ports.ErrElevationRequired)
+}
+func (privilegeBlockedGUI) Dump(context.Context, []int, string) error { return nil }
+func (privilegeBlockedGUI) Reset()                                    {}
+func TestUIPIStopsCurrentAttemptAndParameterRetries(t *testing.T) {
+	e, r := engineFor(t)
+	r.hang = true
+	e.GUI = privilegeBlockedGUI{}
+	e.Config.GUI.Enabled = true
+	e.Config.GUI.PollIntervalMS = 1
+	e.Trigger = fakeTrigger{count: 9}
+	if err := e.Run(context.Background(), sample(t, "setup.exe", []byte("MZ"))); err != nil {
+		t.Fatal(err)
+	}
+	f := e.Result.Results[0]
+	if len(r.commands) != 1 || f.FinalStatus != "failed" || !r.last.killed || !strings.HasPrefix(f.Notes, "requires_elevation:") {
+		t.Fatalf("%+v commands=%d killed=%t", f, len(r.commands), r.last.killed)
+	}
+	if f.Attempts[0].Result != "failed" {
+		t.Fatal("UIPI mistaken for timeout")
+	}
+}
