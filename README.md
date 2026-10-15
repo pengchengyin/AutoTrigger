@@ -21,9 +21,9 @@ AutoTrigger 是一款面向 Windows 的离线安装与文件触发工具，同�
 
 **Audacity 自动安装实录（约 44 秒）**
 
-用户提供的虚拟机录屏，展示任务执行、安装向导及安装后打开的 Audacity。点击下方画面查看完整视频：[观看 MP4](docs/images/quick-start/audacity-install.mp4) · [下载原始 WMV](docs/images/quick-start/audaciry安装录屏.wmv)。
+用户提供的虚拟机录屏，展示任务执行、安装向导及安装后打开的 Audacity。下方 GIF 自动循环播放其中 15 秒的安装过程片段，未加速；完整录屏：[观看 MP4](docs/images/quick-start/audacity-install.mp4) · [下载原始 WMV](docs/images/quick-start/audaciry安装录屏.wmv)。
 
-[![Audacity 自动安装录屏预览](docs/images/quick-start/audacity-install-preview.jpg)](docs/images/quick-start/audacity-install.mp4)
+[![Audacity 自动安装过程 GIF，点击查看完整视频](docs/images/quick-start/audacity-install.gif)](docs/images/quick-start/audacity-install.mp4)
 
 录屏用于直观展示操作流程，不替代结果 JSON、日志和安装证据，也不计入下方历史测试统计。
 
@@ -102,9 +102,9 @@ AutoTrigger 是一款面向 Windows 的离线安装与文件触发工具，同�
 
 **自绘界面模板制作实录（约 46 秒）**
 
-展示自绘测试界面的捕获、区域标记与保存。点击画面查看完整视频：[观看 MP4](docs/images/quick-start/template-capture.mp4) · [下载原始 WMV](docs/images/quick-start/自绘界面模板制作录屏.wmv)。此录屏是模板制作示例，不代表任意自绘安装器都能自动匹配。
+展示自绘测试界面的捕获、区域标记与保存。下方 GIF 自动循环播放其中 15 秒的标记操作片段，未加速；完整录屏：[观看 MP4](docs/images/quick-start/template-capture.mp4) · [下载原始 WMV](docs/images/quick-start/自绘界面模板制作录屏.wmv)。此录屏是模板制作示例，不代表任意自绘安装器都能自动匹配。
 
-[![自绘界面模板制作录屏预览](docs/images/quick-start/template-capture-preview.jpg)](docs/images/quick-start/template-capture.mp4)
+[![自绘界面模板标记 GIF，点击查看完整视频](docs/images/quick-start/template-capture.gif)](docs/images/quick-start/template-capture.mp4)
 
 离线交付 ZIP 自带“自绘安装向导（浅色示例）”，新解压的数据目录中默认启用，包含接受协议、下一步、安装和完成四个动作。仅适用于标题为“自绘界面安装向导 Synthetic”的浅色测试样本、96 DPI，不代表适配任意安装器。独立 EXE 不携带这套外部图片；升级时不要用交付包的 `templates/` 覆盖已有用户模板和启用索引。
 
