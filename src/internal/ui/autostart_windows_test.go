@@ -144,6 +144,32 @@ func TestStartupStateAllowsDefaultEnabledButRejectsDifferentAction(t *testing.T)
 	}
 }
 
+func TestStartupStateVMExportWithoutEnabled(t *testing.T) {
+	const body = `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><URI>\AutoTrigger-Logon-c5e2a2ebf90ed4aa</URI></RegistrationInfo>
+  <Principals><Principal id="AutoTriggerUser">
+    <UserId>S-1-5-21-2552418914-3197032882-3489908625-500</UserId>
+    <LogonType>InteractiveToken</LogonType><RunLevel>HighestAvailable</RunLevel>
+  </Principal></Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <IdleSettings><StopOnIdleEnd>true</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>
+  </Settings>
+  <Triggers><LogonTrigger><UserId>WIN10\Administrator</UserId></LogonTrigger></Triggers>
+  <Actions Context="AutoTriggerUser"><Exec>
+    <Command>C:\Users\Administrator\Desktop\AutoTrigger\AutoTrigger.exe</Command>
+    <Arguments>--gui</Arguments><WorkingDirectory>C:\Users\Administrator\Desktop\AutoTrigger</WorkingDirectory>
+  </Exec></Actions>
+</Task>`
+	for _, data := range [][]byte{[]byte(body), schedulerUTF16(body)} {
+		if !startupXMLMatches(data, `C:\Users\Administrator\Desktop\AutoTrigger\AutoTrigger.exe`, "S-1-5-21-2552418914-3197032882-3489908625-500", func(string) (string, error) { return "", errors.New("unexpected lookup") }) {
+			t.Fatal("real VM task export did not show enabled")
+		}
+	}
+}
+
 func TestStartupIdentityIsStableAndReadOnly(t *testing.T) {
 	one, exe, sid, err := startupIdentity()
 	if err != nil {

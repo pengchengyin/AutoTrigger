@@ -3,9 +3,11 @@
 package ui
 
 import (
+	"autotrigger/internal/output"
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -144,22 +146,53 @@ func schedulerText(b []byte) string {
 	return string(utf16.Decode(units))
 }
 
-func startupEnabled() bool {
+type startupProbe struct {
+	Revision   string `json:"diagnostic_revision"`
+	TaskName   string `json:"task_name"`
+	Executable string `json:"executable"`
+	AccountSID string `json:"account_sid"`
+	Enabled    bool   `json:"enabled"`
+	Error      string `json:"error,omitempty"`
+	XML        string `json:"task_xml,omitempty"`
+}
+
+func queryStartupState() startupProbe {
+	probe := startupProbe{Revision: "startup-state-20261015-v2"}
 	name, exe, sid, err := startupIdentity()
+	probe.TaskName, probe.Executable, probe.AccountSID = name, exe, sid
 	if err != nil {
-		return false
+		probe.Error = err.Error()
+		return probe
 	}
 	b, err := schedulerCommand("/Query", "/TN", name, "/XML")
+	probe.XML = schedulerText(b)
 	if err != nil {
-		return false
+		probe.Error = err.Error()
+		return probe
 	}
-	return startupXMLMatches(b, exe, sid, func(account string) (string, error) {
+	probe.Enabled = startupXMLMatches(b, exe, sid, func(account string) (string, error) {
 		u, err := user.Lookup(account)
 		if err != nil {
 			return "", err
 		}
 		return u.Uid, nil
 	})
+	if !probe.Enabled {
+		probe.Error = "任务已返回，但启用状态、当前账户、程序路径或权限校验未通过"
+	}
+	return probe
+}
+
+func (f *form) loadStartupState() {
+	probe := queryStartupState()
+	f.autoStartEnabled = probe.Enabled
+	b, err := json.MarshalIndent(probe, "", "  ")
+	if err == nil {
+		err = output.Atomic(filepath.Join(filepath.Dir(f.dataLayout().Config()), "autostart-state.json"), b)
+	}
+	if err != nil {
+		f.appendLog([]byte("[警告] 自启状态诊断无法保存：" + err.Error() + "\n"))
+	}
 }
 
 func startupXMLMatches(b []byte, exe, sid string, resolve func(string) (string, error)) bool {
