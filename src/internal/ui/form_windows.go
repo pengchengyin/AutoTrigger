@@ -195,6 +195,8 @@ type form struct {
 	prereqWarnings      bool
 	prereqLogStart      int
 	prereqReport        *schema.Prereq
+	detectedOCREngine   string
+	detectedOCRPath     string
 	dependencyRows      []dependencyState
 	prereqOutput        []byte
 	appIcon             uintptr
@@ -960,6 +962,9 @@ func (f *form) saveSettings() (saved bool) {
 	}
 	if section, ok := doc["ocr"].(map[string]interface{}); ok {
 		section["min_score"] = score
+		if f.detectedOCREngine == engines[engineIndex] && f.detectedOCRPath == strings.TrimSpace(windowText(f.ctrls[idOCREnginePath])) {
+			section["transport"] = ocrTransport(f.detectedOCREngine)
+		}
 	}
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err == nil {
@@ -2169,7 +2174,8 @@ func (f *form) onRunDone(code int) {
 			if code != 0 {
 				kind = statusKindFail
 			}
-			f.setStatusKind(dependencySummary(f.prereqReport, false)+"\r\n"+dependencyNotice(f.prereqReport), kind)
+			selection := f.selectDetectedOCR()
+			f.setStatusKind(dependencySummary(f.prereqReport, false)+"\r\n"+dependencyNotice(f.prereqReport)+"\r\n"+selection, kind)
 		} else if wasPrereq {
 			f.setStatusKind("未取得环境检测结果："+cli.ExitText(code)+"，请查看日志。", statusKindFail)
 		} else if code == 0 {

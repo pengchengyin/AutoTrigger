@@ -54,6 +54,7 @@ func (f *form) settingsChanged() bool {
 }
 
 func (f *form) discardSettingsDraft() {
+	f.detectedOCREngine, f.detectedOCRPath = "", ""
 	if f.settingsBaseline == nil {
 		return
 	}
