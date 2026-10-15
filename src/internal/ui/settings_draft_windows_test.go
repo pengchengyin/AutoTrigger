@@ -36,6 +36,24 @@ func TestWindowsSettingsDraftTracking(t *testing.T) {
 	if remote.Bottom > save.Top {
 		t.Fatal("SSH switch is not above Save")
 	}
+	var startup rectT
+	user32.NewProc("GetWindowRect").Call(f.ctrls[idAutoStart], uintptr(unsafe.Pointer(&startup)))
+	if startup.Top < remote.Bottom || startup.Bottom > save.Top {
+		t.Fatal("administrator startup switch overlaps SSH or Save")
+	}
+	initialStartup := f.isChecked(idAutoStart)
+	value := uintptr(bstChecked)
+	if initialStartup {
+		value = 0
+	}
+	send(f.ctrls[idAutoStart], bmSetCheck, value, 0)
+	if !f.settingsChanged() {
+		t.Fatal("startup change not detected")
+	}
+	f.discardSettingsDraft()
+	if f.settingsChanged() || f.isChecked(idAutoStart) != initialStartup {
+		t.Fatal("startup discard failed")
+	}
 	if shots := os.Getenv("AUTOTRIGGER_UI_SHOTS"); shots != "" {
 		if err := os.MkdirAll(shots, 0755); err != nil {
 			t.Fatal(err)

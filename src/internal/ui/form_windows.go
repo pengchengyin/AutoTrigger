@@ -217,6 +217,7 @@ type form struct {
 	settingsRecognition bool
 	loadingSettings     bool
 	remoteEnabled       bool
+	autoStartEnabled    bool
 	remoteQueue         *remotetask.Queue
 	remoteServer        *remotetask.Server
 	remoteID            string
@@ -883,15 +884,22 @@ func (f *form) layoutSettingsControls(w, h int) {
 	f.place(idOCREngine, left+f.px(120), top+f.px(184), width-f.px(150), f.comboDropH(f.px(30), 6))
 	for i, id := range []int{idPrereq, idValidate, idMakeConfig} {
 		procShowWindow.Call(f.ctrls[id], swShow)
-		f.place(id, left+f.px(i*150), top+f.px(336), f.px(140), f.px(34))
+		f.place(id, left+f.px(i*150), top+f.px(372), f.px(140), f.px(34))
 	}
 	procShowWindow.Call(f.ctrls[idStatus], swHide)
 	procShowWindow.Call(f.ctrls[idSettingsSave], swShow)
-	f.place(idSettingsSave, int(r.Right)-f.px(170), top+f.px(336), f.px(140), f.px(34))
+	f.place(idSettingsSave, int(r.Right)-f.px(170), top+f.px(372), f.px(140), f.px(34))
 	f.showAt(idRemoteTasks, left, top+f.px(292), width, f.px(30))
+	f.showAt(idAutoStart, left, top+f.px(328), width, f.px(30))
 }
 
 func (f *form) saveSettings() (saved bool) {
+	if f.isChecked(idAutoStart) != f.autoStartEnabled {
+		if err := requireStartupAdministrator(); err != nil {
+			f.setStatusKind(err.Error(), statusKindFail)
+			return false
+		}
+	}
 	defer func() {
 		if saved {
 			f.rememberSettingsDraft()
@@ -978,6 +986,13 @@ func (f *form) saveSettings() (saved bool) {
 	if err = f.applyRemoteSetting(); err != nil {
 		f.setStatusKind("远程任务设置失败："+err.Error(), statusKindFail)
 		return false
+	}
+	if requested := f.isChecked(idAutoStart); requested != f.autoStartEnabled {
+		if err = setStartupEnabled(requested); err != nil {
+			f.setStatusKind("配置已保存，但自启设置失败："+err.Error(), statusKindFail)
+			return false
+		}
+		f.autoStartEnabled = requested
 	}
 	f.setStatusKind("设置已保存，下次启动和新建任务会沿用这些设置。", statusKindOK)
 	return true

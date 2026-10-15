@@ -30,7 +30,7 @@ func (f *form) settingsDraftState() settingsDraftState {
 	for _, id := range []int{idOutputDir, idConfig, idTimeout, idOCREnginePath, idSevenZip, idOCRScore} {
 		s.Text[id] = windowText(f.ctrls[id])
 	}
-	for _, id := range []int{idRecursive, idNoArchive, idNoOCR, idLock, idRemoteTasks} {
+	for _, id := range []int{idRecursive, idNoArchive, idNoOCR, idLock, idRemoteTasks, idAutoStart} {
 		s.Checks[id] = f.isChecked(id)
 	}
 	for _, id := range []int{idTimeoutUnit, idLogLevel, idOCREngine} {
