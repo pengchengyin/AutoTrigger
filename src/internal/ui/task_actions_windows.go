@@ -25,7 +25,7 @@ func (f *form) selectedTaskRunning() bool {
 func (f *form) updateDetailButtons() {
 	record, ok := f.selectedTaskRecord()
 	enableWindow(f.ctrls[idDetailRetry], ok && record.Input != "" && !f.isRunning())
-	if ok && (record.RemoteState == "queued" || record.RemoteState == "staging") {
+	if ok && (record.RemoteState == "queued" || record.RemoteState == "staging" || record.Origin == "cli" && record.ExitCode == nil) {
 		enableWindow(f.ctrls[idDetailRetry], false)
 	}
 	enableWindow(f.ctrls[idDetailStop], f.selectedTaskRunning() || ok && record.RemoteState == "queued" && f.remoteQueue != nil)

@@ -184,7 +184,7 @@ func (f *form) refreshTaskList() {
 	query := strings.ToLower(strings.TrimSpace(windowText(f.ctrls[idTaskSearch])))
 	for _, record := range f.history {
 		status := "等待结果"
-		if record.ID == f.activeTask && f.isRunning() {
+		if record.ID == f.activeTask && f.isRunning() || record.Origin == "cli" && record.ExitCode == nil {
 			status = "运行中"
 		} else if snap, ok := readResultSnapshot(record.Result); ok {
 			outcome := snapshotOutcome(snap)

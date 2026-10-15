@@ -659,7 +659,9 @@ func (f *form) homeSummary() (*ResultSummary, bool) {
 
 func (f *form) resultSnapshot() (resultSnapshot, bool) {
 	path := f.resultPathOrDefault()
-	if f.page == pageTaskDetail && f.selectedTaskRunning() {
+	selected, selectedOK := f.selectedTaskRecord()
+	cliRunning := selectedOK && selected.Origin == "cli" && selected.ExitCode == nil
+	if f.page == pageTaskDetail && (f.selectedTaskRunning() || cliRunning) {
 		record, _ := f.selectedTaskRecord()
 		snap, _ := readResultSnapshot(path)
 		snap.TaskID, snap.Path, snap.StartedAt = record.ID, path, record.Created

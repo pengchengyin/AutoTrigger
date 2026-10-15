@@ -4,6 +4,7 @@ package ui
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -97,6 +98,10 @@ func (f *form) updateLogView(h uintptr, text string) {
 }
 
 func (f *form) updateLiveViews() {
+	if records, err := loadHistory(f.historyDir); err == nil && !reflect.DeepEqual(records, f.history) {
+		f.history = records
+		f.refreshTaskList()
+	}
 	switch f.page {
 	case pageLogs:
 		f.updateLogView(f.ctrls[idResultView], f.filteredLogText())

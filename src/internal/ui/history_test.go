@@ -1,12 +1,45 @@
 package ui
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestHistoryLoadsCLIWithoutGUIIndex(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "cli"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	record := taskRecord{ID: "cli-one", Name: "sample", Result: "unique.json", Created: time.Now()}
+	write := func() {
+		b, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(filepath.Join(dir, "cli", "one.json"), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	loaded, err := loadHistory(dir)
+	if err != nil || len(loaded) != 1 || loaded[0].ExitCode != nil {
+		t.Fatalf("running history: %+v %v", loaded, err)
+	}
+	if _, err = mergeHistory(dir, loaded); err != nil {
+		t.Fatal(err)
+	}
+	code := 0
+	record.ExitCode = &code
+	write()
+	loaded, err = loadHistory(dir)
+	if err != nil || len(loaded) != 1 || loaded[0].ExitCode == nil || *loaded[0].ExitCode != 0 {
+		t.Fatalf("finished history: %+v %v", loaded, err)
+	}
+}
 
 func TestHistoryPersistenceKeepsIndependentResults(t *testing.T) {
 	dir := t.TempDir()

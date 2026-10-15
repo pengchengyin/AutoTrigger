@@ -2097,7 +2097,9 @@ func (f *form) launch(label string, args []string, aux bool) {
 			}
 		}
 		if code == 0 {
-			code = cli.Run(ctx, args, stdout, sink, f.deps)
+			deps := f.deps
+			deps.HistoryManaged = true
+			code = cli.Run(ctx, args, stdout, sink, deps)
 		}
 		if guard != nil {
 			guard.Close()

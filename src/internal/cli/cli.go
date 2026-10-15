@@ -30,15 +30,16 @@ import (
 var Version = "0.1.0"
 
 type Dependencies struct {
-	Runner    ports.ProcessRunner
-	Trigger   func(config.Config, resources.Pack) ports.InstallerTrigger
-	Opener    ports.FileOpener
-	Mounter   ports.DiskMounter
-	Evidence  ports.EvidenceSource
-	NativeGUI ports.GUIAutomator
-	Lock      ports.Lock
-	Prereqs   ports.PrereqManager
-	OCR       func() ports.OCREngine
+	HistoryManaged bool
+	Runner         ports.ProcessRunner
+	Trigger        func(config.Config, resources.Pack) ports.InstallerTrigger
+	Opener         ports.FileOpener
+	Mounter        ports.DiskMounter
+	Evidence       ports.EvidenceSource
+	NativeGUI      ports.GUIAutomator
+	Lock           ports.Lock
+	Prereqs        ports.PrereqManager
+	OCR            func() ports.OCREngine
 }
 type Options struct {
 	Input              string
@@ -128,6 +129,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		resultPath = p
 	}
 	var logger *logging.Logger
+	var historyFinish func(int)
 	finish := func(exit int, err error) int {
 		if rawInput := argumentValue(args, "input"); rawInput != "" {
 			sample, _ := filepath.Abs(rawInput)
@@ -154,7 +156,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		result.ConfigDigest = cfg.Digest()
 		if writeErr := output.Write(resultPath, &result, stdout, cfg.Output.Pretty, int64(cfg.Output.MaxFileSizeMB)*1024*1024); writeErr != nil {
 			fmt.Fprintf(stderr, "[error] writing result: %v\n", writeErr)
+			if historyFinish != nil {
+				historyFinish(1)
+			}
 			return 1
+		}
+		if historyFinish != nil {
+			historyFinish(exit)
 		}
 		return exit
 	}
@@ -333,6 +341,15 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, deps Depe
 		logOut = io.MultiWriter(stderr, logFile)
 	}
 	logger = &logging.Logger{Out: logOut, Level: cfg.Output.LogLevel}
+	if !informationMode && !deps.HistoryManaged && opts.Input != "" {
+		writeHistory := func(exit *int) {
+			if historyErr := writeTaskHistory(layout, &result, opts.Input, configPath, logPath, exit); historyErr != nil {
+				fmt.Fprintf(stderr, "[warning] 保存命令行任务历史失败：%v\n", historyErr)
+			}
+		}
+		writeHistory(nil)
+		historyFinish = func(exit int) { writeHistory(&exit) }
+	}
 	for _, w := range append(warnings, library.Warnings...) {
 		logger.Stage(logging.LevelWarn, logging.StageTask, "配置提示：%s", w)
 	}

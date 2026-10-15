@@ -11,6 +11,7 @@ import (
 )
 
 type taskRecord struct {
+	Origin         string     `json:"origin,omitempty"`
 	ID             string     `json:"id"`
 	Name           string     `json:"name"`
 	Input          string     `json:"input"`
@@ -32,7 +33,7 @@ type taskRecord struct {
 func loadHistory(dir string) ([]taskRecord, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "index.json"))
 	if os.IsNotExist(err) {
-		return nil, nil
+		b, err = []byte("[]"), nil
 	}
 	if err != nil {
 		return nil, err
@@ -40,6 +41,33 @@ func loadHistory(dir string) ([]taskRecord, error) {
 	var records []taskRecord
 	if err = json.Unmarshal(b, &records); err != nil {
 		return nil, err
+	}
+	paths, err := filepath.Glob(filepath.Join(dir, "cli", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range paths {
+		data, e := os.ReadFile(path)
+		if e != nil {
+			return nil, e
+		}
+		var record taskRecord
+		if e = json.Unmarshal(data, &record); e != nil {
+			return nil, e
+		}
+		found := false
+		for i := range records {
+			if records[i].ID == record.ID {
+				// Keep GUI names/options, but refresh CLI-owned completion data.
+				records[i].ExitCode = record.ExitCode
+				records[i].LogPath = record.LogPath
+				found = true
+				break
+			}
+		}
+		if !found {
+			records = append(records, record)
+		}
 	}
 	sort.SliceStable(records, func(i, j int) bool { return records[i].Created.After(records[j].Created) })
 	return records, nil
