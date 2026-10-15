@@ -97,6 +97,53 @@ func TestStartupXMLFileEncodingMatchesDeclaration(t *testing.T) {
 	}
 }
 
+func TestStartupStateAcceptsSchedulerNormalizedAccount(t *testing.T) {
+	exe, sid := `C:\工具\AutoTrigger.exe`, "S-1-5-21-1234-1001"
+	resolve := func(account string) (string, error) {
+		if account == `VM\pengc` {
+			return sid, nil
+		}
+		return "", errors.New("unknown account")
+	}
+	task := startupDefinition(exe, sid)
+	task.Principal.User = `VM\pengc`
+	task.Actions.Exec.Arguments = " --gui "
+	b, err := startupXMLFile(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !startupXMLMatches(b, exe, sid, resolve) {
+		t.Fatal("scheduler account normalization hid enabled startup")
+	}
+	task.Settings.Enabled = false
+	b, _ = startupXMLFile(task)
+	if startupXMLMatches(b, exe, sid, resolve) {
+		t.Fatal("disabled task shown as enabled")
+	}
+	task.Settings.Enabled = true
+	task.Principal.User = `VM\other`
+	b, _ = startupXMLFile(task)
+	if startupXMLMatches(b, exe, sid, resolve) {
+		t.Fatal("other account shown as current startup")
+	}
+}
+
+func TestStartupStateAllowsDefaultEnabledButRejectsDifferentAction(t *testing.T) {
+	exe, sid := `C:\tools\AutoTrigger.exe`, "S-1-5-21-1234-1001"
+	b, err := xml.Marshal(startupDefinition(exe, sid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = []byte(strings.ReplaceAll(string(b), "<Enabled>true</Enabled>", ""))
+	resolve := func(string) (string, error) { return "", errors.New("unexpected lookup") }
+	if !startupXMLMatches(b, exe, sid, resolve) {
+		t.Fatal("default enabled task hidden")
+	}
+	if startupXMLMatches(b, `C:\other\AutoTrigger.exe`, sid, resolve) {
+		t.Fatal("wrong executable accepted")
+	}
+}
+
 func TestStartupIdentityIsStableAndReadOnly(t *testing.T) {
 	one, exe, sid, err := startupIdentity()
 	if err != nil {

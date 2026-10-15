@@ -153,6 +153,16 @@ func startupEnabled() bool {
 	if err != nil {
 		return false
 	}
+	return startupXMLMatches(b, exe, sid, func(account string) (string, error) {
+		u, err := user.Lookup(account)
+		if err != nil {
+			return "", err
+		}
+		return u.Uid, nil
+	})
+}
+
+func startupXMLMatches(b []byte, exe, sid string, resolve func(string) (string, error)) bool {
 	b = []byte(schedulerText(b))
 	// schtasks may declare UTF-16 even though its redirected output was decoded.
 	start := bytes.Index(b, []byte("<Task"))
@@ -160,7 +170,26 @@ func startupEnabled() bool {
 		return false
 	}
 	var t startupTask
-	return xml.Unmarshal(b[start:], &t) == nil && t.Settings.Enabled && strings.EqualFold(t.Actions.Exec.Command, exe) && t.Actions.Exec.Arguments == "--gui" && t.Principal.User == sid && t.Principal.Logon == "InteractiveToken" && t.Principal.Level == "HighestAvailable"
+	if xml.Unmarshal(b[start:], &t) != nil {
+		return false
+	}
+	var state struct {
+		Enabled        *bool `xml:"Settings>Enabled"`
+		TriggerEnabled *bool `xml:"Triggers>LogonTrigger>Enabled"`
+	}
+	if xml.Unmarshal(b[start:], &state) != nil || state.Enabled != nil && !*state.Enabled || state.TriggerEnabled != nil && !*state.TriggerEnabled {
+		return false
+	}
+	// Windows may export a resolved DOMAIN\user rather than the original SID.
+	account := strings.TrimSpace(t.Principal.User)
+	if !strings.EqualFold(account, sid) {
+		resolved, err := resolve(account)
+		if err != nil || !strings.EqualFold(resolved, sid) {
+			return false
+		}
+	}
+	command := strings.Trim(strings.TrimSpace(t.Actions.Exec.Command), "\"")
+	return strings.EqualFold(filepath.Clean(command), filepath.Clean(exe)) && strings.TrimSpace(t.Actions.Exec.Arguments) == "--gui" && t.Principal.Logon == "InteractiveToken" && t.Principal.Level == "HighestAvailable"
 }
 
 func requireStartupAdministrator() error {
