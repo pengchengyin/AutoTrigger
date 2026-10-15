@@ -1,10 +1,10 @@
 [
  {"id":"en_install","pattern":"install|install now|begin installation","action":"install"},
- {"id":"en_accept","pattern":"i agree|i accept|i accept the agreement|i accept the terms in the license agreement|agree|accept","action":"accept"},
+ {"id":"en_accept","pattern":"i agree|i accept|i accept the agreement|i accept the terms in the license agreement|i accept the terms of the license agreement|i accept the terms of this agreement|i accept the terms in this agreement|i accept the license agreement|i accept the terms and conditions|i agree to the license agreement|i agree to the terms and conditions|i agree to the terms of the license agreement|i agree to the terms of this agreement|agree|accept","action":"accept"},
  {"id":"en_next","pattern":"next|continue","action":"next"},
  {"id":"en_finish","pattern":"finish|done|installation complete","action":"finish"},
  {"id":"en_ok","pattern":"yes|ok","action":"ok"},
- {"id":"en_deny","pattern":"cancel|exit|no|uninstall|remove|restart|reboot|repair|update","action":"deny"},
+ {"id":"en_deny","pattern":"cancel|exit|no|uninstall|remove|restart|reboot|repair|update|i do not accept|i do not agree|i decline|i do not accept the agreement|i do not accept the terms in the license agreement|i do not accept the terms of the license agreement|i do not accept the terms of this agreement|i do not agree to the terms and conditions|i decline the license agreement","action":"deny"},
  {"id":"en_fail","pattern":"installation failed|cannot install|rollback|fatal error","action":"failure"},
  {"id":"en_network","pattern":"downloading|connecting to server|internet connection required","action":"network"},
  {"id":"en_reboot","pattern":"restart required|reboot required","action":"reboot"}
