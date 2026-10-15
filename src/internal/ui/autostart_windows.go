@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -27,6 +28,7 @@ type startupTask struct {
 	Namespace string   `xml:"xmlns,attr"`
 	User      string   `xml:"Triggers>LogonTrigger>UserId"`
 	Principal struct {
+		ID    string `xml:"id,attr"`
 		User  string `xml:"UserId"`
 		Logon string `xml:"LogonType"`
 		Level string `xml:"RunLevel"`
@@ -38,13 +40,20 @@ type startupTask struct {
 		Enabled     bool   `xml:"Enabled"`
 		Limit       string `xml:"ExecutionTimeLimit"`
 	} `xml:"Settings"`
-	Command   string `xml:"Actions>Exec>Command"`
-	Arguments string `xml:"Actions>Exec>Arguments"`
-	Directory string `xml:"Actions>Exec>WorkingDirectory"`
+	Actions struct {
+		Context string `xml:"Context,attr"`
+		Exec    struct {
+			Command   string `xml:"Command"`
+			Arguments string `xml:"Arguments"`
+			Directory string `xml:"WorkingDirectory"`
+		} `xml:"Exec"`
+	} `xml:"Actions"`
 }
 
 func startupDefinition(exe, sid string) startupTask {
-	t := startupTask{Version: "1.2", Namespace: "http://schemas.microsoft.com/windows/2004/02/mit/task", User: sid, Command: exe, Arguments: "--gui", Directory: filepath.Dir(exe)}
+	t := startupTask{Version: "1.2", Namespace: "http://schemas.microsoft.com/windows/2004/02/mit/task", User: sid}
+	t.Principal.ID, t.Actions.Context = "AutoTriggerUser", "AutoTriggerUser"
+	t.Actions.Exec.Command, t.Actions.Exec.Arguments, t.Actions.Exec.Directory = exe, "--gui", filepath.Dir(exe)
 	t.Principal.User, t.Principal.Logon, t.Principal.Level = sid, "InteractiveToken", "HighestAvailable"
 	t.Settings.Instances, t.Settings.Enabled, t.Settings.Limit = "IgnoreNew", true, "PT0S"
 	return t
@@ -73,7 +82,50 @@ func schedulerCommand(args ...string) ([]byte, error) {
 	}
 	cmd := exec.CommandContext(ctx, filepath.Join(syscall.UTF16ToString(systemDir[:]), "schtasks.exe"), args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-	return cmd.CombinedOutput()
+	output, runErr := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return output, fmt.Errorf("计划任务命令超时：%w", ctx.Err())
+	}
+	if runErr != nil {
+		return output, schedulerFailure(runErr, output)
+	}
+	return output, nil
+}
+
+func schedulerFailure(err error, output []byte) error {
+	detail := strings.TrimSpace(schedulerText(output))
+	if len([]rune(detail)) > 2000 {
+		detail = string([]rune(detail)[:2000]) + "..."
+	}
+	if detail == "" {
+		return err
+	}
+	return fmt.Errorf("%w；系统详情：%s", err, detail)
+}
+
+func schedulerText(b []byte) string {
+	if len(b) >= 2 && (bytes.HasPrefix(b, []byte{0xff, 0xfe}) || b[1] == 0) {
+		if bytes.HasPrefix(b, []byte{0xff, 0xfe}) {
+			b = b[2:]
+		}
+		units := make([]uint16, len(b)/2)
+		for i := range units {
+			units[i] = uint16(b[i*2]) | uint16(b[i*2+1])<<8
+		}
+		return string(utf16.Decode(units))
+	}
+	if utf8.Valid(b) || len(b) == 0 {
+		return string(b)
+	}
+	convert := syscall.NewLazyDLL("kernel32.dll").NewProc("MultiByteToWideChar")
+	// schtasks console diagnostics use the system OEM code page.
+	n, _, _ := convert.Call(1, 0, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), 0, 0)
+	if n == 0 {
+		return strings.ToValidUTF8(string(b), "?")
+	}
+	units := make([]uint16, n)
+	convert.Call(1, 0, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), uintptr(unsafe.Pointer(&units[0])), n)
+	return string(utf16.Decode(units))
 }
 
 func startupEnabled() bool {
@@ -85,20 +137,14 @@ func startupEnabled() bool {
 	if err != nil {
 		return false
 	}
-	if bytes.HasPrefix(b, []byte{0xff, 0xfe}) {
-		units := make([]uint16, (len(b)-2)/2)
-		for i := range units {
-			units[i] = uint16(b[2+i*2]) | uint16(b[3+i*2])<<8
-		}
-		b = []byte(string(utf16.Decode(units)))
-	}
+	b = []byte(schedulerText(b))
 	// schtasks may declare UTF-16 even though its redirected output was decoded.
 	start := bytes.Index(b, []byte("<Task"))
 	if start < 0 {
 		return false
 	}
 	var t startupTask
-	return xml.Unmarshal(b[start:], &t) == nil && t.Settings.Enabled && strings.EqualFold(t.Command, exe) && t.Arguments == "--gui" && t.Principal.User == sid && t.Principal.Logon == "InteractiveToken" && t.Principal.Level == "HighestAvailable"
+	return xml.Unmarshal(b[start:], &t) == nil && t.Settings.Enabled && strings.EqualFold(t.Actions.Exec.Command, exe) && t.Actions.Exec.Arguments == "--gui" && t.Principal.User == sid && t.Principal.Logon == "InteractiveToken" && t.Principal.Level == "HighestAvailable"
 }
 
 func requireStartupAdministrator() error {
