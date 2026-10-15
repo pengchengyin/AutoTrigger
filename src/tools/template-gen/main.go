@@ -29,7 +29,7 @@ type source struct {
 func main() {
 	masters := flag.String("masters", "masters", "real installer master captures")
 	out := flag.String("out", "internal/resources/assets/builtin/templates", "generated template directory")
-	release := flag.Bool("release", false, "require >=50 masters and >=180 variants")
+	release := flag.Bool("release", false, "release generation; no minimum template count")
 	flag.Parse()
 	if err := generate(*masters, *out, *release); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -141,9 +141,6 @@ func generate(root, dest string, release bool) error {
 				index.Entries = append(index.Entries, templates.Entry{ID: id, Family: parts[0], Action: parts[1], Lang: parts[2], DPI: dpi, Theme: theme, File: file, Width: width, Height: height, Source: "builtin", Screenshot: sourceFile, Bounds: transformedBounds, Origin: origin})
 			}
 		}
-	}
-	if release && (index.Masters < 50 || len(index.Entries) < 180) {
-		return fmt.Errorf("release resource minimum unmet: %d masters, %d variants", index.Masters, len(index.Entries))
 	}
 	data, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {

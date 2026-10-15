@@ -64,6 +64,9 @@ func TestDeliveryKeepsSourceAndRuntimeSeparate(t *testing.T) {
 		}
 	}
 	dest := filepath.Join(root, "dist", "delivery")
+	if err = assemble(filepath.Join("dist", "strict"), true); err == nil || !strings.Contains(err.Error(), "missing materials=") || strings.Contains(err.Error(), "masters=") {
+		t.Fatalf("offline material check must remain independent of template counts: %v", err)
+	}
 	if err = assemble(filepath.Join("dist", "delivery"), false); err != nil {
 		t.Fatal(err)
 	}

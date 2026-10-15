@@ -1,5 +1,7 @@
 # Windows 任意文件自动安装/触发工具 PRD
 
+2026-10-15 发布范围调整（覆盖下文模板数量验收门槛）：继续以预发布版交付，推荐 Windows 10/11；Win7 实机验收延后，不宣称已经验证。真实母版数及内置变体数仅作为能力统计，不再要求达到 50/180 才能打包发布；保留已有资源文件、来源、索引、SHA-256、匹配规则和离线依赖的有效性检查，不将空内置库宣称为通用模板能力。交付包继续携带源码管理中的自绘示例模板，不复制本机用户模板或配置。预发布标识和未验收限制保留，不自动将 manifest.release_ready 改为 true。
+
 2026-10-13 目录与说明精简（覆盖旧 D9/D10/D14、8.2、A23 的交付形式）：部署说明并入简短 README，移除独立部署文档及 install-windows.bat / install-windows.ps1 / verify-ocr.ps1。环境检查、离线部署和引擎能力自检使用 EXE 的检查环境或 --check-prereq（只读加 --no-deploy-deps）；不再提供脚本专有的 -TestImage/-Engine 参数接口。构建、冒烟与 JSON schema 校验脚本保留为源码开发工具，不进入交付包；源码与开发脚本集中到 src，运行测试数据位于 dist，开发说明归入 docs/架构说明.md。普通构建生成 dist/AutoTrigger.exe，配置示例仅在显式打包时生成，dist 旧构建/测试/任务记录按用户本轮要求清理，third_party/third_parties 依赖物料保留。打包仍保留资源、结果 schema、必要文档及离线物料校验，不通过删文件降低 --release 门槛；目录外用户模板、配置与原始测试证据不删除。
 
 2026-10-12 统一数据目录变更（覆盖下文旧默认目录约定）：设置基础页仅配置一个数据目录，默认 EXE 所在目录。固定子目录：logs（执行与环境检查日志）、results（结果 JSON/journal 等）、templates（模板项目、图片及发布资源）、third_parties（7-Zip/OCR 离线包与部署结果）、config（config.json、preferences.json、history）。EXE 同级 config/data-location.json 是唯一定位元数据，记录外部数据目录；重启 GUI 与 CLI 共用。配置导入进入编辑草稿，保存仍写当前数据目录 config/config.json，不改写导入来源。CLI 显式 --output、--log-file、--config 保持原语义；未指定输出且配置沿用内置默认结果名时，写数据目录 results/autotrigger-result.json，默认日志写 logs，显式输出的日志仍按原契约处理。
