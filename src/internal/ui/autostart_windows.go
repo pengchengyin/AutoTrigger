@@ -59,6 +59,22 @@ func startupDefinition(exe, sid string) startupTask {
 	return t
 }
 
+func startupXMLFile(task startupTask) ([]byte, error) {
+	b, err := xml.MarshalIndent(task, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	// schtasks imports task files as Unicode; match the declaration to the bytes.
+	text := "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n" + string(b)
+	units := utf16.Encode([]rune(text))
+	data := make([]byte, 2+len(units)*2)
+	data[0], data[1] = 0xff, 0xfe
+	for i, unit := range units {
+		data[2+i*2], data[3+i*2] = byte(unit), byte(unit>>8)
+	}
+	return data, nil
+}
+
 func startupIdentity() (string, string, string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -179,7 +195,7 @@ func setStartupEnabled(enabled bool) error {
 	if !enabled {
 		_, err = schedulerCommand("/Delete", "/TN", name, "/F")
 	} else {
-		b, e := xml.MarshalIndent(startupDefinition(exe, sid), "", "  ")
+		b, e := startupXMLFile(startupDefinition(exe, sid))
 		if e != nil {
 			return e
 		}
@@ -188,7 +204,7 @@ func setStartupEnabled(enabled bool) error {
 			return e
 		}
 		defer os.Remove(file.Name())
-		_, e = file.Write(append([]byte(xml.Header), b...))
+		_, e = file.Write(b)
 		closeErr := file.Close()
 		if e != nil {
 			return e

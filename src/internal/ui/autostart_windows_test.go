@@ -71,6 +71,32 @@ func TestAdministratorStartupDefinition(t *testing.T) {
 	}
 }
 
+func TestStartupXMLFileEncodingMatchesDeclaration(t *testing.T) {
+	exe := `C:\自动安装工具 & apps\AutoTrigger.exe`
+	b, err := startupXMLFile(startupDefinition(exe, "S-1-5-21-1234-1001"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) < 4 || b[0] != 0xff || b[1] != 0xfe || b[2] != '<' || b[3] != 0 {
+		t.Fatal("task import file must be UTF-16LE with BOM")
+	}
+	text := schedulerText(b)
+	if !strings.HasPrefix(text, "<?xml version=\"1.0\" encoding=\"UTF-16\"?>") {
+		t.Fatal("encoding declaration mismatch")
+	}
+	start := strings.Index(text, "<Task")
+	if start < 0 {
+		t.Fatal("task root missing")
+	}
+	var got startupTask
+	if err = xml.Unmarshal([]byte(text[start:]), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Actions.Exec.Command != exe || got.Principal.ID != got.Actions.Context {
+		t.Fatalf("task file lost path or principal: %+v", got)
+	}
+}
+
 func TestStartupIdentityIsStableAndReadOnly(t *testing.T) {
 	one, exe, sid, err := startupIdentity()
 	if err != nil {
