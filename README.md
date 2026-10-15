@@ -19,6 +19,14 @@ AutoTrigger 是一款面向 Windows 的离线安装与文件触发工具，同�
 
 ## 2. 测试效果
 
+**Audacity 自动安装实录（约 44 秒）**
+
+用户提供的虚拟机录屏，展示任务执行、安装向导及安装后打开的 Audacity。点击下方画面查看完整视频：[观看 MP4](docs/images/quick-start/audacity-install.mp4) · [下载原始 WMV](docs/images/quick-start/audaciry安装录屏.wmv)。
+
+[![Audacity 自动安装录屏预览](docs/images/quick-start/audacity-install-preview.jpg)](docs/images/quick-start/audacity-install.mp4)
+
+录屏用于直观展示操作流程，不替代结果 JSON、日志和安装证据，也不计入下方历史测试统计。
+
 测试套件入口：[AutoTrigger-TestSuite](https://github.com/pengchengyin/AutoTrigger-TestSuite)。以下数据来自对原始结果 JSON 的只读核对，完整口径见[历史测试效果摘要](docs/历史测试效果摘要.md)。完整报告和套件的公开内容以该仓库实际发布为准。
 
 **真实安装器测试**：管理员会话，Windows 10.0.26300 x64，工具 0.1.0 / Schema 2.8。01–05 组的 22 个真实安装器中，工具输出安装完成 **18 / 22（81.8%）**：
@@ -54,6 +62,10 @@ AutoTrigger 是一款面向 Windows 的离线安装与文件触发工具，同�
 4. **执行任务**：点击“新建任务”，选择文件或文件夹并运行。公共执行参数在“设置”中统一配置。
 5. **查看结果**：在任务列表打开“任务详情”，查看状态、实时执行日志和结果 JSON；可停止运行中的任务，或重新安装。
 
+| 首页：检查环境与快捷入口 | 新建任务：选择样本并运行 |
+|---|---|
+| ![AutoTrigger 首页](docs/images/quick-start/home.png) | ![AutoTrigger 新建任务](docs/images/quick-start/new-task.png) |
+
 **结果判读**：任务结束或退出码为 0，不等同于安装成功，请结合任务详情中的状态、证据和日志确认。安装完成也不代表软件已激活或可正常使用。
 
 **搭建无人值守执行主机**：推荐使用专用 Windows 10/11 虚拟机，配置指定账户自动登录、管理员权限自启、SSH 接收以及防止睡眠和空闲锁定，再做一次重启后的远程任务验收。具体步骤和安全注意事项见[SSH 远程任务说明](docs/SSH远程任务说明.md#2-主机准备)。自动登录等系统设置由部署人员配置；锁屏、UAC 安全桌面、安全软件拦截及安装器自身限制仍可能中断自动化，不代表任意软件都能全程无人干预安装。
@@ -76,11 +88,23 @@ AutoTrigger 是一款面向 Windows 的离线安装与文件触发工具，同�
 
 启动时不弹出旧版数据迁移提示，也不会自动迁移旧目录。需要沿用旧数据时，请先备份，再按当前目录约定手动整理。清理文件前，请确认不再需要其中的配置、模板或任务记录。
 
+| 基础设置：数据目录、SSH 与自启 | 识别与依赖：OCR 和第三方工具 |
+|---|---|
+| ![AutoTrigger 基础设置](docs/images/quick-start/settings-base.png) | ![AutoTrigger OCR 与依赖设置](docs/images/quick-start/settings-ocr.png) |
+
 ## 5. 模板管理
 
 面对自绘界面或非标准安装器，模板就是提升成功率的利器：在“模板管理”中新建模板，进入详情捕获目标图片并标记动作，保存后勾选启用，后续任务即可自动匹配。制作方法见[图像模板制作说明](docs/图像模板制作说明.md)。
 
 右上角支持批量 ZIP 导入、导出。导入不会覆盖同名模板，导入后需自行勾选启用；导出不携带启用状态。
+
+![AutoTrigger 模板列表](docs/images/quick-start/template-list.png)
+
+**自绘界面模板制作实录（约 46 秒）**
+
+展示自绘测试界面的捕获、区域标记与保存。点击画面查看完整视频：[观看 MP4](docs/images/quick-start/template-capture.mp4) · [下载原始 WMV](docs/images/quick-start/自绘界面模板制作录屏.wmv)。此录屏是模板制作示例，不代表任意自绘安装器都能自动匹配。
+
+[![自绘界面模板制作录屏预览](docs/images/quick-start/template-capture-preview.jpg)](docs/images/quick-start/template-capture.mp4)
 
 离线交付 ZIP 自带“自绘安装向导（浅色示例）”，新解压的数据目录中默认启用，包含接受协议、下一步、安装和完成四个动作。仅适用于标题为“自绘界面安装向导 Synthetic”的浅色测试样本、96 DPI，不代表适配任意安装器。独立 EXE 不携带这套外部图片；升级时不要用交付包的 `templates/` 覆盖已有用户模板和启用索引。
 
