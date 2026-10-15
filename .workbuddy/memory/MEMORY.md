@@ -113,10 +113,8 @@
   Console session 1 自动登录（`AutoAdminLogon=1`）；UAC `EnableLUA=1 / ConsentPromptBehaviorAdmin=0 /
   PromptOnSecureDesktop=0 / FilterAdministratorToken=1`；`preferences.json: remote_tasks=true`。
   ⚠️ 该 VM 的 `config.json` 含未知字段 `gui`，每轮会告警「已忽略」，需删除。
-- ⚠️ **待处理**：VM 上遗留计划任务 `AutoTriggerGui`（`/rp` 保存了口令）+ `%TEMP%\at-gui.bat`、
-  `at-elevate.vbs`（本会话临时方案）。产品已实现「开机自启」（`internal/ui/autostart_windows.go`，
-  注册 `AutoTrigger-Logon-<hash>` 登录任务，LogonTrigger + InteractiveToken + `HighestAvailable`，
-  开关文案「登录 Windows 后以管理员权限自动启动（保存后生效）」），但 **VM 上部署的 exe 与
-  本地 `dist/` 三个 preview 构建都不含该功能**（二进制搜不到 `AutoTrigger-Logon-`）。
-  ⇒ 正确路线：用最新源码重新构建部署 → 以管理员身份启动一次 → 设置里勾选自启 → 重启验证 →
-  删除临时任务与脚本。注意该自启是登录触发，故依赖自动登录；且保存自启本身要求已提权。
+- ✅ **已收口（2026-10-16）**：VM 已部署含自启的最新构建；重启后 `AutoTrigger-Logon-<hash>`
+  登录任务自 Running、桌面端 High IL、接收端 ok，提权验证通过。自启是登录触发，依赖自动登录；
+  保存自启本身要求已提权（首次需手动提权启动一次）。临时方案（`AutoTriggerGui` 任务 +
+  `%TEMP%\at-gui.bat`、`at-elevate.vbs`）已删除。Notepad3 回归复测结论不变：
+  UIA 链路全通，卡在样本侧联网下载，离线 VM 装不上属预期。
