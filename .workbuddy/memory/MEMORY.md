@@ -114,4 +114,9 @@
   PromptOnSecureDesktop=0 / FilterAdministratorToken=1`；`preferences.json: remote_tasks=true`。
   ⚠️ 该 VM 的 `config.json` 含未知字段 `gui`，每轮会告警「已忽略」，需删除。
 - ⚠️ **待处理**：VM 上遗留计划任务 `AutoTriggerGui`（`/rp` 保存了口令）+ `%TEMP%\at-gui.bat`、
-  `at-elevate.vbs`；建议改用产品自带「管理员自启」（需已提权的 GUI 勾选）后删除该任务。
+  `at-elevate.vbs`（本会话临时方案）。产品已实现「开机自启」（`internal/ui/autostart_windows.go`，
+  注册 `AutoTrigger-Logon-<hash>` 登录任务，LogonTrigger + InteractiveToken + `HighestAvailable`，
+  开关文案「登录 Windows 后以管理员权限自动启动（保存后生效）」），但 **VM 上部署的 exe 与
+  本地 `dist/` 三个 preview 构建都不含该功能**（二进制搜不到 `AutoTrigger-Logon-`）。
+  ⇒ 正确路线：用最新源码重新构建部署 → 以管理员身份启动一次 → 设置里勾选自启 → 重启验证 →
+  删除临时任务与脚本。注意该自启是登录触发，故依赖自动登录；且保存自启本身要求已提权。
