@@ -1,8 +1,11 @@
 # AutoTrigger：Windows 离线软件安装自动化工具
 
 [![Latest release](https://img.shields.io/github/v/release/pengchengyin/AutoTrigger?display_name=tag)](https://github.com/pengchengyin/AutoTrigger/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![平台](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/pengchengyin/AutoTrigger)
 [![语言](https://img.shields.io/badge/language-Go-00ADD8)](https://github.com/pengchengyin/AutoTrigger/tree/main/src)
+
+**简体中文** · [English](README.en.md)
 
 **AutoTrigger 是面向 Windows 的离线软件安装自动化工具**，提供图形界面和命令行（CLI），可处理安装包或文件夹，尝试识别常见安装器、自动操作安装向导，并保存逐任务日志与 JSON 结果。工具在本机运行，交付程序无需安装 Go；具体自动化效果取决于安装器、权限和桌面状态。
 
