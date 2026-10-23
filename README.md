@@ -1,6 +1,18 @@
-# AutoTrigger 自动安装工具
+# AutoTrigger：Windows 离线软件安装自动化工具
 
-AutoTrigger 是一款面向 Windows 的离线安装与文件触发工具，同时提供图形界面和命令行入口。只需把要处理的文件或文件夹交给它，它就会尝试静默安装、自动完成安装向导交互，并保存完整的执行日志与结果文件。全程本地运行，无需联网，也无需安装 Go。
+[![Latest release](https://img.shields.io/github/v/release/pengchengyin/AutoTrigger?display_name=tag)](https://github.com/pengchengyin/AutoTrigger/releases)
+[![平台](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/pengchengyin/AutoTrigger)
+[![语言](https://img.shields.io/badge/language-Go-00ADD8)](https://github.com/pengchengyin/AutoTrigger/tree/main/src)
+
+**AutoTrigger 是面向 Windows 的离线软件安装自动化工具**，提供图形界面和命令行（CLI），可处理安装包或文件夹，尝试识别常见安装器、自动操作安装向导，并保存逐任务日志与 JSON 结果。工具在本机运行，交付程序无需安装 Go；具体自动化效果取决于安装器、权限和桌面状态。
+
+适合需要批量处理 Windows 安装包、查看自动安装过程和结果，或将安装任务接入脚本的用户。它不是通用静默安装保证：任务完成或退出码为 0 不代表安装成功，请查看结果状态、证据和日志。
+
+**开始使用：** [下载与版本说明](https://github.com/pengchengyin/AutoTrigger/releases) · [快速开始](#3-快速开始) · [命令行示例](#6-命令行使用) · [报告问题或建议](https://github.com/pengchengyin/AutoTrigger/issues/new/choose)
+
+**English:** AutoTrigger is an offline Windows software installation automation tool with a native GUI and CLI. It attempts to detect common installers and interact with setup dialogs, then records per-task logs and JSON results. Automation depends on the installer and desktop environment; completion does not guarantee installation success.
+
+Topics: Windows installer automation · offline software deployment · GUI automation · OCR · Go
 
 ## 1. 为什么选择 AutoTrigger
 
