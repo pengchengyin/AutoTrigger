@@ -1,5 +1,17 @@
 # 项目长期记忆（自动安装工具）
 
+## GitHub 仓库（pengchengyin/AutoTrigger）
+- 2026-10-23 已完成曝光基础项：19 个 topics、双语描述、Discussions 开启、MIT LICENSE、
+  README.en.md、docs/images/social-preview.png（待用户手动上传到 Settings→General→Social preview）。
+- 多平台推广文章已生成于 `.workbuddy/promotion/`（csdn/zhihu/juejin/v2ex/wechat-gzh.html/发布说明），
+  均为手动粘贴发布；CSDN/知乎/掘金/V2EX 无发布 API 不可全自动；公众号可经「言序」连接器推草稿箱。
+- ⚠️ .git 损坏恢复流程见 `2026-10-23.md`：rebase 被 SIGTERM 中断可致 refs/objects 丢失；
+  fetch 的 tmp_pack_* 可用 git index-pack 救回。远程有新提交时先 fetch 再操作。
+- 生成营销图片：PowerShell 无法用 System.Drawing（Add-Type 被拦截），改用 agent-browser
+  打开本地 HTML 截图（`set viewport W H` 后需 sleep 再 screenshot，否则全黑）。
+- ⚠️ 仓库历史中 .workbuddy/memory/MEMORY.md 被 git 跟踪；编辑后要么连同提交，要么注意
+  `git checkout --` 会还原它。项目本地记忆与仓库跟踪文件有冲突时以本地为准重新编辑。
+
 ## 项目性质
 - **需求已收口（PRD v2.16），已进入开发**：Go 实现位于 `cmd/`、`internal/`、`pkg/`、`tools/`，
   产物 `dist/AutoTrigger.exe`（v0.1.0，Schema 2.8，资源包 0.1.0）。
